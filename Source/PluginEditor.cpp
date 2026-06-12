@@ -116,7 +116,17 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addChildComponent (calibration);
     addChildComponent (analysis);
 
-    setEditConfig (0);
+    // Follow the engaged configuration in the matrix view.
+    for (int c = 0; c < smt::numConfigs; ++c)
+        audioProcessor.apvts.addParameterListener (smt::configName (c), this);
+
+    // Start on the engaged config (the last one when several are active).
+    int initial = 0;
+    for (int c = 0; c < smt::numConfigs; ++c)
+        if (audioProcessor.apvts.getRawParameterValue (smt::configName (c))->load() > 0.5f)
+            initial = c;
+
+    setEditConfig (initial);
     setView (View::matrix);
 
     setResizable (true, true);
@@ -126,7 +136,30 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
 {
+    for (int c = 0; c < smt::numConfigs; ++c)
+        audioProcessor.apvts.removeParameterListener (smt::configName (c), this);
     setLookAndFeel (nullptr);
+}
+
+void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
+{
+    if (newValue < 0.5f)
+        return;     // a config being released does not change the displayed one
+
+    for (int c = 0; c < smt::numConfigs; ++c)
+    {
+        if (smt::configName (c) == parameterID)
+        {
+            // This callback can come from the audio thread (host automation).
+            juce::MessageManager::callAsync (
+                [safeThis = juce::Component::SafePointer<SuperMoToAudioProcessorEditor> (this), c]
+                {
+                    if (safeThis != nullptr)
+                        safeThis->setEditConfig (c);
+                });
+            break;
+        }
+    }
 }
 
 //==============================================================================

@@ -41,7 +41,8 @@
 #include "Components/AnalysisComponent.h"
 
 //==============================================================================
-class SuperMoToAudioProcessorEditor  : public juce::AudioProcessorEditor
+class SuperMoToAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                       private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     explicit SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor&);
@@ -55,6 +56,10 @@ private:
     enum class View { matrix, configTool, calibration, analysis };
     void setView (View v);
     void setEditConfig (int c);
+
+    // The matrix view follows the engaged configuration (A..F buttons); the
+    // Edit buttons still allow browsing a config without engaging it.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
 
     SuperMoToAudioProcessor& audioProcessor;
 
