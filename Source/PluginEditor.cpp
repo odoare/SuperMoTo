@@ -76,6 +76,30 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     initViewButton (analysisButton, "Analysis", View::analysis);
 
     // ── Matrix view ──────────────────────────────────────────────────────────
+    // Matrix size selectors (rows = inputs, columns = outputs).
+    auto initSizeBox = [this] (juce::Label& l, juce::ComboBox& b, const juce::String& text)
+    {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (juce::Font (12.0f));
+        l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        addAndMakeVisible (l);
+
+        for (int n = 1; n <= smt::numChannels; ++n)
+            b.addItem (juce::String (n), n);
+        SuperMoToTheme::accentComboBox (b, SuperMoToTheme::master);
+        b.onChange = [this]
+        {
+            audioProcessor.configModel.setMatrixSize (insBox.getSelectedId(),
+                                                      outsBox.getSelectedId());
+        };
+        addAndMakeVisible (b);
+    };
+    initSizeBox (insLabel, insBox, "Inputs:");
+    initSizeBox (outsLabel, outsBox, "Outputs:");
+    insBox.setSelectedId (audioProcessor.configModel.getNumIns(), juce::dontSendNotification);
+    outsBox.setSelectedId (audioProcessor.configModel.getNumOuts(), juce::dontSendNotification);
+    audioProcessor.configModel.addListener (this);
+
     addAndMakeVisible (matrix);
     matrix.onFrameSelected = [this] (int in, int out)
     {
@@ -136,9 +160,16 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
 {
+    audioProcessor.configModel.removeListener (this);
     for (int c = 0; c < smt::numConfigs; ++c)
         audioProcessor.apvts.removeParameterListener (smt::configName (c), this);
     setLookAndFeel (nullptr);
+}
+
+void SuperMoToAudioProcessorEditor::modelChanged()
+{
+    insBox.setSelectedId (audioProcessor.configModel.getNumIns(), juce::dontSendNotification);
+    outsBox.setSelectedId (audioProcessor.configModel.getNumOuts(), juce::dontSendNotification);
 }
 
 void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
@@ -171,6 +202,10 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     spectrum.setVisible (m);
     frameEditor.setVisible (m);
     editLabel.setVisible (m);
+    insLabel.setVisible (m);
+    insBox.setVisible (m);
+    outsLabel.setVisible (m);
+    outsBox.setVisible (m);
     for (auto* b : editConfigButtons)
         b->setVisible (m);
 
@@ -246,6 +281,13 @@ void SuperMoToAudioProcessorEditor::resized()
     // Matrix view: matrix left, analyzer + frame editor right
     auto right = main.removeFromRight (juce::jmax (340, main.getWidth() / 4 + 60));
     main.removeFromRight (8);
+
+    auto sizeRow = main.removeFromTop (24);
+    insLabel.setBounds (sizeRow.removeFromLeft (48));
+    insBox.setBounds (sizeRow.removeFromLeft (58).reduced (0, 1));
+    sizeRow.removeFromLeft (14);
+    outsLabel.setBounds (sizeRow.removeFromLeft (56));
+    outsBox.setBounds (sizeRow.removeFromLeft (58).reduced (0, 1));
     matrix.setBounds (main);
 
     auto editRow = right.removeFromTop (26);

@@ -85,6 +85,7 @@ private:
     std::array<juce::String, numChannels> loadedFirPaths;
 
     juce::AudioBuffer<float> outScratch;
+    int visIns = numChannels, visOuts = numChannels;   // processed matrix size
     int lastModelVersion = 0;
     double sr = 44100.0;
     bool prepared = false;

@@ -24,12 +24,14 @@
 
 class CalibrationComponent : public juce::Component,
                              private juce::ChangeListener,
-                             private juce::Timer
+                             private juce::Timer,
+                             private smt::ConfigModel::Listener
 {
 public:
     explicit CalibrationComponent (SuperMoToAudioProcessor& p) : processor (p)
     {
         processor.measurement.addChangeListener (this);
+        processor.configModel.addListener (this);
 
         title.setText ("Measurement & calibration", juce::dontSendNotification);
         title.setFont (juce::Font (17.0f, juce::Font::bold));
@@ -106,6 +108,7 @@ public:
 
     ~CalibrationComponent() override
     {
+        processor.configModel.removeListener (this);
         processor.measurement.removeChangeListener (this);
     }
 
@@ -133,9 +136,14 @@ public:
         area.removeFromTop (10);
         outputsLabel.setBounds (area.removeFromTop (18));
         auto toggleArea = area.removeFromTop (26);
-        const int tw = toggleArea.getWidth() / smt::numChannels;
-        for (auto* b : outputToggles)
-            b->setBounds (toggleArea.removeFromLeft (tw));
+        const int numOuts = processor.configModel.getNumOuts();
+        const int tw = toggleArea.getWidth() / numOuts;
+        for (int o = 0; o < outputToggles.size(); ++o)
+        {
+            outputToggles[o]->setVisible (o < numOuts);
+            if (o < numOuts)
+                outputToggles[o]->setBounds (toggleArea.removeFromLeft (tw));
+        }
 
         area.removeFromTop (10);
         auto r2 = area.removeFromTop (24);
@@ -224,6 +232,16 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         refresh();
+    }
+
+    void modelChanged() override
+    {
+        // Matrix size changed: re-layout the output toggles and untick the
+        // hidden ones so they cannot be measured.
+        for (int o = processor.configModel.getNumOuts(); o < outputToggles.size(); ++o)
+            outputToggles[o]->setToggleState (false, juce::dontSendNotification);
+        resized();
+        repaint();
     }
 
     void timerCallback() override

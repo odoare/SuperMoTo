@@ -42,7 +42,8 @@
 
 //==============================================================================
 class SuperMoToAudioProcessorEditor  : public juce::AudioProcessorEditor,
-                                       private juce::AudioProcessorValueTreeState::Listener
+                                       private juce::AudioProcessorValueTreeState::Listener,
+                                       private smt::ConfigModel::Listener
 {
 public:
     explicit SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor&);
@@ -61,6 +62,9 @@ private:
     // Edit buttons still allow browsing a config without engaging it.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
+    // Keeps the matrix-size combos in sync with the model (state restore).
+    void modelChanged() override;
+
     SuperMoToAudioProcessor& audioProcessor;
 
     fxme::FxmeLookAndFeel fxmeLookAndFeel;
@@ -74,6 +78,8 @@ private:
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;
+    juce::Label insLabel, outsLabel;
+    juce::ComboBox insBox, outsBox;                         // matrix size
     juce::OwnedArray<juce::TextButton> editConfigButtons;   // which config is edited
     juce::Label editLabel;
     SpectrumAnalyzerComponent spectrum;

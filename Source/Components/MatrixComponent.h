@@ -55,7 +55,18 @@ public:
 
 private:
     void timerCallback() override               { repaint(); }
-    void modelChanged() override                { repaint(); }
+
+    void modelChanged() override
+    {
+        // Drop the selection if a matrix-size shrink hid the selected frame.
+        if (selIn >= model.getNumIns() || selOut >= model.getNumOuts())
+        {
+            selIn = selOut = -1;
+            if (onFrameSelected != nullptr)
+                onFrameSelected (-1, -1);
+        }
+        repaint();
+    }
 
     // Geometry
     static constexpr int labelW = 30;       // input labels column

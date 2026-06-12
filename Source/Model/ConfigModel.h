@@ -115,6 +115,24 @@ public:
         bumpAndNotify();
     }
 
+    //==========================================================================
+    // Visible/processed matrix size. Global like the output settings: it
+    // describes the physical installation. Hidden frames keep their settings.
+    int getNumIns() const noexcept      { return numIns.load(); }
+    int getNumOuts() const noexcept     { return numOuts.load(); }
+
+    void setMatrixSize (int ins, int outs)
+    {
+        ins  = juce::jlimit (1, numChannels, ins);
+        outs = juce::jlimit (1, numChannels, outs);
+        if (ins == numIns.load() && outs == numOuts.load())
+            return;
+        numIns.store (ins);
+        numOuts.store (outs);
+        bumpAndNotify();
+    }
+
+    //==========================================================================
     OutputSettings getOutput (int out) const
     {
         const juce::SpinLock::ScopedLockType sl (lock);
@@ -173,8 +191,8 @@ public:
         const juce::SpinLock::ScopedLockType sl (lock);
         std::vector<FrameRef> refs;
         for (int c = 0; c < numConfigs; ++c)
-            for (int i = 0; i < numChannels; ++i)
-                for (int o = 0; o < numChannels; ++o)
+            for (int i = 0; i < numIns.load(); ++i)
+                for (int o = 0; o < numOuts.load(); ++o)
                     if (frames[(size_t) c][(size_t) i][(size_t) o].spectrum
                         && (int) refs.size() < maxFrameTaps)
                         refs.push_back ({ c, i, o });
@@ -196,6 +214,7 @@ private:
     mutable juce::SpinLock lock;
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frames {};
     std::array<OutputSettings, numChannels> outputs {};
+    std::atomic<int> numIns { numChannels }, numOuts { numChannels };
     std::atomic<int> version { 1 };
 
     juce::ListenerList<Listener> listeners;

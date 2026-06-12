@@ -35,8 +35,8 @@ juce::Rectangle<int> MatrixComponent::gridArea() const
 juce::Rectangle<int> MatrixComponent::frameBounds (int in, int out) const
 {
     const auto g = gridArea();
-    const float cw = (float) g.getWidth() / (float) numChannels;
-    const float ch = (float) g.getHeight() / (float) numChannels;
+    const float cw = (float) g.getWidth() / (float) model.getNumOuts();
+    const float ch = (float) g.getHeight() / (float) model.getNumIns();
     return juce::Rectangle<float> ((float) g.getX() + (float) out * cw,
                                    (float) g.getY() + (float) in * ch,
                                    cw, ch).toNearestInt().reduced (1);
@@ -45,7 +45,7 @@ juce::Rectangle<int> MatrixComponent::frameBounds (int in, int out) const
 juce::Rectangle<int> MatrixComponent::outputCellBounds (int out) const
 {
     const auto g = gridArea();
-    const float cw = (float) g.getWidth() / (float) numChannels;
+    const float cw = (float) g.getWidth() / (float) model.getNumOuts();
     return juce::Rectangle<float> ((float) g.getX() + (float) out * cw,
                                    (float) g.getBottom() + 2.0f,
                                    cw, (float) outputStripH - 4.0f).toNearestInt().reduced (1);
@@ -54,44 +54,48 @@ juce::Rectangle<int> MatrixComponent::outputCellBounds (int out) const
 bool MatrixComponent::hitTest (juce::Point<int> pos, int& in, int& out, bool& isOutputStrip) const
 {
     const auto g = gridArea();
-    const float cw = (float) g.getWidth() / (float) numChannels;
+    const int numIns = model.getNumIns();
+    const int numOuts = model.getNumOuts();
+    const float cw = (float) g.getWidth() / (float) numOuts;
 
     if (pos.y > g.getBottom())
     {
         out = (int) ((float) (pos.x - g.getX()) / cw);
         isOutputStrip = true;
         in = -1;
-        return out >= 0 && out < numChannels && pos.x >= g.getX();
+        return out >= 0 && out < numOuts && pos.x >= g.getX();
     }
 
     if (! g.contains (pos))
         return false;
 
-    const float ch = (float) g.getHeight() / (float) numChannels;
+    const float ch = (float) g.getHeight() / (float) numIns;
     out = (int) ((float) (pos.x - g.getX()) / cw);
     in  = (int) ((float) (pos.y - g.getY()) / ch);
     isOutputStrip = false;
-    return in >= 0 && in < numChannels && out >= 0 && out < numChannels;
+    return in >= 0 && in < numIns && out >= 0 && out < numOuts;
 }
 
 //==============================================================================
 void MatrixComponent::paint (juce::Graphics& g)
 {
     const auto grid = gridArea();
-    const float cw = (float) grid.getWidth() / (float) numChannels;
-    const float ch = (float) grid.getHeight() / (float) numChannels;
+    const int numIns = model.getNumIns();
+    const int numOuts = model.getNumOuts();
+    const float cw = (float) grid.getWidth() / (float) numOuts;
+    const float ch = (float) grid.getHeight() / (float) numIns;
 
     g.setFont (11.0f);
 
     // Output numbers (header) and input numbers (left column)
-    for (int o = 0; o < numChannels; ++o)
+    for (int o = 0; o < numOuts; ++o)
     {
         g.setColour (SuperMoToTheme::dimText);
         g.drawText (juce::String (o + 1),
                     grid.getX() + (int) ((float) o * cw), 0, (int) cw, headerH,
                     juce::Justification::centred);
     }
-    for (int i = 0; i < numChannels; ++i)
+    for (int i = 0; i < numIns; ++i)
     {
         g.setColour (SuperMoToTheme::inputColour (i).withAlpha (0.9f));
         g.drawText (juce::String (i + 1),
@@ -100,9 +104,9 @@ void MatrixComponent::paint (juce::Graphics& g)
     }
 
     // Frames
-    for (int i = 0; i < numChannels; ++i)
+    for (int i = 0; i < numIns; ++i)
     {
-        for (int o = 0; o < numChannels; ++o)
+        for (int o = 0; o < numOuts; ++o)
         {
             const auto r = frameBounds (i, o).toFloat();
             const auto f = model.getFrame (editConfig, i, o);
@@ -168,7 +172,7 @@ void MatrixComponent::paint (juce::Graphics& g)
 
     // Output strip
     g.setFont (10.0f);
-    for (int o = 0; o < numChannels; ++o)
+    for (int o = 0; o < numOuts; ++o)
     {
         const auto r = outputCellBounds (o).toFloat();
         const auto s = model.getOutput (o);

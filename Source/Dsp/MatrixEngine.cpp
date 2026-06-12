@@ -51,17 +51,30 @@ void MatrixEngine::pullModelIfChanged()
 
     model.copyAll (frameSettings, outputSettings);
 
+    // Visible/processed matrix size. Frames revealed by a grow are reset so
+    // stale delay-line content does not play back.
+    const int newIns = model.getNumIns();
+    const int newOuts = model.getNumOuts();
+    if (newIns > visIns || newOuts > visOuts)
+        for (int c = 0; c < numConfigs; ++c)
+            for (int i = 0; i < newIns; ++i)
+                for (int o = 0; o < newOuts; ++o)
+                    if (i >= visIns || o >= visOuts)
+                        frames[(size_t) c][(size_t) i][(size_t) o].reset();
+    visIns = newIns;
+    visOuts = newOuts;
+
     for (int c = 0; c < numConfigs; ++c)
         for (int i = 0; i < numChannels; ++i)
             for (int o = 0; o < numChannels; ++o)
                 frames[(size_t) c][(size_t) i][(size_t) o]
                     .applySettings (frameSettings[(size_t) c][(size_t) i][(size_t) o]);
 
-    // Frame spectrum tap routing: checked frames in scan order, capped.
+    // Frame spectrum tap routing: checked visible frames in scan order, capped.
     int slot = 0;
     for (int c = 0; c < numConfigs && slot < maxFrameTaps; ++c)
-        for (int i = 0; i < numChannels && slot < maxFrameTaps; ++i)
-            for (int o = 0; o < numChannels && slot < maxFrameTaps; ++o)
+        for (int i = 0; i < visIns && slot < maxFrameTaps; ++i)
+            for (int o = 0; o < visOuts && slot < maxFrameTaps; ++o)
                 if (frameSettings[(size_t) c][(size_t) i][(size_t) o].spectrum)
                     spectrumBus.setFrameRoute (slot++, c, i, o);
     for (; slot < maxFrameTaps; ++slot)
@@ -71,7 +84,8 @@ void MatrixEngine::pullModelIfChanged()
     {
         outputGains[(size_t) o].setTargetValue (
             juce::Decibels::decibelsToGain (outputSettings[(size_t) o].gainDb));
-        spectrumBus.outputTap (o).setEnabled (outputSettings[(size_t) o].spectrum);
+        spectrumBus.outputTap (o).setEnabled (outputSettings[(size_t) o].spectrum
+                                              && o < visOuts);
     }
 }
 
@@ -95,10 +109,10 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
         if (! configActive[(size_t) c])
             continue;
 
-        for (int i = 0; i < numChannels; ++i)
+        for (int i = 0; i < visIns; ++i)
         {
             const float* in = inputs[i];
-            for (int o = 0; o < numChannels; ++o)
+            for (int o = 0; o < visOuts; ++o)
             {
                 auto& frame = frames[(size_t) c][(size_t) i][(size_t) o];
                 if (! frame.isActive())
@@ -119,6 +133,13 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
     // Per-output chain: trim, FIR correction, master, metering, spectrum tap.
     for (int o = 0; o < numChannels; ++o)
     {
+        if (o >= visOuts)
+        {
+            // Hidden output: already cleared, just keep its meter at silence.
+            outputLevels[(size_t) o].store (0.0f);
+            continue;
+        }
+
         auto* data = outScratch.getWritePointer (o);
 
         for (int s = 0; s < n; ++s)

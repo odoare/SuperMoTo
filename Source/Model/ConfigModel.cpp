@@ -25,6 +25,8 @@ juce::ValueTree ConfigModel::toValueTree() const
     copyAll (fr, outs);
 
     juce::ValueTree tree (idConfigurations);
+    tree.setProperty ("numIns", numIns.load(), nullptr);
+    tree.setProperty ("numOuts", numOuts.load(), nullptr);
 
     for (int c = 0; c < numConfigs; ++c)
     {
@@ -79,6 +81,9 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
 {
     if (! tree.hasType (idConfigurations))
         return;
+
+    numIns.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numIns", numChannels)));
+    numOuts.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numOuts", numChannels)));
 
     {
         const juce::SpinLock::ScopedLockType sl (lock);
