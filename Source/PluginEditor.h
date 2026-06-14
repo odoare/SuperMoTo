@@ -58,6 +58,10 @@ private:
     void setView (View v);
     void setEditConfig (int c);
 
+    // Compact mode: only the top bar and the output strip stay visible and
+    // the window shrinks to match.
+    void setCollapsed (bool shouldCollapse);
+
     // The matrix view follows the engaged configuration (A..F buttons); the
     // Edit buttons still allow browsing a config without engaging it.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
@@ -74,6 +78,9 @@ private:
     juce::OwnedArray<fxme::FxmeButton> configButtons;       // A..F (engage)
     std::unique_ptr<fxme::FxmeButton> exclusiveButton, muteButton, dimButton, monoButton;
     std::unique_ptr<fxme::FxmeKnob> levelKnob;
+    juce::TextButton collapseButton;
+
+    // ── Bottom control bar ───────────────────────────────────────────────────
     juce::TextButton matrixViewButton, configToolButton, calibrationButton, analysisButton;
 
     // ── Matrix view ──────────────────────────────────────────────────────────
@@ -92,6 +99,9 @@ private:
 
     View currentView = View::matrix;
     int editConfig = 0;
+
+    bool collapsed = false;
+    int expandedWidth = 1280, expandedHeight = 820;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SuperMoToAudioProcessorEditor)
 };

@@ -57,12 +57,15 @@ windows of selectable size, default 65536). The propagation delay of each
 measurement is removed so the complex responses can be averaged.
 
 The plot shows the individual smoothed transfer functions (thin), their
-average (thick), the proposed correction and the corrected response. The
-correction compensates **modulus and phase**: it is the regularized inverse
-of the 1/6-octave-smoothed average, with a slope (2nd-order highpass
-target at 30 Hz) towards low frequencies and a +12 dB boost cap. The
-**correction level** interpolates (log-domain) from 0 = no correction to
-1 = flat.
+average (thick), the proposed correction and the corrected response —
+magnitude (normalized to the 200 Hz..2 kHz mean) and phase (propagation
+delay removed). An **nth-octave smoothing** (off to 1 octave, default 1/6)
+applies to the displayed curves and to the average the correction is
+derived from. The correction compensates **modulus and phase**: it is the
+inverse of the smoothed average, with a slope (2nd-order highpass target
+at 30 Hz) towards low frequencies and an adjustable boost cap (default
++12 dB). The **correction level** interpolates (log-domain) from 0 = no
+correction to 1 = flat.
 
 **Export** renders the correction to an impulse response wav (selectable
 FIR length, energy centred at half the length) and can directly assign it

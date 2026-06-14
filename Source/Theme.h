@@ -32,7 +32,7 @@ namespace SuperMoToTheme
     inline const juce::Colour panel       { 0xff20202c };
     inline const juce::Colour panelLine   { 0xff3a3a4c };
     inline const juce::Colour text        { 0xffd8d8e0 };
-    inline const juce::Colour dimText     { 0xff8a8a98 };
+    inline const juce::Colour dimText     { 0xff9a9aa8 };
 
     inline const juce::Colour master      { 0xffe8833a };   // orange (master level)
     inline const juce::Colour mute        { 0xffe05858 };

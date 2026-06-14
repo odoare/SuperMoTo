@@ -28,8 +28,9 @@ MatrixComponent::~MatrixComponent()
 //==============================================================================
 juce::Rectangle<int> MatrixComponent::gridArea() const
 {
-    return getLocalBounds().withTrimmedLeft (labelW).withTrimmedTop (headerH)
-                           .withTrimmedBottom (outputStripH);
+    // Output strip on top, column numbers along the bottom.
+    return getLocalBounds().withTrimmedLeft (labelW).withTrimmedTop (outputStripH)
+                           .withTrimmedBottom (headerH);
 }
 
 juce::Rectangle<int> MatrixComponent::frameBounds (int in, int out) const
@@ -44,29 +45,28 @@ juce::Rectangle<int> MatrixComponent::frameBounds (int in, int out) const
 
 juce::Rectangle<int> MatrixComponent::outputCellBounds (int out) const
 {
-    const auto g = gridArea();
-    const float cw = (float) g.getWidth() / (float) model.getNumOuts();
-    return juce::Rectangle<float> ((float) g.getX() + (float) out * cw,
-                                   (float) g.getBottom() + 2.0f,
+    const float cw = (float) (getWidth() - labelW) / (float) model.getNumOuts();
+    return juce::Rectangle<float> ((float) labelW + (float) out * cw,
+                                   2.0f,
                                    cw, (float) outputStripH - 4.0f).toNearestInt().reduced (1);
 }
 
 bool MatrixComponent::hitTest (juce::Point<int> pos, int& in, int& out, bool& isOutputStrip) const
 {
-    const auto g = gridArea();
     const int numIns = model.getNumIns();
     const int numOuts = model.getNumOuts();
-    const float cw = (float) g.getWidth() / (float) numOuts;
+    const float cw = (float) (getWidth() - labelW) / (float) numOuts;
 
-    if (pos.y > g.getBottom())
+    if (pos.y < outputStripH)
     {
-        out = (int) ((float) (pos.x - g.getX()) / cw);
+        out = (int) ((float) (pos.x - labelW) / cw);
         isOutputStrip = true;
         in = -1;
-        return out >= 0 && out < numOuts && pos.x >= g.getX();
+        return out >= 0 && out < numOuts && pos.x >= labelW;
     }
 
-    if (! g.contains (pos))
+    const auto g = gridArea();
+    if (! isGridVisible() || ! g.contains (pos))
         return false;
 
     const float ch = (float) g.getHeight() / (float) numIns;
@@ -84,15 +84,62 @@ void MatrixComponent::paint (juce::Graphics& g)
     const int numOuts = model.getNumOuts();
     const float cw = (float) grid.getWidth() / (float) numOuts;
     const float ch = (float) grid.getHeight() / (float) numIns;
+    const bool gridVisible = isGridVisible();
 
     g.setFont (11.0f);
 
-    // Output numbers (header) and input numbers (left column)
+    // Output strip (always shown, also in collapsed mode)
+    g.setFont (10.0f);
+    for (int o = 0; o < numOuts; ++o)
+    {
+        const auto r = outputCellBounds (o).toFloat();
+        const auto s = model.getOutput (o);
+        const bool hasIr = engine.getFir (o).hasImpulse();
+
+        g.setColour (SuperMoToTheme::panel);
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (SuperMoToTheme::panelLine);
+        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 0.8f);
+
+        // Trim value
+        g.setColour (SuperMoToTheme::text);
+        g.drawText (juce::String (s.gainDb, 1), r.toNearestInt().removeFromTop (14),
+                    juce::Justification::centred);
+
+        // FIR state
+        g.setColour (s.firOn && hasIr ? SuperMoToTheme::fir
+                     : hasIr          ? SuperMoToTheme::fir.darker (1.2f)
+                                      : SuperMoToTheme::dimText.darker (0.8f));
+        g.drawText ("FIR", r.toNearestInt().withTrimmedTop (13).removeFromTop (12),
+                    juce::Justification::centred);
+
+        // Output vu-meter (horizontal, at the bottom of the cell)
+        const float lvl = engine.getOutputLevelDb (o);
+        const float w = juce::jmap (juce::jlimit (-60.0f, 6.0f, lvl),
+                                    -60.0f, 6.0f, 0.0f, r.getWidth() - 6.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, r.getWidth() - 6.0f, 5.0f);
+        g.setColour (lvl > 0.0f ? juce::Colours::red : juce::Colours::green.brighter (0.3f));
+        g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, w, 5.0f);
+
+        if (s.spectrum)
+        {
+            g.setColour (SuperMoToTheme::spectrum);
+            g.fillEllipse (r.getX() + 2.0f, r.getY() + 2.0f, 5.0f, 5.0f);
+        }
+    }
+
+    if (! gridVisible)
+        return;
+
+    g.setFont (11.0f);
+
+    // Output numbers (bottom row) and input numbers (left column)
     for (int o = 0; o < numOuts; ++o)
     {
         g.setColour (SuperMoToTheme::dimText);
         g.drawText (juce::String (o + 1),
-                    grid.getX() + (int) ((float) o * cw), 0, (int) cw, headerH,
+                    grid.getX() + (int) ((float) o * cw), grid.getBottom(), (int) cw, headerH,
                     juce::Justification::centred);
     }
     for (int i = 0; i < numIns; ++i)
@@ -167,47 +214,6 @@ void MatrixComponent::paint (juce::Graphics& g)
                 g.setColour (SuperMoToTheme::spectrum);
                 g.fillEllipse (r.getX() + 2.0f, r.getY() + 2.0f, 5.0f, 5.0f);
             }
-        }
-    }
-
-    // Output strip
-    g.setFont (10.0f);
-    for (int o = 0; o < numOuts; ++o)
-    {
-        const auto r = outputCellBounds (o).toFloat();
-        const auto s = model.getOutput (o);
-        const bool hasIr = engine.getFir (o).hasImpulse();
-
-        g.setColour (SuperMoToTheme::panel);
-        g.fillRoundedRectangle (r, 3.0f);
-        g.setColour (SuperMoToTheme::panelLine);
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 0.8f);
-
-        // Trim value
-        g.setColour (SuperMoToTheme::text);
-        g.drawText (juce::String (s.gainDb, 1), r.toNearestInt().removeFromTop (14),
-                    juce::Justification::centred);
-
-        // FIR state
-        g.setColour (s.firOn && hasIr ? SuperMoToTheme::fir
-                     : hasIr          ? SuperMoToTheme::fir.darker (1.2f)
-                                      : SuperMoToTheme::dimText.darker (0.8f));
-        g.drawText ("FIR", r.toNearestInt().withTrimmedTop (13).removeFromTop (12),
-                    juce::Justification::centred);
-
-        // Output vu-meter (horizontal, at the bottom)
-        const float lvl = engine.getOutputLevelDb (o);
-        const float w = juce::jmap (juce::jlimit (-60.0f, 6.0f, lvl),
-                                    -60.0f, 6.0f, 0.0f, r.getWidth() - 6.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
-        g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, r.getWidth() - 6.0f, 5.0f);
-        g.setColour (lvl > 0.0f ? juce::Colours::red : juce::Colours::green.brighter (0.3f));
-        g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, w, 5.0f);
-
-        if (s.spectrum)
-        {
-            g.setColour (SuperMoToTheme::spectrum);
-            g.fillEllipse (r.getX() + 2.0f, r.getY() + 2.0f, 5.0f, 5.0f);
         }
     }
 }

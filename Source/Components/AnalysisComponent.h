@@ -49,6 +49,24 @@ public:
         };
         addAndMakeVisible (windowBox);
 
+        addLabel (smoothLabel, "Smoothing");
+        smoothBox.addItem ("Off", 1);
+        smoothBox.addItem ("1/24 oct", 2);
+        smoothBox.addItem ("1/12 oct", 3);
+        smoothBox.addItem ("1/6 oct", 4);
+        smoothBox.addItem ("1/3 oct", 5);
+        smoothBox.addItem ("1 oct", 6);
+        smoothBox.setSelectedId (4, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (smoothBox, SuperMoToTheme::spectrum);
+        smoothBox.onChange = [this]
+        {
+            static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
+                                               1.0f / 6.0f, 1.0f / 3.0f, 1.0f };
+            analysis.setSmoothing (fractions[juce::jlimit (0, 5, smoothBox.getSelectedId() - 1)]);
+            updatePlotData();
+        };
+        addAndMakeVisible (smoothBox);
+
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         levelSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
@@ -62,12 +80,53 @@ public:
         };
         addAndMakeVisible (levelSlider);
 
+        addLabel (boostLabel, "Max boost");
+        boostSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        boostSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
+        boostSlider.setRange (0.0, 24.0, 0.5);
+        boostSlider.setValue (12.0, juce::dontSendNotification);
+        boostSlider.setTextValueSuffix (" dB");
+        SuperMoToTheme::accentSlider (boostSlider, SuperMoToTheme::master);
+        boostSlider.onValueChange = [this]
+        {
+            analysis.setMaxBoostDb ((float) boostSlider.getValue());
+            updatePlotData();
+        };
+        addAndMakeVisible (boostSlider);
+
+        // Frequency band the analysis acts on: outside it the correction is
+        // unity and the exported measured IR is rolled off. Editable, with a
+        // few standard values preset.
+        addLabel (rangeLabel, "Analysis range");
+        auto setupFreqBox = [this] (juce::ComboBox& box,
+                                    std::initializer_list<int> presets, int def)
+        {
+            for (int f : presets)
+                box.addItem (juce::String (f) + " Hz", f);
+            box.setEditableText (true);
+            box.setSelectedId (def, juce::dontSendNotification);
+            SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
+            box.onChange = [this] { pushRange(); };
+            addAndMakeVisible (box);
+        };
+        setupFreqBox (lowFreqBox,  { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
+        setupFreqBox (highFreqBox, { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
+        addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));    // en dash
+        rangeToLabel.setJustificationType (juce::Justification::centred);
+
         addLabel (firLabel, "FIR length");
-        for (int size = 1 << 10; size <= 1 << 16; size <<= 1)
+        // Short FIRs (few taps) are cheaper and lower-latency but can only
+        // correct higher frequencies; long FIRs reach the low end. See firInfo.
+        for (int size = 1 << 8; size <= 1 << 16; size <<= 1)
             firBox.addItem (juce::String (size), size);
         firBox.setSelectedId (4096, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (firBox, SuperMoToTheme::fir);
+        firBox.onChange = [this] { updateFirInfo(); };
         addAndMakeVisible (firBox);
+
+        firInfo.setFont (juce::Font (12.0f));
+        firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
+        addAndMakeVisible (firInfo);
 
         addLabel (assignLabel, "Assign to");
         assignBox.addItem ("(none)", 1);
@@ -76,6 +135,12 @@ public:
         assignBox.setSelectedId (1, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (assignBox, SuperMoToTheme::fir);
         addAndMakeVisible (assignBox);
+
+        exportMeasuredButton.setButtonText ("Export IR...");
+        exportMeasuredButton.setColour (juce::TextButton::buttonColourId,
+                                        SuperMoToTheme::spectrum.darker (1.0f));
+        exportMeasuredButton.onClick = [this] { exportMeasuredIr(); };
+        addAndMakeVisible (exportMeasuredButton);
 
         exportButton.setButtonText ("Export correction IR...");
         exportButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (1.0f));
@@ -86,6 +151,7 @@ public:
         addAndMakeVisible (status);
 
         buildFreqGrid();
+        updateFirInfo();
     }
 
     void paint (juce::Graphics& g) override
@@ -104,11 +170,23 @@ public:
         title.setBounds (area.removeFromTop (26));
         area.removeFromTop (6);
 
+        // The two export buttons share a column: "Export IR" sits to the right
+        // of the smoothing control on row 1, the correction export directly
+        // below it on row 2 (same x, same width). The level / boost sliders take
+        // whatever is left to the right of that column.
+        constexpr int exportW = 165;
+
         auto r1 = area.removeFromTop (24);
         loadButton.setBounds (r1.removeFromLeft (170));
         r1.removeFromLeft (16);
         windowLabel.setBounds (r1.removeFromLeft (90));
         windowBox.setBounds (r1.removeFromLeft (100));
+        r1.removeFromLeft (16);
+        smoothLabel.setBounds (r1.removeFromLeft (70));
+        smoothBox.setBounds (r1.removeFromLeft (90));
+        r1.removeFromLeft (16);
+        exportMeasuredButton.setBounds (r1.removeFromLeft (exportW));
+        const int exportX = exportMeasuredButton.getX();
         r1.removeFromLeft (16);
         levelLabel.setBounds (r1.removeFromLeft (100));
         levelSlider.setBounds (r1);
@@ -120,10 +198,24 @@ public:
         r2.removeFromLeft (16);
         assignLabel.setBounds (r2.removeFromLeft (62));
         assignBox.setBounds (r2.removeFromLeft (110));
+        // Jump to the export column so the correction button lines up under
+        // "Export IR" regardless of the controls on its left.
+        r2.removeFromLeft (juce::jmax (16, exportX - r2.getX()));
+        exportButton.setBounds (r2.removeFromLeft (exportW));
         r2.removeFromLeft (16);
-        exportButton.setBounds (r2.removeFromLeft (180));
+        boostLabel.setBounds (r2.removeFromLeft (70));
+        boostSlider.setBounds (r2);
 
         area.removeFromTop (6);
+        auto r3 = area.removeFromTop (22);
+        rangeLabel.setBounds (r3.removeFromLeft (96));
+        lowFreqBox.setBounds (r3.removeFromLeft (88));
+        rangeToLabel.setBounds (r3.removeFromLeft (14));
+        highFreqBox.setBounds (r3.removeFromLeft (88));
+        r3.removeFromLeft (20);
+        firInfo.setBounds (r3);
+
+        area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));
         area.removeFromBottom (4);
         plotArea = area;
@@ -181,18 +273,88 @@ private:
             : "No file could be analyzed (need stereo wavs longer than the window).",
             juce::dontSendNotification);
 
+        updateFirInfo();
+        updatePlotData();
+    }
+
+    // Spell out what the selected FIR length can actually correct: a FIR of N
+    // taps resolves down to a couple of bins (~2*fs/N), spans N/fs seconds and
+    // adds N/2 samples of latency (the correction is centred in the FIR).
+    void updateFirInfo()
+    {
+        const int N = firBox.getSelectedId();
+        double fs = analysis.getSampleRate();
+        const bool known = fs > 0.0;
+        if (! known)
+            fs = 48000.0;
+
+        const double durMs  = 1000.0 * (double) N / fs;
+        const double latMs  = 1000.0 * (double) (N / 2) / fs;
+        const double fMinHz = 2.0 * fs / (double) N;
+
+        firInfo.setText (
+            juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
+                + juce::String (fMinHz, fMinHz < 100.0 ? 1 : 0) + " Hz   "
+                + juce::String::fromUTF8 ("\xc2\xb7  ") + juce::String (durMs, 0) + " ms long  "
+                + juce::String::fromUTF8 ("\xc2\xb7  ") + juce::String (latMs, 0) + " ms latency"
+                + (known ? juce::String() : juce::String ("   (at 48 kHz)")),
+            juce::dontSendNotification);
+    }
+
+    void pushRange()
+    {
+        analysis.setAnalysisRange (lowFreqBox.getText().getFloatValue(),
+                                   highFreqBox.getText().getFloatValue());
         updatePlotData();
     }
 
     void updatePlotData()
     {
         curveDbs.clear();
+        curvePhases.clear();
         for (int i = 0; i < analysis.getNumCurves(); ++i)
+        {
             curveDbs.push_back (analysis.getCurveDb (i, freqs));
-        averageDb   = analysis.getAverageDb (freqs);
-        correctionDb = analysis.getCorrectionDb (freqs);
-        correctedDb = analysis.getCorrectedDb (freqs);
+            curvePhases.push_back (analysis.getCurvePhaseDeg (i, freqs));
+        }
+        averageDb       = analysis.getAverageDb (freqs);
+        correctionDb    = analysis.getCorrectionDb (freqs);
+        correctedDb     = analysis.getCorrectedDb (freqs);
+        averagePhase    = analysis.getAveragePhaseDeg (freqs);
+        correctionPhase = analysis.getCorrectionPhaseDeg (freqs);
+        correctedPhase  = analysis.getCorrectedPhaseDeg (freqs);
         repaint();
+    }
+
+    void exportMeasuredIr()
+    {
+        if (! analysis.hasData())
+        {
+            status.setText ("Load measurements first.", juce::dontSendNotification);
+            return;
+        }
+
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Export measured impulse response",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                .getChildFile ("measurement.wav"), "*.wav");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+                if (! file.hasFileExtension ("wav"))
+                    file = file.withFileExtension ("wav");
+
+                status.setText (analysis.exportMeasuredIR (file, firBox.getSelectedId())
+                                    ? "Exported " + file.getFileName()
+                                    : "Export failed.",
+                                juce::dontSendNotification);
+            });
     }
 
     void exportIr()
@@ -272,74 +434,140 @@ private:
         g.strokePath (path, juce::PathStrokeType (thickness));
     }
 
+    static float phaseToY (float deg, juce::Rectangle<float> r)
+    {
+        return juce::jmap (juce::jlimit (-180.0f, 180.0f, deg),
+                           -180.0f, 180.0f, r.getBottom(), r.getY());
+    }
+
+    void drawPhaseCurve (juce::Graphics& g, const std::vector<float>& degs,
+                         juce::Rectangle<float> r, juce::Colour colour, float thickness) const
+    {
+        if (degs.size() != freqs.size())
+            return;
+        juce::Path path;
+        bool started = false;
+        for (size_t p = 0; p < freqs.size(); ++p)
+        {
+            const float x = freqToX (freqs[p], r);
+            const float y = phaseToY (degs[p], r);
+            // Break the line on +/-180 degree wraps instead of drawing a
+            // vertical jump across the panel.
+            if (! started || (p > 0 && std::abs (degs[p] - degs[p - 1]) > 180.0f))
+            {
+                path.startNewSubPath (x, y);
+                started = true;
+            }
+            else
+                path.lineTo (x, y);
+        }
+        g.setColour (colour);
+        g.strokePath (path, juce::PathStrokeType (thickness));
+    }
+
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> bounds) const
     {
         g.setColour (juce::Colours::black);
         g.fillRoundedRectangle (bounds, 4.0f);
 
-        auto r = bounds.reduced (24.0f, 12.0f);
+        auto inner = bounds.reduced (24.0f, 12.0f);
+        auto magR = inner.removeFromTop (inner.getHeight() * 0.62f);
+        inner.removeFromTop (14.0f);
+        auto phR = inner;
 
-        g.setFont (10.0f);
+        // Frequency grid spans both panels, labels under the phase panel.
+        g.setFont (13.0f);
         for (float f : { 20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
         {
-            const float x = freqToX (f, r);
+            const float x = freqToX (f, magR);
             g.setColour (juce::Colours::darkgrey.withAlpha (0.4f));
-            g.drawVerticalLine ((int) x, r.getY(), r.getBottom());
+            g.drawVerticalLine ((int) x, magR.getY(), magR.getBottom());
+            g.drawVerticalLine ((int) x, phR.getY(), phR.getBottom());
             g.setColour (SuperMoToTheme::dimText);
             g.drawText (f >= 1000.0f ? juce::String (f / 1000.0f) + "k" : juce::String ((int) f),
-                        (int) x - 14, (int) r.getBottom() + 1, 28, 10, juce::Justification::centred);
+                        (int) x - 18, (int) phR.getBottom() + 2, 36, 14, juce::Justification::centred);
         }
+
+        // ── Magnitude panel ──────────────────────────────────────────────────
         for (float db = plotMinDb; db <= plotMaxDb; db += 10.0f)
         {
-            const float y = dbToY (db, r);
+            const float y = dbToY (db, magR);
             g.setColour (juce::Colours::darkgrey.withAlpha (db == 0.0f ? 0.8f : 0.4f));
-            g.drawHorizontalLine ((int) y, r.getX(), r.getRight());
+            g.drawHorizontalLine ((int) y, magR.getX(), magR.getRight());
             g.setColour (SuperMoToTheme::dimText);
-            g.drawText (juce::String ((int) db), (int) bounds.getX() + 1, (int) y - 5, 21, 10,
+            g.drawText (juce::String ((int) db), (int) bounds.getX() + 1, (int) y - 7, 23, 14,
                         juce::Justification::centredRight);
         }
 
-        // Individual measurements: thin dim lines.
         for (const auto& c : curveDbs)
-            drawCurve (g, c, r, SuperMoToTheme::dimText.withAlpha (0.5f), 0.8f);
+            drawCurve (g, c, magR, juce::Colours::grey.withAlpha (0.55f), 1.0f);
 
-        // Average: thick line. Correction & corrected previews on top.
-        drawCurve (g, averageDb, r, juce::Colours::white, 2.4f);
-        drawCurve (g, correctionDb, r, SuperMoToTheme::master, 1.6f);
-        drawCurve (g, correctedDb, r, SuperMoToTheme::spectrum, 1.6f);
+        drawCurve (g, averageDb, magR, juce::Colours::white, 2.4f);
+        drawCurve (g, correctionDb, magR, SuperMoToTheme::master, 1.6f);
+        drawCurve (g, correctedDb, magR, SuperMoToTheme::spectrum, 1.6f);
 
-        // Legend
+        // ── Phase panel ──────────────────────────────────────────────────────
+        for (float deg = -180.0f; deg <= 180.0f; deg += 90.0f)
+        {
+            const float y = phaseToY (deg, phR);
+            g.setColour (juce::Colours::darkgrey.withAlpha (deg == 0.0f ? 0.8f : 0.4f));
+            g.drawHorizontalLine ((int) y, phR.getX(), phR.getRight());
+            g.setColour (SuperMoToTheme::dimText);
+            g.drawText (juce::String ((int) deg), (int) bounds.getX() + 1, (int) y - 7, 23, 14,
+                        juce::Justification::centredRight);
+        }
+
+        for (const auto& c : curvePhases)
+            drawPhaseCurve (g, c, phR, juce::Colours::grey.withAlpha (0.45f), 1.0f);
+
+        drawPhaseCurve (g, averagePhase, phR, juce::Colours::white, 2.0f);
+        drawPhaseCurve (g, correctionPhase, phR, SuperMoToTheme::master, 1.4f);
+        drawPhaseCurve (g, correctedPhase, phR, SuperMoToTheme::spectrum, 1.4f);
+
+        // ── Legend & axis descriptions ───────────────────────────────────────
         struct Item { const char* name; juce::Colour col; };
         const Item items[] = { { "measurements", SuperMoToTheme::dimText },
                                { "average", juce::Colours::white },
                                { "correction", SuperMoToTheme::master },
                                { "corrected", SuperMoToTheme::spectrum } };
-        int x = (int) r.getX() + 6;
+        int x = (int) magR.getX() + 6;
         g.setFont (11.0f);
         for (const auto& item : items)
         {
             g.setColour (item.col);
-            g.fillRect (x, (int) r.getY() + 4, 10, 3);
+            g.fillRect (x, (int) magR.getY() + 4, 10, 3);
             g.setColour (SuperMoToTheme::text);
             const auto label = juce::String (item.name);
             const int w = (int) juce::GlyphArrangement::getStringWidth (juce::Font (11.0f), label) + 6;
-            g.drawText (label, x + 13, (int) r.getY() - 2, w, 14, juce::Justification::centredLeft);
+            g.drawText (label, x + 13, (int) magR.getY() - 2, w, 14, juce::Justification::centredLeft);
             x += w + 26;
         }
+
+        g.setColour (SuperMoToTheme::dimText);
+        g.drawText (juce::String::fromUTF8 ("|H| (dB) \xe2\x80\x94 0 dB = 200 Hz\xe2\x80\x93"
+                                            "2 kHz mean of the average; correction in absolute dB"),
+                    (int) magR.getX(), (int) magR.getBottom() - 14,
+                    (int) magR.getWidth() - 6, 12, juce::Justification::centredRight);
+        g.drawText (juce::String::fromUTF8 ("phase (\xc2\xb0, propagation delay removed)"),
+                    (int) phR.getX(), (int) phR.getY() + 2,
+                    (int) phR.getWidth() - 6, 12, juce::Justification::centredRight);
     }
 
     SuperMoToAudioProcessor& processor;
     smt::AnalysisEngine analysis;
 
-    juce::Label title, windowLabel, levelLabel, firLabel, assignLabel, status;
-    juce::TextButton loadButton, exportButton;
-    juce::ComboBox windowBox, firBox, assignBox;
+    juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
+    juce::Label firInfo, rangeLabel, rangeToLabel;
+    juce::Slider boostSlider;
+    juce::TextButton loadButton, exportButton, exportMeasuredButton;
+    juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox;
     juce::Slider levelSlider;
 
     juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;
-    std::vector<std::vector<float>> curveDbs;
+    std::vector<std::vector<float>> curveDbs, curvePhases;
     std::vector<float> averageDb, correctionDb, correctedDb;
+    std::vector<float> averagePhase, correctionPhase, correctedPhase;
 
     juce::Rectangle<int> plotArea;
     std::unique_ptr<juce::FileChooser> fileChooser;

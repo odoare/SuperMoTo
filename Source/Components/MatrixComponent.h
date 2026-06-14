@@ -4,8 +4,12 @@
 
     The 16x16 monitoring matrix view. Rows are inputs, columns are outputs.
     Each frame (crosspoint) shows its state (active, gain, filter, delay,
-    phase, analyzer checkbox) and a small vu-meter. The bottom strip shows
-    the per-output chain: trim, FIR correction state and output vu-meter.
+    phase, analyzer checkbox) and a small vu-meter. The strip at the TOP
+    shows the per-output chain: trim, FIR correction state and output
+    vu-meter; the column numbers run along the bottom edge.
+
+    When the component is sized down to outputStripH (collapsed editor),
+    only the output strip is shown and the grid is skipped entirely.
 
     Interactions
       frame:  click = select (opens in the frame editor)
@@ -53,6 +57,8 @@ public:
 
     void setSelectedFrame (int in, int out)     { selIn = in; selOut = out; repaint(); }
 
+    static constexpr int outputStripH = 54;     // height of the output strip
+
 private:
     void timerCallback() override               { repaint(); }
 
@@ -70,10 +76,10 @@ private:
 
     // Geometry
     static constexpr int labelW = 30;       // input labels column
-    static constexpr int headerH = 18;      // output numbers row
-    static constexpr int outputStripH = 54;
+    static constexpr int headerH = 18;      // output numbers row (bottom)
 
     juce::Rectangle<int> gridArea() const;
+    bool isGridVisible() const              { return gridArea().getHeight() > 20; }
     juce::Rectangle<int> frameBounds (int in, int out) const;
     juce::Rectangle<int> outputCellBounds (int out) const;
     bool hitTest (juce::Point<int> pos, int& in, int& out, bool& isOutputStrip) const;

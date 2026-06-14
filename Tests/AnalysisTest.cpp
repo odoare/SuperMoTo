@@ -114,6 +114,46 @@ int main()
         ok &= approx (corrected[i] - corrected[0], 0.0f, 1.0f,
                       ("corrected flat @ " + juce::String (band[i]) + " Hz").toRawUTF8());
 
+    // Phase. The delay estimator removes the linear phase at the IR peak
+    // (integer sample, absorbing some filter group delay), so the average
+    // phase must match the known lowpass UP TO a term linear in f.
+    auto theoreticalPhaseDeg = [&] (float freq)
+    {
+        const float w = freq / lpFreq;
+        return -std::atan2 (2.0f * 0.707f * w, 1.0f - w * w) * 180.0f
+               / juce::MathConstants<float>::pi;
+    };
+
+    const std::vector<float> phFreqs { 1000.0f, 4000.0f };
+    const auto avgPhase = engine.getAveragePhaseDeg (phFreqs);
+    const float residual1k = avgPhase[0] - theoreticalPhaseDeg (1000.0f);
+    const float residual4k = avgPhase[1] - theoreticalPhaseDeg (4000.0f);
+    ok &= approx (residual4k, 4.0f * residual1k, 3.0f,
+                  "phase matches filter up to a linear (delay) term");
+
+    // The corrected phase must follow the LF slope target (2nd order
+    // highpass at 30 Hz) — that IS the designed response, phase included.
+    auto targetPhaseDeg = [] (float freq)
+    {
+        const float w = freq / 30.0f;
+        return std::arg (std::complex<float> (-w * w, 0.0f)
+                         / std::complex<float> (1.0f - w * w, std::sqrt (2.0f) * w))
+               * 180.0f / juce::MathConstants<float>::pi;
+    };
+
+    const std::vector<float> phBand { 300.0f, 1000.0f, 3000.0f, 6000.0f };
+    const auto corrPhase = engine.getCorrectedPhaseDeg (phBand);
+    for (size_t i = 0; i < phBand.size(); ++i)
+        ok &= approx (corrPhase[i], targetPhaseDeg (phBand[i]), 3.0f,
+                      ("corrected phase = LF target @ " + juce::String (phBand[i]) + " Hz").toRawUTF8());
+
+    // With smoothing off the inverse is exact: corrected even flatter.
+    engine.setSmoothing (0.0f);
+    const auto correctedRaw = engine.getCorrectedDb ({ 300.0f, 1000.0f, 6000.0f });
+    for (auto v : correctedRaw)
+        ok &= approx (v - correctedRaw[0], 0.0f, 0.5f, "corrected flat (smoothing off)");
+    engine.setSmoothing (1.0f / 6.0f);
+
     // Zero correction level must leave a flat (0 dB) correction curve.
     engine.setCorrectionLevel (0.0f);
     const auto corrZero = engine.getCorrectionDb ({ 100.0f, 1000.0f, 10000.0f });

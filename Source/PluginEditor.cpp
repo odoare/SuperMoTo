@@ -19,6 +19,17 @@
 #include "PluginEditor.h"
 
 //==============================================================================
+// Width of the matrix component for a given window width (expanded layout):
+// window minus margins, right column and gap. Used to align the top bar and
+// to size the collapsed window.
+static int matrixWidthFor (int totalWidth)
+{
+    const int mainW = totalWidth - 16;
+    const int rightW = juce::jmax (340, mainW / 4 + 60);
+    return mainW - rightW - 8;
+}
+
+//==============================================================================
 SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
       matrix (p.configModel, p.engine),
@@ -33,11 +44,12 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     logo = juce::ImageCache::getFromMemory (BinaryData::logo686_png, BinaryData::logo686_pngSize);
 
     // ── Top bar ──────────────────────────────────────────────────────────────
+    // All config buttons share the same colour: on/off states read at a glance.
     for (int c = 0; c < smt::numConfigs; ++c)
     {
         auto* b = configButtons.add (new fxme::FxmeButton (audioProcessor.apvts,
                                                            smt::configName (c),
-                                                           SuperMoToTheme::configColour (c)));
+                                                           juce::Colours::cyan));
         b->setLookAndFeel (&fxmeLookAndFeel);
         addAndMakeVisible (b);
     }
@@ -60,6 +72,13 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
                                                   SuperMoToTheme::master);
     levelKnob->setLookAndFeel (&fxmeLookAndFeel);
     addAndMakeVisible (*levelKnob);
+
+    collapseButton.setButtonText (juce::String::fromUTF8 ("\xe2\x96\xb2"));   // up triangle
+    collapseButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
+    collapseButton.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::master.darker (0.6f));
+    collapseButton.setTooltip ("Compact view: only the output strip");
+    collapseButton.onClick = [this] { setCollapsed (! collapsed); };
+    addAndMakeVisible (collapseButton);
 
     auto initViewButton = [this] (juce::TextButton& b, const juce::String& text, View v)
     {
@@ -110,12 +129,14 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     editLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
     addAndMakeVisible (editLabel);
 
+    // The edit button of the currently displayed configuration lights cyan.
     for (int c = 0; c < smt::numConfigs; ++c)
     {
         auto* b = editConfigButtons.add (new juce::TextButton (smt::configName (c)));
         b->setClickingTogglesState (false);
         b->setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-        b->setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::configColour (c).darker (0.4f));
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colours::cyan.darker (0.25f));
+        b->setColour (juce::TextButton::textColourOnId, juce::Colours::cyan);
         b->onClick = [this, c] { setEditConfig (c); };
         addAndMakeVisible (b);
     }
@@ -197,8 +218,11 @@ void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parame
 void SuperMoToAudioProcessorEditor::setView (View v)
 {
     currentView = v;
-    const bool m = v == View::matrix;
-    matrix.setVisible (m);
+    const bool m = v == View::matrix && ! collapsed;
+
+    // In collapsed mode the matrix stays visible but shrinks to its output
+    // strip; everything else goes away.
+    matrix.setVisible (m || collapsed);
     spectrum.setVisible (m);
     frameEditor.setVisible (m);
     editLabel.setVisible (m);
@@ -209,14 +233,47 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     for (auto* b : editConfigButtons)
         b->setVisible (m);
 
-    configTool.setVisible (v == View::configTool);
-    calibration.setVisible (v == View::calibration);
-    analysis.setVisible (v == View::analysis);
+    for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton })
+        b->setVisible (! collapsed);
 
-    matrixViewButton.setToggleState (m, juce::dontSendNotification);
+    configTool.setVisible (v == View::configTool && ! collapsed);
+    calibration.setVisible (v == View::calibration && ! collapsed);
+    analysis.setVisible (v == View::analysis && ! collapsed);
+
+    matrixViewButton.setToggleState (v == View::matrix, juce::dontSendNotification);
     configToolButton.setToggleState (v == View::configTool, juce::dontSendNotification);
     calibrationButton.setToggleState (v == View::calibration, juce::dontSendNotification);
     analysisButton.setToggleState (v == View::analysis, juce::dontSendNotification);
+}
+
+void SuperMoToAudioProcessorEditor::setCollapsed (bool shouldCollapse)
+{
+    if (collapsed == shouldCollapse)
+        return;
+    collapsed = shouldCollapse;
+
+    collapseButton.setButtonText (juce::String::fromUTF8 (collapsed ? "\xe2\x96\xbc"      // down
+                                                                    : "\xe2\x96\xb2"));   // up
+    collapseButton.setToggleState (collapsed, juce::dontSendNotification);
+
+    if (collapsed)
+    {
+        expandedWidth = getWidth();
+        expandedHeight = getHeight();
+        setView (currentView);
+
+        // Shrink to the matrix width: the strip then spans the whole window.
+        const int collapsedWidth = matrixWidthFor (expandedWidth) + 16;
+        const int collapsedHeight = 60 + MatrixComponent::outputStripH + 16;
+        setResizeLimits (collapsedWidth, collapsedHeight, collapsedWidth, collapsedHeight);
+        setSize (collapsedWidth, collapsedHeight);
+    }
+    else
+    {
+        setResizeLimits (1100, 720, 2400, 1600);
+        setSize (expandedWidth, expandedHeight);
+        setView (currentView);
+    }
 }
 
 void SuperMoToAudioProcessorEditor::setEditConfig (int c)
@@ -249,26 +306,57 @@ void SuperMoToAudioProcessorEditor::resized()
     auto area = getLocalBounds();
 
     // ── Top bar ──────────────────────────────────────────────────────────────
+    // Left-packed and kept within the matrix width, so the collapsed window
+    // (sized to the matrix) shows every control.
     auto top = area.removeFromTop (60).reduced (6);
-    top.removeFromLeft (230);                       // logo + title
-
-    auto cfgArea = top.removeFromLeft (smt::numConfigs * 44);
-    for (auto* b : configButtons)
-        b->setBounds (cfgArea.removeFromLeft (44));
-    exclusiveButton->setBounds (top.removeFromLeft (86));
-
-    levelKnob->setBounds (top.removeFromRight (66));
-    monoButton->setBounds (top.removeFromRight (62));
-    dimButton->setBounds (top.removeFromRight (56));
-    muteButton->setBounds (top.removeFromRight (62));
-
+    top.removeFromLeft (232);                       // logo + title
+    collapseButton.setBounds (top.removeFromLeft (28).reduced (0, 14));
     top.removeFromLeft (12);
-    auto views = top.reduced (0, 8);
-    const int vw = juce::jmin (110, views.getWidth() / 4);
-    matrixViewButton.setBounds (views.removeFromLeft (vw).reduced (2, 0));
-    configToolButton.setBounds (views.removeFromLeft (vw).reduced (2, 0));
-    calibrationButton.setBounds (views.removeFromLeft (vw).reduced (2, 0));
-    analysisButton.setBounds (views.removeFromLeft (vw).reduced (2, 0));
+
+    const int barRight = collapsed ? getWidth() - 8
+                                   : 8 + matrixWidthFor (getWidth());
+    top.setRight (juce::jmin (top.getRight(), barRight));
+
+    // Scale the control widths down proportionally when space is tight.
+    const int needed = smt::numConfigs * 44 + 86 + 66 + 8 + 62 + 56 + 62;
+    const float scale = juce::jmin (1.0f, (float) top.getWidth() / (float) needed);
+    auto sw = [scale] (int px) { return juce::roundToInt (scale * (float) px); };
+
+    for (auto* b : configButtons)
+        b->setBounds (top.removeFromLeft (sw (44)));
+    exclusiveButton->setBounds (top.removeFromLeft (sw (86)));
+    levelKnob->setBounds (top.removeFromLeft (sw (66)));
+    top.removeFromLeft (sw (8));
+    muteButton->setBounds (top.removeFromLeft (sw (62)));
+    dimButton->setBounds (top.removeFromLeft (sw (56)));
+    monoButton->setBounds (top.removeFromLeft (sw (62)));
+
+    // ── Collapsed: only the output strip below the top bar ───────────────────
+    if (collapsed)
+    {
+        matrix.setBounds (area.reduced (8, 4).removeFromTop (MatrixComponent::outputStripH));
+        return;
+    }
+
+    // ── Bottom control bar: matrix size, edit config, view switcher ──────────
+    auto bottom = area.removeFromBottom (34).reduced (8, 4);
+
+    insLabel.setBounds (bottom.removeFromLeft (48));
+    insBox.setBounds (bottom.removeFromLeft (58).reduced (0, 1));
+    bottom.removeFromLeft (14);
+    outsLabel.setBounds (bottom.removeFromLeft (56));
+    outsBox.setBounds (bottom.removeFromLeft (58).reduced (0, 1));
+
+    bottom.removeFromLeft (24);
+    editLabel.setBounds (bottom.removeFromLeft (36));
+    for (auto* b : editConfigButtons)
+        b->setBounds (bottom.removeFromLeft (40).reduced (2, 1));
+
+    const int vw = juce::jmin (110, bottom.getWidth() / 4);
+    analysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    calibrationButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    configToolButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    matrixViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
 
     // ── Main area ────────────────────────────────────────────────────────────
     auto main = area.reduced (8);
@@ -281,21 +369,8 @@ void SuperMoToAudioProcessorEditor::resized()
     // Matrix view: matrix left, analyzer + frame editor right
     auto right = main.removeFromRight (juce::jmax (340, main.getWidth() / 4 + 60));
     main.removeFromRight (8);
-
-    auto sizeRow = main.removeFromTop (24);
-    insLabel.setBounds (sizeRow.removeFromLeft (48));
-    insBox.setBounds (sizeRow.removeFromLeft (58).reduced (0, 1));
-    sizeRow.removeFromLeft (14);
-    outsLabel.setBounds (sizeRow.removeFromLeft (56));
-    outsBox.setBounds (sizeRow.removeFromLeft (58).reduced (0, 1));
     matrix.setBounds (main);
 
-    auto editRow = right.removeFromTop (26);
-    editLabel.setBounds (editRow.removeFromLeft (36));
-    for (auto* b : editConfigButtons)
-        b->setBounds (editRow.removeFromLeft (40).reduced (2, 0));
-
-    right.removeFromTop (6);
     frameEditor.setBounds (right.removeFromBottom (210));
     right.removeFromBottom (8);
     spectrum.setBounds (right);

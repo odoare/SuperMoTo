@@ -10,6 +10,12 @@
     The "through correction" toggle re-measures with the output FIR engaged
     to verify a correction curve.
 
+    A right-hand SPL meter section (SplMeterEngine + SplMeterComponent) reuses
+    the microphone, output and "through correction" selections: it shows the
+    mic RMS on a dual dBFS / dB SPL bar and can emit a sine and/or white-noise
+    test signal. The dB SPL scale is calibrated by playing a tone, reading a
+    real SPL meter and entering its value.
+
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
     SPDX-License-Identifier: LGPL-3.0-or-later
@@ -21,6 +27,8 @@
 #include <JuceHeader.h>
 #include "../PluginProcessor.h"
 #include "../Theme.h"
+#include "SplMeterComponent.h"
+#include "SpectrumDisplay.h"
 
 class CalibrationComponent : public juce::Component,
                              private juce::ChangeListener,
@@ -103,7 +111,16 @@ public:
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
-        startTimerHz (8);
+        // Mic / outputs / through-correction are shared with the SPL meter:
+        // push them whenever they change.
+        micBox.onChange = [this] { pushSplSettings(); };
+        throughCorrection.onClick = [this] { pushSplSettings(); };
+        for (auto* b : outputToggles)
+            b->onClick = [this] { pushSplSettings(); };
+
+        buildSplMeterControls();
+
+        startTimerHz (20);
     }
 
     ~CalibrationComponent() override
@@ -171,6 +188,55 @@ public:
 
         area.removeFromTop (8);
         status.setBounds (area.removeFromTop (22));
+
+        // ── SPL meter section fills the space below the controls ──
+        area.removeFromTop (14);
+        layoutSplMeter (area);
+    }
+
+    void layoutSplMeter (juce::Rectangle<int> area)
+    {
+        // Controls on the left, then a narrow level meter, then the spectrum
+        // analyzer filling the remaining width; all take the full height.
+        auto col = area.removeFromLeft (380);
+        area.removeFromLeft (16);
+        meter.setBounds (area.removeFromLeft (170));
+        area.removeFromLeft (16);
+        spectrum.setBounds (area);
+
+        splTitle.setBounds (col.removeFromTop (24));
+        col.removeFromTop (8);
+
+        auto rowA = col.removeFromTop (24);
+        meterOnButton.setBounds (rowA.removeFromLeft (100));
+        rowA.removeFromLeft (8);
+        windowLabel.setBounds (rowA.removeFromLeft (78));
+        windowBox.setBounds (rowA.removeFromLeft (90));
+
+        col.removeFromTop (14);
+        sineButton.setBounds (col.removeFromTop (24).removeFromLeft (120));
+        col.removeFromTop (4);
+        auto rowS = col.removeFromTop (24);
+        sineAmpLabel.setBounds (rowS.removeFromLeft (60));
+        sineAmp.setBounds (rowS.removeFromLeft (100));
+        col.removeFromTop (2);
+        auto rowSf = col.removeFromTop (24);
+        sineFreqLabel.setBounds (rowSf.removeFromLeft (60));
+        sineFreq.setBounds (rowSf.removeFromLeft (110));
+
+        col.removeFromTop (14);
+        noiseButton.setBounds (col.removeFromTop (24).removeFromLeft (120));
+        col.removeFromTop (4);
+        auto rowN = col.removeFromTop (24);
+        noiseAmpLabel.setBounds (rowN.removeFromLeft (60));
+        noiseAmp.setBounds (rowN.removeFromLeft (100));
+
+        col.removeFromTop (16);
+        auto rowR = col.removeFromTop (24);
+        splRefLabel.setBounds (rowR.removeFromLeft (120));
+        splRef.setBounds (rowR.removeFromLeft (130));
+        col.removeFromTop (4);
+        splInfo.setBounds (col.removeFromTop (16));
     }
 
 private:
@@ -180,6 +246,130 @@ private:
         l.setFont (juce::Font (12.0f));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
+    }
+
+    // Small numeric entry (drag or type) in the existing slider style.
+    void addNumberEntry (juce::Slider& s, double lo, double hi, double step,
+                         double value, const juce::String& suffix)
+    {
+        s.setSliderStyle (juce::Slider::IncDecButtons);
+        s.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 70, 20);
+        s.setRange (lo, hi, step);
+        s.setValue (value, juce::dontSendNotification);
+        s.setTextValueSuffix (suffix);
+        SuperMoToTheme::accentSlider (s, SuperMoToTheme::measure);
+        addAndMakeVisible (s);
+    }
+
+    void buildSplMeterControls()
+    {
+        splTitle.setText ("SPL meter", juce::dontSendNotification);
+        splTitle.setFont (juce::Font (14.0f, juce::Font::bold));
+        splTitle.setColour (juce::Label::textColourId, SuperMoToTheme::text);
+        addAndMakeVisible (splTitle);
+
+        meterOnButton.setButtonText ("Meter on");
+        SuperMoToTheme::accentToggleButton (meterOnButton, SuperMoToTheme::measure);
+        meterOnButton.onClick = [this] { pushSplSettings(); };
+        addAndMakeVisible (meterOnButton);
+
+        addLabel (windowLabel, "RMS window");
+        windowBox.addItem ("50 ms", 1);
+        windowBox.addItem ("100 ms", 2);
+        windowBox.addItem ("300 ms", 3);
+        windowBox.addItem ("1 s", 4);
+        windowBox.setSelectedId (3, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (windowBox, SuperMoToTheme::measure);
+        windowBox.onChange = [this] { pushSplSettings(); };
+        addAndMakeVisible (windowBox);
+
+        sineButton.setButtonText ("Sine");
+        SuperMoToTheme::accentToggleButton (sineButton, SuperMoToTheme::measure);
+        sineButton.onClick = [this] { pushSplSettings(); };
+        addAndMakeVisible (sineButton);
+
+        addLabel (sineAmpLabel, "Amplitude");
+        addNumberEntry (sineAmp, -60.0, 0.0, 0.5, -12.0, " dB");
+        sineAmp.onValueChange = [this] { pushSplSettings(); };
+
+        addLabel (sineFreqLabel, "Frequency");
+        addNumberEntry (sineFreq, 20.0, 20000.0, 1.0, 1000.0, " Hz");
+        sineFreq.onValueChange = [this] { pushSplSettings(); };
+
+        noiseButton.setButtonText ("White noise");
+        SuperMoToTheme::accentToggleButton (noiseButton, SuperMoToTheme::measure);
+        noiseButton.onClick = [this] { pushSplSettings(); };
+        addAndMakeVisible (noiseButton);
+
+        addLabel (noiseAmpLabel, "Amplitude");
+        addNumberEntry (noiseAmp, -60.0, 0.0, 0.5, -12.0, " dB");
+        noiseAmp.onValueChange = [this] { pushSplSettings(); };
+
+        addLabel (splRefLabel, "Measured dB SPL");
+        addNumberEntry (splRef, 0.0, 140.0, 0.1, 85.0, " dB");
+        // On entry, snapshot the current dBFS so dB SPL = dBFS + offset.
+        splRef.onValueChange = [this]
+        {
+            const float dbFs = processor.splMeter.getRmsDbFs();
+            splOffset = (float) splRef.getValue() - dbFs;
+            splCalibrated = dbFs > -119.0f;
+            updateSplInfo();
+        };
+
+        splInfo.setFont (juce::Font (11.0f));
+        splInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        addAndMakeVisible (splInfo);
+        updateSplInfo();
+
+        addAndMakeVisible (meter);
+
+        // Mic spectrum analyzer (same kind as the matrix view), fed by the SPL
+        // engine's mic tap and labelled in dB SPL once calibrated.
+        SpectrumDisplay::TraceConfig micTrace;
+        micTrace.tap = &processor.splMeter.getMicSpectrumTap();
+        micTrace.colour = SuperMoToTheme::spectrum;
+        micTrace.thickness = 1.6f;
+        micTrace.label = [] { return juce::String ("Microphone"); };
+        spectrum.addTrace (std::move (micTrace));
+        spectrum.sampleRateProvider = [this] { return processor.getSampleRate(); };
+        addAndMakeVisible (spectrum);
+
+        pushSplSettings();
+    }
+
+    void updateSplInfo()
+    {
+        splInfo.setText (splCalibrated
+            ? "0 dBFS = " + juce::String (juce::roundToInt (splOffset)) + " dB SPL"
+            : juce::String ("Play a tone, read your SPL meter, type the value to calibrate."),
+            juce::dontSendNotification);
+        meter.setSplOffset (splOffset, splCalibrated);
+        spectrum.setSplCalibration (splCalibrated, splOffset);
+    }
+
+    // Push the GUI state to the audio-thread SPL engine.
+    void pushSplSettings()
+    {
+        auto& spl = processor.splMeter;
+        spl.setMeterOn (meterOnButton.getToggleState());
+        spl.setMicChannel (micBox.getSelectedId() - 1);
+        spl.setThroughCorrection (throughCorrection.getToggleState());
+
+        static const float windowSecs[] = { 0.05f, 0.1f, 0.3f, 1.0f };
+        spl.setRmsWindowSeconds (windowSecs[juce::jlimit (0, 3, windowBox.getSelectedId() - 1)]);
+
+        juce::uint32 mask = 0;
+        const int numOuts = processor.configModel.getNumOuts();
+        for (int o = 0; o < outputToggles.size() && o < numOuts; ++o)
+            if (outputToggles[o]->getToggleState())
+                mask |= (1u << (juce::uint32) o);
+        spl.setOutputsMask (mask);
+
+        spl.setSineOn (sineButton.getToggleState());
+        spl.setSineAmpDb ((float) sineAmp.getValue());
+        spl.setSineFreq ((float) sineFreq.getValue());
+        spl.setNoiseOn (noiseButton.getToggleState());
+        spl.setNoiseAmpDb ((float) noiseAmp.getValue());
     }
 
     void browse()
@@ -240,6 +430,7 @@ private:
         // hidden ones so they cannot be measured.
         for (int o = processor.configModel.getNumOuts(); o < outputToggles.size(); ++o)
             outputToggles[o]->setToggleState (false, juce::dontSendNotification);
+        pushSplSettings();
         resized();
         repaint();
     }
@@ -248,6 +439,8 @@ private:
     {
         if (processor.measurement.isRunning())
             refresh();
+
+        meter.setLevelDb (processor.splMeter.getRmsDbFs());
     }
 
     void refresh()
@@ -268,6 +461,17 @@ private:
     juce::TextEditor pathEditor;
     juce::TextButton browseButton, runButton;
     juce::ToggleButton throughCorrection;
+
+    // ── SPL meter section ─────────────────────────────────────────────────────
+    juce::Label splTitle, windowLabel, sineAmpLabel, sineFreqLabel, noiseAmpLabel,
+                splRefLabel, splInfo;
+    juce::ToggleButton meterOnButton, sineButton, noiseButton;
+    juce::ComboBox windowBox;
+    juce::Slider sineAmp, sineFreq, noiseAmp, splRef;
+    SplMeterComponent meter;
+    SpectrumDisplay spectrum;
+    float splOffset = 0.0f;
+    bool  splCalibrated = false;
 
     double progressValue = 0.0;
     juce::ProgressBar progress { progressValue };

@@ -35,6 +35,7 @@
 #include "Model/ConfigModel.h"
 #include "Dsp/MatrixEngine.h"
 #include "Dsp/MeasurementEngine.h"
+#include "Dsp/SplMeterEngine.h"
 
 //==============================================================================
 class SuperMoToAudioProcessor  : public juce::AudioProcessor,
@@ -87,6 +88,9 @@ public:
 
     // Part 2: measurement of loudspeaker responses.
     smt::MeasurementEngine measurement;
+
+    // Part 2: SPL meter + test-signal generator (calibration window).
+    smt::SplMeterEngine splMeter;
 
     // Selected microphone input for the measurement part (0-based), set by
     // the calibration GUI before starting a run.

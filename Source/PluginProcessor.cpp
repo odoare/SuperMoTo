@@ -95,6 +95,7 @@ void SuperMoToAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBl
     engine.prepare (sampleRate, samplesPerBlock);
     engine.updateFirFiles();
     measurement.prepare (sampleRate, samplesPerBlock);
+    splMeter.prepare (sampleRate, samplesPerBlock);
 }
 
 void SuperMoToAudioProcessor::releaseResources()
@@ -130,6 +131,13 @@ void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     const int micChannel = juce::jlimit (0, smt::numChannels - 1,
                                          measurementMicChannel.load());
     if (measurement.process (inputCopy.getReadPointer (micChannel), buffer, n, engine))
+        return;
+
+    // Part 2: SPL meter. It taps the selected mic for RMS and, when a test
+    // generator is engaged, owns the audio (emitting on the chosen outputs).
+    const int splMicChannel = juce::jlimit (0, smt::numChannels - 1,
+                                            splMeter.getMicChannel());
+    if (splMeter.process (inputCopy.getReadPointer (splMicChannel), buffer, n, engine))
         return;
 
     // Mono fold-down of the first input pair (like MoTo).

@@ -27,16 +27,15 @@ void AnalysisEngine::clear()
 {
     curves.clear();
     average.clear();
+    averageSmoothed.clear();
     correction.clear();
     sampleRate = 0.0;
+    referenceGain = 1.0;
 }
 
 int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
 {
-    curves.clear();
-    average.clear();
-    correction.clear();
-    sampleRate = 0.0;
+    clear();
 
     for (const auto& f : files)
     {
@@ -46,8 +45,25 @@ int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
     }
 
     computeAverage();
+    applySmoothing();
     recomputeCorrection();
     return (int) curves.size();
+}
+
+void AnalysisEngine::setSmoothing (float octaveFraction)
+{
+    smoothingFraction = juce::jlimit (0.0f, 1.0f, octaveFraction);
+    applySmoothing();
+    recomputeCorrection();
+}
+
+void AnalysisEngine::applySmoothing()
+{
+    const bool on = smoothingFraction > 0.0f;
+    for (auto& c : curves)
+        c.Hs = on ? smoothOctaveFraction (c.H, smoothingFraction) : c.H;
+    averageSmoothed = on && ! average.empty() ? smoothOctaveFraction (average, smoothingFraction)
+                                              : average;
 }
 
 bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out)
@@ -203,18 +219,47 @@ void AnalysisEngine::setCorrectionLevel (float level01)
     recomputeCorrection();
 }
 
+void AnalysisEngine::setAnalysisRange (float lowHz, float highHz)
+{
+    analysisLowHz  = juce::jlimit (5.0f, 5000.0f, lowHz);
+    analysisHighHz = juce::jlimit (juce::jmax (analysisLowHz * 1.1f, 500.0f),
+                                   30000.0f, highHz);
+    recomputeCorrection();
+}
+
+// 1 inside [analysisLowHz, analysisHighHz], rolling smoothly to 0 over a
+// half-octave raised-cosine skirt below the low edge and above the high edge.
+float AnalysisEngine::bandWeight (double f) const
+{
+    if (f <= 0.0)
+        return 0.0f;
+
+    constexpr double tw = 0.5;      // skirt width in octaves
+    auto rc = [] (double x)         // raised cosine, x clamped to 0..1
+    {
+        x = juce::jlimit (0.0, 1.0, x);
+        return 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * x);
+    };
+
+    const double dl = std::log2 (f / (double) analysisLowHz);    // >= 0 in band
+    const double dh = std::log2 (f / (double) analysisHighHz);   // <= 0 in band
+    const double wl = rc ((dl + tw) / tw);                       // low edge
+    const double wh = rc ((tw - dh) / tw);                       // high edge
+    return (float) (wl * wh);
+}
+
 void AnalysisEngine::recomputeCorrection()
 {
     correction.clear();
-    if (average.empty() || sampleRate <= 0.0)
+    if (averageSmoothed.empty() || sampleRate <= 0.0)
         return;
 
-    const int numBins = (int) average.size();
+    const int numBins = (int) averageSmoothed.size();
     const int W = windowSize;
 
-    // Smooth the average (1/6 octave) so the inverse does not chase every
-    // interference notch of the room.
-    auto smoothed = smoothOctaveFraction (average, 1.0f / 6.0f);
+    // The inverse is taken on the (octave-fraction smoothed) average so it
+    // does not chase every interference notch of the room.
+    const auto& smoothed = averageSmoothed;
 
     // Normalization: the correction should not change the overall level.
     // Use the mean magnitude in the 200 Hz .. 2 kHz band as the reference.
@@ -232,6 +277,7 @@ void AnalysisEngine::recomputeCorrection()
     ref = refCount > 0 ? ref / (double) refCount : 1.0;
     if (ref <= 0.0)
         ref = 1.0;
+    referenceGain = ref;        // also the 0 dB reference of the plots
 
     const float maxBoost = juce::Decibels::decibelsToGain (maxBoostDb);
     correction.resize ((size_t) numBins);
@@ -265,6 +311,11 @@ void AnalysisEngine::recomputeCorrection()
                             ph * (double) correctionLevel);
         }
 
+        // Outside the analysis band, fade the correction back to unity so we do
+        // not try to compensate content the speaker cannot reproduce.
+        const double w = (double) bandWeight (f);
+        c = std::complex<double> (1.0 - w, 0.0) + c * w;
+
         correction[(size_t) k] = std::complex<float> (c);
     }
 }
@@ -285,21 +336,78 @@ float AnalysisEngine::interpDb (const std::vector<std::complex<float>>& spec, fl
     return juce::Decibels::gainToDecibels (m0 + (m1 - m0) * frac, -120.0f);
 }
 
+std::complex<float> AnalysisEngine::interpComplex (const std::vector<std::complex<float>>& spec,
+                                                   float freq) const
+{
+    if (spec.empty() || sampleRate <= 0.0)
+        return { 0.0f, 0.0f };
+
+    const double bin = (double) freq * (double) windowSize / sampleRate;
+    const int k0 = juce::jlimit (0, (int) spec.size() - 1, (int) bin);
+    const int k1 = juce::jlimit (0, (int) spec.size() - 1, k0 + 1);
+    const float frac = (float) (bin - (double) k0);
+    return spec[(size_t) k0] * (1.0f - frac) + spec[(size_t) k1] * frac;
+}
+
+static float argDeg (std::complex<float> c)
+{
+    return std::arg (c) * 180.0f / juce::MathConstants<float>::pi;
+}
+
+std::vector<float> AnalysisEngine::getCurvePhaseDeg (int curve, const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), 0.0f);
+    if (curve < 0 || curve >= (int) curves.size())
+        return v;
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = argDeg (interpComplex (curves[(size_t) curve].Hs, freqs[i]));
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getAveragePhaseDeg (const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), 0.0f);
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = argDeg (interpComplex (averageSmoothed, freqs[i]));
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getCorrectionPhaseDeg (const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), 0.0f);
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = argDeg (interpComplex (correction, freqs[i]));
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getCorrectedPhaseDeg (const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), 0.0f);
+    if (averageSmoothed.empty() || correction.empty())
+        return v;
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = argDeg (interpComplex (averageSmoothed, freqs[i])
+                       * interpComplex (correction, freqs[i]));
+    return v;
+}
+
 std::vector<float> AnalysisEngine::getCurveDb (int curve, const std::vector<float>& freqs) const
 {
     std::vector<float> v (freqs.size(), -120.0f);
     if (curve < 0 || curve >= (int) curves.size())
         return v;
+    const float refDb = juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
-        v[i] = interpDb (curves[(size_t) curve].H, freqs[i]);
+        v[i] = interpDb (curves[(size_t) curve].Hs, freqs[i]) - refDb;
     return v;
 }
 
 std::vector<float> AnalysisEngine::getAverageDb (const std::vector<float>& freqs) const
 {
     std::vector<float> v (freqs.size(), -120.0f);
+    const float refDb = juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
-        v[i] = interpDb (average, freqs[i]);
+        v[i] = interpDb (averageSmoothed, freqs[i]) - refDb;
     return v;
 }
 
@@ -314,41 +422,43 @@ std::vector<float> AnalysisEngine::getCorrectionDb (const std::vector<float>& fr
 std::vector<float> AnalysisEngine::getCorrectedDb (const std::vector<float>& freqs) const
 {
     std::vector<float> v (freqs.size(), -120.0f);
-    if (average.empty() || correction.empty())
+    if (averageSmoothed.empty() || correction.empty())
         return v;
 
-    std::vector<std::complex<float>> prod (average.size());
-    for (size_t k = 0; k < average.size(); ++k)
-        prod[k] = average[k] * correction[k];
+    std::vector<std::complex<float>> prod (averageSmoothed.size());
+    for (size_t k = 0; k < averageSmoothed.size(); ++k)
+        prod[k] = averageSmoothed[k] * correction[k];
 
+    const float refDb = juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
-        v[i] = interpDb (prod, freqs[i]);
+        v[i] = interpDb (prod, freqs[i]) - refDb;
     return v;
 }
 
 //==============================================================================
-juce::AudioBuffer<float> AnalysisEngine::renderCorrectionIR (int firLength) const
+juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::complex<float>>& spec,
+                                                   int firLength) const
 {
     juce::AudioBuffer<float> ir;
-    if (correction.empty() || sampleRate <= 0.0)
+    if (spec.empty() || sampleRate <= 0.0)
         return ir;
 
     const int N = juce::nextPowerOfTwo (juce::jlimit (256, 1 << 17, firLength));
     const int numBins = N / 2 + 1;
     const int order = (int) std::log2 ((double) N);
 
-    // Resample the correction onto the FIR grid and add a half-length linear
+    // Resample the spectrum onto the FIR grid and add a half-length linear
     // phase shift so the (mixed phase) response stays causal in the FIR.
     std::vector<float> buf ((size_t) (2 * N), 0.0f);
     for (int k = 0; k < numBins; ++k)
     {
         const double f = (double) k * sampleRate / (double) N;
         const double bin = f * (double) windowSize / sampleRate;
-        const int b0 = juce::jlimit (0, (int) correction.size() - 1, (int) bin);
-        const int b1 = juce::jlimit (0, (int) correction.size() - 1, b0 + 1);
+        const int b0 = juce::jlimit (0, (int) spec.size() - 1, (int) bin);
+        const int b1 = juce::jlimit (0, (int) spec.size() - 1, b0 + 1);
         const float frac = (float) (bin - (double) b0);
 
-        auto c = correction[(size_t) b0] * (1.0f - frac) + correction[(size_t) b1] * frac;
+        auto c = spec[(size_t) b0] * (1.0f - frac) + spec[(size_t) b1] * frac;
 
         // shift by N/2 samples: multiply by exp(-j*pi*k)  ( = (-1)^k )
         if ((k & 1) != 0)
@@ -379,9 +489,51 @@ juce::AudioBuffer<float> AnalysisEngine::renderCorrectionIR (int firLength) cons
     return ir;
 }
 
+juce::AudioBuffer<float> AnalysisEngine::renderCorrectionIR (int firLength) const
+{
+    return renderIR (correction, firLength);
+}
+
+juce::AudioBuffer<float> AnalysisEngine::renderMeasuredIR (int firLength) const
+{
+    // Export the smoothed/displayed average, band-limited to the analysis range
+    // so out-of-band room and microphone noise does not leak into the IR.
+    if (averageSmoothed.empty() || sampleRate <= 0.0)
+        return {};
+
+    std::vector<std::complex<float>> banded (averageSmoothed.size());
+    for (int k = 0; k < (int) banded.size(); ++k)
+    {
+        const double f = (double) k * sampleRate / (double) windowSize;
+        banded[(size_t) k] = averageSmoothed[(size_t) k] * bandWeight (f);
+    }
+    return renderIR (banded, firLength);
+}
+
 bool AnalysisEngine::exportCorrectionIR (const juce::File& file, int firLength) const
 {
     auto ir = renderCorrectionIR (firLength);
+    if (ir.getNumSamples() == 0)
+        return false;
+
+    file.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+    if (stream == nullptr)
+        return false;
+
+    std::unique_ptr<juce::AudioFormatWriter> writer (
+        wav.createWriterFor (stream.get(), sampleRate, 1, 32, {}, 0));
+    if (writer == nullptr)
+        return false;
+
+    stream.release();
+    return writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
+}
+
+bool AnalysisEngine::exportMeasuredIR (const juce::File& file, int firLength) const
+{
+    auto ir = renderMeasuredIR (firLength);
     if (ir.getNumSamples() == 0)
         return false;
 
