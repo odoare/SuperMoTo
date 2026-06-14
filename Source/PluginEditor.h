@@ -34,6 +34,7 @@
 #include "PluginProcessor.h"
 #include "Theme.h"
 #include "Components/MatrixComponent.h"
+#include "Components/InfoButton.h"
 #include "Components/FrameEditorComponent.h"
 #include "Components/SpectrumAnalyzerComponent.h"
 #include "Components/ConfigToolComponent.h"
@@ -57,6 +58,8 @@ private:
     enum class View { matrix, configTool, calibration, analysis };
     void setView (View v);
     void setEditConfig (int c);
+    void layoutInfoButton();
+    static void infoTextFor (View v, juce::String& title, juce::String& body);
 
     // Compact mode: only the top bar and the output strip stay visible and
     // the window shrinks to match.
@@ -78,7 +81,7 @@ private:
     juce::Image logo;
     juce::OwnedArray<fxme::FxmeButton> configButtons;       // A..F (engage)
     std::unique_ptr<fxme::FxmeButton> exclusiveButton, muteButton, dimButton, monoButton;
-    std::unique_ptr<fxme::FxmeKnob> levelKnob;
+    std::unique_ptr<fxme::FxmeSlider> levelSlider;
     juce::TextButton collapseButton;
 
     // ── Bottom control bar ───────────────────────────────────────────────────
@@ -92,6 +95,11 @@ private:
     juce::Label editLabel;
     SpectrumAnalyzerComponent spectrum;
     FrameEditorComponent frameEditor;
+    InfoButton infoButton;
+
+    // Bounds captured in resized() so the info button can be repositioned when
+    // the view changes (matrix corner vs panel top-right).
+    juce::Rectangle<int> matrixArea, panelArea;
 
     // ── Other views ──────────────────────────────────────────────────────────
     ConfigToolComponent configTool;

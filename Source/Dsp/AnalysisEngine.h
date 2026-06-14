@@ -75,8 +75,6 @@ public:
     float getCrossoverHz() const noexcept       { return crossoverHz; }
     void setSubPolarityInverted (bool inverted);
     bool getSubPolarityInverted() const noexcept { return subInverted; }
-    void setSubDelayMs (float ms);              // fine relative-timing trim
-    float getSubDelayMs() const noexcept        { return subDelayMs; }
 
     std::vector<float> getSubDb (const std::vector<float>& freqs) const;
     std::vector<float> getSubPhaseDeg (const std::vector<float>& freqs) const;
@@ -178,7 +176,6 @@ private:
     float crossoverHz    = 80.0f;               // main/sub crossover
     float alignWidthOct  = 1.0f;                // phase-align release width above it
     bool  subInverted    = false;
-    float subDelayMs     = 0.0f;
 
     std::vector<Curve> curves;
     std::vector<std::complex<float>> average;           // delay-aligned complex average

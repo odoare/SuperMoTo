@@ -94,7 +94,7 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (14);
-        title.setBounds (area.removeFromTop (26));
+        title.setBounds (area.removeFromTop (26).withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
         auto top = area.removeFromTop (24);

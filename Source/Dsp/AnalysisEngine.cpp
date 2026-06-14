@@ -324,12 +324,6 @@ void AnalysisEngine::setSubPolarityInverted (bool inverted)
     recomputeCorrection();
 }
 
-void AnalysisEngine::setSubDelayMs (float ms)
-{
-    subDelayMs = juce::jlimit (-20.0f, 20.0f, ms);
-    recomputeCorrection();
-}
-
 // Phase-alignment weight: full (1) at and below the crossover, released to 0
 // over `alignWidthOct` octaves above it (where the main dominates and should
 // keep its own flat-phase correction rather than inherit the sub's phase).
@@ -429,9 +423,6 @@ void AnalysisEngine::recomputeCorrection()
             std::complex<double> S = subAverageSmoothed[(size_t) k];
             if (subInverted)
                 S = -S;
-            if (subDelayMs != 0.0f)
-                S *= std::polar (1.0, -2.0 * juce::MathConstants<double>::pi
-                                          * f * (double) subDelayMs / 1000.0);
 
             const double aS = std::abs (S);
             const std::complex<double> ph = aS > 1.0e-20 ? S / aS

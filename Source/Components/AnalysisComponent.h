@@ -175,20 +175,6 @@ public:
         };
         addAndMakeVisible (subInvertToggle);
 
-        addLabel (subDelayLabel, "Sub delay");
-        subDelaySlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        subDelaySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18);
-        subDelaySlider.setRange (-20.0, 20.0, 0.1);
-        subDelaySlider.setValue (0.0, juce::dontSendNotification);
-        subDelaySlider.setTextValueSuffix (" ms");
-        SuperMoToTheme::accentSlider (subDelaySlider, SuperMoToTheme::mono);
-        subDelaySlider.onValueChange = [this]
-        {
-            analysis.setSubDelayMs ((float) subDelaySlider.getValue());
-            updatePlotData();
-        };
-        addAndMakeVisible (subDelaySlider);
-
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
@@ -209,7 +195,7 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (14);
-        title.setBounds (area.removeFromTop (26));
+        title.setBounds (area.removeFromTop (26).withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
         // The two export buttons share a column: "Export IR" sits to the right
@@ -265,9 +251,6 @@ public:
         crossoverBox.setBounds (r4.removeFromLeft (90));
         r4.removeFromLeft (16);
         subInvertToggle.setBounds (r4.removeFromLeft (96));
-        r4.removeFromLeft (16);
-        subDelayLabel.setBounds (r4.removeFromLeft (64));
-        subDelaySlider.setBounds (r4.removeFromLeft (juce::jmin (230, r4.getWidth())));
 
         area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));
@@ -657,12 +640,12 @@ private:
     smt::AnalysisEngine analysis;
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
-    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, subDelayLabel;
+    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel;
     juce::Slider boostSlider;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
     juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle;
-    juce::Slider levelSlider, subDelaySlider;
+    juce::Slider levelSlider;
 
     juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;
