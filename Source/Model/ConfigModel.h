@@ -40,6 +40,14 @@ constexpr int numConfigs  = 6;    // A..F
 constexpr float maxDelayMs = 100.0f;
 constexpr int maxFrameTaps = 8;   // simultaneous frame traces on the analyzer
 
+// What the measurement / SPL test signal exercises:
+//   dryOutput  – stimulus straight to an output (raw speaker, to design FIRs)
+//   outputFir  – stimulus to an output through its trim + FIR (verify the FIR)
+//   fullSystem – stimulus into a plugin INPUT, through the whole engine
+//                (matrix, crossover, FIRs, delay compensation) — the complete
+//                system as heard. Channel selection means inputs in this mode.
+enum class MeasureMode : int { dryOutput = 0, outputFir = 1, fullSystem = 2 };
+
 inline juce::String configName (int c)      { return juce::String::charToString ((juce::juce_wchar) ('A' + c)); }
 
 //==============================================================================

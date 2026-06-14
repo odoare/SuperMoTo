@@ -2,16 +2,17 @@
   ------------------------------------------------------------------------------
     CalibrationComponent.h
 
-    Part 2 GUI: measurement of the individual loudspeakers. Select the
-    microphone input, the outputs to measure, the stimulus (band limited
-    white noise or log sweep, 10 Hz .. 20 kHz), the duration (5..30 s) and
-    the base pathname; Run measures each selected output in turn and writes
-    "<base>_<output>.wav" stereo files (ch 1 = sent, ch 2 = recorded).
-    The "through correction" toggle re-measures with the output FIR engaged
-    to verify a correction curve.
+    Part 2 GUI: measurement of the loudspeakers and the full system. Select the
+    microphone input, the measurement type (Dry outputs / outputs+FIR / complete
+    System), the channels to measure (outputs, or plugin inputs in System mode),
+    the stimulus (band limited white noise or log sweep, 10 Hz .. 20 kHz), the
+    duration (5..30 s) and the base pathname; Run measures each selected channel
+    in turn and writes stereo files (ch 1 = sent, ch 2 = recorded). System mode
+    sends the stimulus through the whole engine (matrix, crossover, FIRs, latency
+    compensation) so a mains+sub crossover can be verified.
 
     A right-hand SPL meter section (SplMeterEngine + SplMeterComponent) reuses
-    the microphone, output and "through correction" selections: it shows the
+    the microphone, channel and measurement-type selections: it shows the
     mic RMS on a dual dBFS / dB SPL bar and can emit a sine and/or white-noise
     test signal. The dB SPL scale is calibrated by playing a tone, reading a
     real SPL meter and entering its value.
@@ -61,6 +62,25 @@ public:
             addAndMakeVisible (b);
         }
 
+        // Measurement type: dry outputs / outputs+FIR / complete system.
+        addLabel (measureLabel, "Measure");
+        auto setupModeButton = [this] (juce::TextButton& b, const juce::String& text,
+                                       int edges)
+        {
+            b.setButtonText (text);
+            b.setClickingTogglesState (true);
+            b.setRadioGroupId (7);
+            b.setConnectedEdges (edges);
+            b.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::measure.darker (0.5f));
+            b.setColour (juce::TextButton::textColourOnId, SuperMoToTheme::text);
+            b.onClick = [this] { updateModeUi(); };
+            addAndMakeVisible (b);
+        };
+        setupModeButton (modeDryButton,    "Dry",    juce::Button::ConnectedOnRight);
+        setupModeButton (modeFirButton,    "FIR",    juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
+        setupModeButton (modeSystemButton, "System", juce::Button::ConnectedOnLeft);
+        modeDryButton.setToggleState (true, juce::dontSendNotification);
+
         addLabel (signalLabel, "Signal");
         signalBox.addItem ("White noise (10 Hz - 20 kHz)", 1);
         signalBox.addItem ("Log sweep (10 Hz - 20 kHz)", 2);
@@ -96,10 +116,6 @@ public:
         browseButton.onClick = [this] { browse(); };
         addAndMakeVisible (browseButton);
 
-        throughCorrection.setButtonText ("Measure through correction (verify FIR)");
-        SuperMoToTheme::accentToggleButton (throughCorrection, SuperMoToTheme::fir);
-        addAndMakeVisible (throughCorrection);
-
         runButton.setButtonText ("Run");
         runButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::measure.darker (0.8f));
         runButton.onClick = [this] { runOrStop(); };
@@ -111,14 +127,13 @@ public:
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
-        // Mic / outputs / through-correction are shared with the SPL meter:
-        // push them whenever they change.
+        // Mic / channels / mode are shared with the SPL meter: push on change.
         micBox.onChange = [this] { pushSplSettings(); };
-        throughCorrection.onClick = [this] { pushSplSettings(); };
         for (auto* b : outputToggles)
             b->onClick = [this] { pushSplSettings(); };
 
         buildSplMeterControls();
+        updateModeUi();
 
         startTimerHz (20);
     }
@@ -143,22 +158,27 @@ public:
         title.setBounds (area.removeFromTop (26));
         area.removeFromTop (8);
 
-        auto r1 = area.removeFromTop (24);
-        micLabel.setBounds (r1.removeFromLeft (130));
-        micBox.setBounds (r1.removeFromLeft (120));
-        r1.removeFromLeft (24);
-        signalLabel.setBounds (r1.removeFromLeft (50));
-        signalBox.setBounds (r1.removeFromLeft (210));
+        auto r1 = area.removeFromTop (26);
+        micLabel.setBounds (r1.removeFromLeft (118));
+        micBox.setBounds (r1.removeFromLeft (104));
+        r1.removeFromLeft (20);
+        measureLabel.setBounds (r1.removeFromLeft (56));
+        modeDryButton.setBounds (r1.removeFromLeft (56));
+        modeFirButton.setBounds (r1.removeFromLeft (56));
+        modeSystemButton.setBounds (r1.removeFromLeft (74));
+        r1.removeFromLeft (20);
+        signalLabel.setBounds (r1.removeFromLeft (46));
+        signalBox.setBounds (r1.removeFromLeft (200));
 
         area.removeFromTop (10);
         outputsLabel.setBounds (area.removeFromTop (18));
         auto toggleArea = area.removeFromTop (26);
-        const int numOuts = processor.configModel.getNumOuts();
-        const int tw = toggleArea.getWidth() / numOuts;
+        const int numCh = measureChannelCount();
+        const int tw = toggleArea.getWidth() / juce::jmax (1, numCh);
         for (int o = 0; o < outputToggles.size(); ++o)
         {
-            outputToggles[o]->setVisible (o < numOuts);
-            if (o < numOuts)
+            outputToggles[o]->setVisible (o < numCh);
+            if (o < numCh)
                 outputToggles[o]->setBounds (toggleArea.removeFromLeft (tw));
         }
 
@@ -176,9 +196,6 @@ public:
         browseButton.setBounds (r3.removeFromRight (36));
         r3.removeFromRight (6);
         pathEditor.setBounds (r3);
-
-        area.removeFromTop (10);
-        throughCorrection.setBounds (area.removeFromTop (24));
 
         area.removeFromTop (14);
         auto r4 = area.removeFromTop (28);
@@ -240,6 +257,41 @@ public:
     }
 
 private:
+    smt::MeasureMode currentMode() const
+    {
+        if (modeFirButton.getToggleState())    return smt::MeasureMode::outputFir;
+        if (modeSystemButton.getToggleState()) return smt::MeasureMode::fullSystem;
+        return smt::MeasureMode::dryOutput;
+    }
+
+    // The channel toggles mean outputs in the output modes, inputs in fullSystem.
+    int measureChannelCount() const
+    {
+        return currentMode() == smt::MeasureMode::fullSystem
+                   ? processor.configModel.getNumIns()
+                   : processor.configModel.getNumOuts();
+    }
+
+    void updateModeUi()
+    {
+        const bool full = currentMode() == smt::MeasureMode::fullSystem;
+        outputsLabel.setText (full ? "Inputs to measure" : "Outputs to measure",
+                              juce::dontSendNotification);
+
+        // Switching between output- and input-meaning clears the selection so
+        // stale channels are not measured under the new meaning.
+        if (full != lastModeWasFull)
+        {
+            for (auto* b : outputToggles)
+                b->setToggleState (false, juce::dontSendNotification);
+            lastModeWasFull = full;
+        }
+
+        pushSplSettings();
+        resized();
+        repaint();
+    }
+
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
@@ -353,17 +405,17 @@ private:
         auto& spl = processor.splMeter;
         spl.setMeterOn (meterOnButton.getToggleState());
         spl.setMicChannel (micBox.getSelectedId() - 1);
-        spl.setThroughCorrection (throughCorrection.getToggleState());
+        spl.setMode (currentMode());
 
         static const float windowSecs[] = { 0.05f, 0.1f, 0.3f, 1.0f };
         spl.setRmsWindowSeconds (windowSecs[juce::jlimit (0, 3, windowBox.getSelectedId() - 1)]);
 
         juce::uint32 mask = 0;
-        const int numOuts = processor.configModel.getNumOuts();
-        for (int o = 0; o < outputToggles.size() && o < numOuts; ++o)
+        const int numCh = measureChannelCount();
+        for (int o = 0; o < outputToggles.size() && o < numCh; ++o)
             if (outputToggles[o]->getToggleState())
                 mask |= (1u << (juce::uint32) o);
-        spl.setOutputsMask (mask);
+        spl.setChannelsMask (mask);
 
         spl.setSineOn (sineButton.getToggleState());
         spl.setSineAmpDb ((float) sineAmp.getValue());
@@ -402,21 +454,23 @@ private:
 
         smt::MeasurementEngine::Settings s;
         s.micInput = micBox.getSelectedId() - 1;
+        const int numCh = measureChannelCount();
         for (int o = 0; o < smt::numChannels; ++o)
-            s.outputsToMeasure[(size_t) o] = outputToggles[o]->getToggleState();
+            s.channelsToMeasure[(size_t) o] = o < numCh && outputToggles[o]->getToggleState();
         s.signalType = signalBox.getSelectedId() == 1
                            ? smt::MeasurementEngine::SignalType::whiteNoise
                            : smt::MeasurementEngine::SignalType::logSweep;
+        s.mode = currentMode();
         s.durationS = (float) duration.getValue();
         s.levelDb = (float) level.getValue();
         s.basePath = pathEditor.getText().trim();
-        s.throughCorrection = throughCorrection.getToggleState();
 
         processor.measurementMicChannel.store (s.micInput);
 
         if (! m.start (s))
-            status.setText ("Cannot start: select at least one output and a valid folder.",
-                            juce::dontSendNotification);
+            status.setText (juce::String ("Cannot start: select at least one ")
+                            + (s.mode == smt::MeasureMode::fullSystem ? "input" : "output")
+                            + " and a valid folder.", juce::dontSendNotification);
     }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
@@ -426,9 +480,9 @@ private:
 
     void modelChanged() override
     {
-        // Matrix size changed: re-layout the output toggles and untick the
-        // hidden ones so they cannot be measured.
-        for (int o = processor.configModel.getNumOuts(); o < outputToggles.size(); ++o)
+        // Matrix size changed: re-layout the toggles and untick the hidden ones
+        // (count depends on the mode: outputs, or inputs in fullSystem).
+        for (int o = measureChannelCount(); o < outputToggles.size(); ++o)
             outputToggles[o]->setToggleState (false, juce::dontSendNotification);
         pushSplSettings();
         resized();
@@ -453,14 +507,15 @@ private:
 
     SuperMoToAudioProcessor& processor;
 
-    juce::Label title, micLabel, outputsLabel, signalLabel, durationLabel,
+    juce::Label title, micLabel, outputsLabel, signalLabel, measureLabel, durationLabel,
                 levelLabel, pathLabel, status;
     juce::ComboBox micBox, signalBox;
     juce::OwnedArray<juce::ToggleButton> outputToggles;
+    juce::TextButton modeDryButton, modeFirButton, modeSystemButton;
     juce::Slider duration, level;
     juce::TextEditor pathEditor;
     juce::TextButton browseButton, runButton;
-    juce::ToggleButton throughCorrection;
+    bool lastModeWasFull = false;
 
     // ── SPL meter section ─────────────────────────────────────────────────────
     juce::Label splTitle, windowLabel, sineAmpLabel, sineFreqLabel, noiseAmpLabel,

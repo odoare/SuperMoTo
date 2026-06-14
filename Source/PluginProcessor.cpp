@@ -127,17 +127,23 @@ void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             inputCopy.clear (c, 0, n);
     }
 
+    // Engaged configurations A..F (also needed by the full-system measurement /
+    // SPL tests, which run the engine themselves).
+    std::array<bool, smt::numConfigs> configActive {};
+    for (int c = 0; c < smt::numConfigs; ++c)
+        configActive[(size_t) c] = apvts.getRawParameterValue (smt::configName (c))->load() > 0.5f;
+
     // Part 2: while a measurement runs, it owns the audio entirely.
     const int micChannel = juce::jlimit (0, smt::numChannels - 1,
                                          measurementMicChannel.load());
-    if (measurement.process (inputCopy.getReadPointer (micChannel), buffer, n, engine))
+    if (measurement.process (inputCopy.getReadPointer (micChannel), buffer, n, engine, configActive))
         return;
 
     // Part 2: SPL meter. It taps the selected mic for RMS and, when a test
-    // generator is engaged, owns the audio (emitting on the chosen outputs).
+    // generator is engaged, owns the audio (emitting on the chosen channels).
     const int splMicChannel = juce::jlimit (0, smt::numChannels - 1,
                                             splMeter.getMicChannel());
-    if (splMeter.process (inputCopy.getReadPointer (splMicChannel), buffer, n, engine))
+    if (splMeter.process (inputCopy.getReadPointer (splMicChannel), buffer, n, engine, configActive))
         return;
 
     // Mono fold-down of the first input pair (like MoTo).
@@ -151,11 +157,6 @@ void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             l[i] = r[i] = m;
         }
     }
-
-    // Engaged configurations A..F.
-    std::array<bool, smt::numConfigs> configActive {};
-    for (int c = 0; c < smt::numConfigs; ++c)
-        configActive[(size_t) c] = apvts.getRawParameterValue (smt::configName (c))->load() > 0.5f;
 
     const float masterGain =
         juce::Decibels::decibelsToGain (apvts.getRawParameterValue ("Level")->load())

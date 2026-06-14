@@ -16,9 +16,10 @@ namespace smt
 static constexpr float tailSeconds = 1.0f;      // capture the decay
 static constexpr float fadeSeconds = 0.02f;     // stimulus fade in/out
 
-void MeasurementEngine::prepare (double sampleRate, int)
+void MeasurementEngine::prepare (double sampleRate, int maxBlockSize)
 {
     sr = sampleRate;
+    inScratch.setSize (numChannels, juce::jmax (1, maxBlockSize));
     stop();
 }
 
@@ -27,12 +28,12 @@ bool MeasurementEngine::start (const Settings& s)
     if (isRunning())
         return false;
 
-    outputList.clear();
+    channelList.clear();
     for (int o = 0; o < numChannels; ++o)
-        if (s.outputsToMeasure[(size_t) o])
-            outputList.push_back (o);
+        if (s.channelsToMeasure[(size_t) o])
+            channelList.push_back (o);
 
-    if (outputList.empty() || s.basePath.isEmpty())
+    if (channelList.empty() || s.basePath.isEmpty())
         return false;
 
     const auto baseFile = juce::File::createFileWithoutCheckingPath (s.basePath);
@@ -57,12 +58,28 @@ bool MeasurementEngine::start (const Settings& s)
     noiseHp.c = BiquadCoeffs::highpass (sr, 10.0f, 0.707f);
     noiseLp.c = BiquadCoeffs::lowpass (sr, juce::jmin (20000.0f, (float) (0.45 * sr)), 0.707f);
 
-    currentOutput = 0;
+    currentChannel = 0;
     startCurrentOutput();
-    setStatus ("Measuring output " + juce::String (outputList[0] + 1) + "...");
+    setStatus (channelStatus (0));
     state.store (State::playing);
     sendChangeMessage();
     return true;
+}
+
+juce::String MeasurementEngine::channelStatus (int idx) const
+{
+    const bool full = settings.mode == MeasureMode::fullSystem;
+    return "Measuring " + juce::String (full ? "input " : "output ")
+         + juce::String (channelList[(size_t) idx] + 1) + "...";
+}
+
+juce::File MeasurementEngine::captureFile (int ch) const
+{
+    // Inputs (fullSystem) get an "in" tag so an input set and an output set can
+    // share a base path without clobbering each other.
+    const juce::String tag = (settings.mode == MeasureMode::fullSystem ? "_in" : "_")
+                           + juce::String (ch + 1);
+    return juce::File::createFileWithoutCheckingPath (settings.basePath + tag + ".wav");
 }
 
 void MeasurementEngine::stop()
@@ -118,7 +135,8 @@ float MeasurementEngine::nextStimulusSample()
 }
 
 bool MeasurementEngine::process (const float* micInput, juce::AudioBuffer<float>& output,
-                                 int n, MatrixEngine& engine)
+                                 int n, MatrixEngine& engine,
+                                 const std::array<bool, numConfigs>& configActive)
 {
     const auto st = state.load();
     if (st == State::idle)
@@ -132,8 +150,19 @@ bool MeasurementEngine::process (const float* micInput, juce::AudioBuffer<float>
     if (st == State::finishing)
         return true;
 
-    const int out = outputList[(size_t) currentOutput];
-    auto* dest = out < output.getNumChannels() ? output.getWritePointer (out) : nullptr;
+    const int ch = channelList[(size_t) currentChannel];
+    const bool full = settings.mode == MeasureMode::fullSystem;
+
+    // Output modes write the stimulus straight onto the measured output;
+    // fullSystem injects it into the measured input and runs the engine.
+    auto* dest = (! full && ch < output.getNumChannels()) ? output.getWritePointer (ch) : nullptr;
+    float* sIn = nullptr;
+    if (full)
+    {
+        inScratch.clear();
+        if (ch < inScratch.getNumChannels() && n <= inScratch.getNumSamples())
+            sIn = inScratch.getWritePointer (ch);
+    }
 
     auto* sent = capture.getWritePointer (0);
     auto* rec  = capture.getWritePointer (1);
@@ -142,20 +171,29 @@ bool MeasurementEngine::process (const float* micInput, juce::AudioBuffer<float>
     for (int i = 0; i < todo; ++i)
     {
         const float v = nextStimulusSample();
-        sent[capturePos] = v;                   // raw stimulus, pre-correction
+        sent[capturePos] = v;                   // raw stimulus, pre-everything
         rec[capturePos]  = micInput != nullptr ? micInput[i] : 0.0f;
-        if (dest != nullptr)
-            dest[i] = v;
+        if (dest != nullptr) dest[i] = v;
+        if (sIn  != nullptr) sIn[i]  = v;
         ++capturePos;
     }
 
-    // Optionally verify the correction: pass the emitted signal through the
-    // output trim + FIR chain (the captured "sent" stays the raw stimulus).
-    if (settings.throughCorrection && dest != nullptr)
-        engine.processOutputChainOnly (output, out, n, true);
+    if (full)
+    {
+        // Complete system: matrix routing, crossover filters, output FIRs and
+        // inter-output latency compensation, exactly as monitored. Master gain
+        // is bypassed (unity) so the level is set by the stimulus alone.
+        engine.process (inScratch.getArrayOfReadPointers(), output, n, configActive, 1.0f);
+    }
+    else if (settings.mode == MeasureMode::outputFir && dest != nullptr)
+    {
+        // Verify the correction: emitted signal through the output trim + FIR
+        // (the captured "sent" stays the raw stimulus). dryOutput does neither.
+        engine.processOutputChainOnly (output, ch, n, true);
+    }
 
-    progress.store (((float) currentOutput + (float) capturePos / (float) totalSamples)
-                    / (float) outputList.size());
+    progress.store (((float) currentChannel + (float) capturePos / (float) totalSamples)
+                    / (float) channelList.size());
 
     if (capturePos >= totalSamples)
     {
@@ -171,9 +209,8 @@ void MeasurementEngine::handleAsyncUpdate()
     if (state.load() != State::finishing)
         return;
 
-    const int out = outputList[(size_t) currentOutput];
-    const auto file = juce::File::createFileWithoutCheckingPath (
-                          settings.basePath + "_" + juce::String (out + 1) + ".wav");
+    const int ch = channelList[(size_t) currentChannel];
+    const auto file = captureFile (ch);
 
     file.deleteFile();
     juce::WavAudioFormat wav;
@@ -199,15 +236,15 @@ void MeasurementEngine::handleAsyncUpdate()
         return;
     }
 
-    if (++currentOutput < (int) outputList.size())
+    if (++currentChannel < (int) channelList.size())
     {
-        setStatus ("Measuring output " + juce::String (outputList[(size_t) currentOutput] + 1) + "...");
+        setStatus (channelStatus (currentChannel));
         startCurrentOutput();
         state.store (State::playing);
     }
     else
     {
-        setStatus ("Done (" + juce::String (outputList.size()) + " files written)");
+        setStatus ("Done (" + juce::String (channelList.size()) + " files written)");
         progress.store (1.0f);
         state.store (State::idle);
     }
