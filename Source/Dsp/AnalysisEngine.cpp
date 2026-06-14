@@ -31,6 +31,14 @@ void AnalysisEngine::clear()
     correction.clear();
     sampleRate = 0.0;
     referenceGain = 1.0;
+    clearSub();                 // reloading the main set invalidates the pairing
+}
+
+void AnalysisEngine::clearSub()
+{
+    subCurves.clear();
+    subAverage.clear();
+    subAverageSmoothed.clear();
 }
 
 int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
@@ -50,6 +58,31 @@ int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
     return (int) curves.size();
 }
 
+int AnalysisEngine::loadSubFiles (const juce::Array<juce::File>& files)
+{
+    clearSub();
+    if (curves.empty())
+        return 0;               // the main set defines the per-position anchors
+
+    int i = 0;
+    for (const auto& f : files)
+    {
+        Curve c;
+        // Anchor each sub measurement on the delay of the main measurement at
+        // the same position (paired by load order), so the main-vs-sub relative
+        // phase is preserved instead of being zeroed out per file.
+        const float anchor = curves[(size_t) juce::jmin (i, (int) curves.size() - 1)].delaySamples;
+        if (analyzeFile (f, c, anchor))
+            subCurves.push_back (std::move (c));
+        ++i;
+    }
+
+    computeSubAverage();
+    applySmoothing();
+    recomputeCorrection();
+    return (int) subCurves.size();
+}
+
 void AnalysisEngine::setSmoothing (float octaveFraction)
 {
     smoothingFraction = juce::jlimit (0.0f, 1.0f, octaveFraction);
@@ -64,9 +97,12 @@ void AnalysisEngine::applySmoothing()
         c.Hs = on ? smoothOctaveFraction (c.H, smoothingFraction) : c.H;
     averageSmoothed = on && ! average.empty() ? smoothOctaveFraction (average, smoothingFraction)
                                               : average;
+    subAverageSmoothed = on && ! subAverage.empty()
+                             ? smoothOctaveFraction (subAverage, smoothingFraction)
+                             : subAverage;
 }
 
-bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out)
+bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out, float forcedDelaySamples)
 {
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
@@ -140,24 +176,34 @@ bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out)
     for (int k = 0; k < numBins; ++k)
         out.H[(size_t) k] = std::complex<float> (pxy[(size_t) k] / (pxx[(size_t) k] + eps));
 
-    // --- Delay estimation: peak of the impulse response (IFFT of H). ---
-    std::vector<float> ir ((size_t) (2 * W), 0.0f);
-    for (int k = 0; k < numBins; ++k)
+    // --- Delay: either estimated from the impulse response (IFFT of H), or,
+    // for sub measurements, forced to the paired main measurement's delay so
+    // the relative main-vs-sub timing is kept. ---
+    float delay;
+    if (std::isnan (forcedDelaySamples))
     {
-        ir[(size_t) (2 * k)]     = out.H[(size_t) k].real();
-        ir[(size_t) (2 * k + 1)] = out.H[(size_t) k].imag();
-    }
-    fft.performRealOnlyInverseTransform (ir.data());
+        std::vector<float> ir ((size_t) (2 * W), 0.0f);
+        for (int k = 0; k < numBins; ++k)
+        {
+            ir[(size_t) (2 * k)]     = out.H[(size_t) k].real();
+            ir[(size_t) (2 * k + 1)] = out.H[(size_t) k].imag();
+        }
+        fft.performRealOnlyInverseTransform (ir.data());
 
-    int peakIdx = 0;
-    float peakVal = 0.0f;
-    for (int i = 0; i < W; ++i)
-    {
-        const float a = std::abs (ir[(size_t) i]);
-        if (a > peakVal) { peakVal = a; peakIdx = i; }
+        int peakIdx = 0;
+        float peakVal = 0.0f;
+        for (int i = 0; i < W; ++i)
+        {
+            const float a = std::abs (ir[(size_t) i]);
+            if (a > peakVal) { peakVal = a; peakIdx = i; }
+        }
+        // A peak in the second half is a (small) negative delay wrapped around.
+        delay = peakIdx <= W / 2 ? (float) peakIdx : (float) (peakIdx - W);
     }
-    // A peak in the second half is a (small) negative delay wrapped around.
-    const float delay = peakIdx <= W / 2 ? (float) peakIdx : (float) (peakIdx - W);
+    else
+    {
+        delay = forcedDelaySamples;
+    }
     out.delaySamples = delay;
 
     // Remove the linear phase so curves from different mic positions can be
@@ -187,6 +233,24 @@ void AnalysisEngine::computeAverage()
 
     const float inv = 1.0f / (float) curves.size();
     for (auto& v : average)
+        v *= inv;
+}
+
+void AnalysisEngine::computeSubAverage()
+{
+    subAverage.clear();
+    if (subCurves.empty())
+        return;
+
+    const auto numBins = subCurves[0].H.size();
+    subAverage.assign (numBins, { 0.0f, 0.0f });
+
+    for (const auto& c : subCurves)
+        for (size_t k = 0; k < numBins; ++k)
+            subAverage[k] += c.H[k];
+
+    const float inv = 1.0f / (float) subCurves.size();
+    for (auto& v : subAverage)
         v *= inv;
 }
 
@@ -248,6 +312,36 @@ float AnalysisEngine::bandWeight (double f) const
     return (float) (wl * wh);
 }
 
+void AnalysisEngine::setCrossoverHz (float hz)
+{
+    crossoverHz = juce::jlimit (20.0f, 1000.0f, hz);
+    recomputeCorrection();
+}
+
+void AnalysisEngine::setSubPolarityInverted (bool inverted)
+{
+    subInverted = inverted;
+    recomputeCorrection();
+}
+
+void AnalysisEngine::setSubDelayMs (float ms)
+{
+    subDelayMs = juce::jlimit (-20.0f, 20.0f, ms);
+    recomputeCorrection();
+}
+
+// Phase-alignment weight: full (1) at and below the crossover, released to 0
+// over `alignWidthOct` octaves above it (where the main dominates and should
+// keep its own flat-phase correction rather than inherit the sub's phase).
+float AnalysisEngine::alignWeight (double f) const
+{
+    if (f <= 0.0)
+        return 0.0f;
+    const double d = std::log2 (f / (double) crossoverHz);       // 0 at crossover
+    const double x = juce::jlimit (0.0, 1.0, d / (double) alignWidthOct);
+    return (float) (0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * x));
+}
+
 void AnalysisEngine::recomputeCorrection()
 {
     correction.clear();
@@ -287,14 +381,29 @@ void AnalysisEngine::recomputeCorrection()
         const double f = (double) k * sampleRate / (double) W;
 
         // Exact inverse of the normalized response (modulus AND phase),
-        // with the boost clamped so deep notches are not over-corrected.
+        // with the boost soft-limited so deep notches are not over-corrected.
         const auto h = std::complex<double> (smoothed[(size_t) k]) / ref;
         const double normH = std::norm (h);
         std::complex<double> c = normH > 1.0e-12 ? std::conj (h) / normH
                                                  : std::complex<double> ((double) maxBoost, 0.0);
+
+        // Soft-knee boost limit: rather than clamping the magnitude hard at
+        // maxBoostDb (which leaves a kink at every deep notch), the gain in dB
+        // is bent towards the ceiling with a tanh knee over its last `knee` dB.
+        // Below the knee the boost passes untouched; it then saturates smoothly
+        // and asymptotes to maxBoostDb. Cuts (mag < 1) are left alone.
         const double mag = std::abs (c);
-        if (mag > (double) maxBoost)
-            c *= (double) maxBoost / mag;
+        const double magDb = juce::Decibels::gainToDecibels (mag, -120.0);
+        if (magDb > 0.0)
+        {
+            const double L    = (double) maxBoostDb;        // ceiling
+            const double knee = juce::jmin (6.0, L);        // soft region below it
+            const double T    = L - knee;                   // linear up to here
+            const double limDb = (knee > 1.0e-6 && magDb > T)
+                                     ? T + knee * std::tanh ((magDb - T) / knee)
+                                     : juce::jmin (magDb, L);
+            c *= juce::Decibels::decibelsToGain (limDb - magDb);
+        }
 
         // Slope towards low frequency: 2nd order highpass target keeps the
         // correction from boosting subsonics.
@@ -309,6 +418,30 @@ void AnalysisEngine::recomputeCorrection()
             const double ph  = std::arg (c);
             c = std::polar (std::pow (mag, (double) correctionLevel),
                             ph * (double) correctionLevel);
+        }
+
+        // Subwoofer phase alignment (all-pass, magnitude untouched): around the
+        // crossover, steer the corrected main's phase onto the sub's so the two
+        // sum coherently. Built from the sub's unit-magnitude (pure-phase)
+        // response, complex-blended towards no change above the crossover.
+        if (! subAverageSmoothed.empty())
+        {
+            std::complex<double> S = subAverageSmoothed[(size_t) k];
+            if (subInverted)
+                S = -S;
+            if (subDelayMs != 0.0f)
+                S *= std::polar (1.0, -2.0 * juce::MathConstants<double>::pi
+                                          * f * (double) subDelayMs / 1000.0);
+
+            const double aS = std::abs (S);
+            const std::complex<double> ph = aS > 1.0e-20 ? S / aS
+                                                         : std::complex<double> (1.0, 0.0);
+            const double wx = (double) alignWeight (f);
+            std::complex<double> A = (1.0 - wx) + wx * ph;
+            const double aA = std::abs (A);
+            if (aA > 1.0e-12)
+                A /= aA;                // renormalize: phase-only, no level change
+            c *= A;
         }
 
         // Outside the analysis band, fade the correction back to unity so we do
@@ -369,6 +502,28 @@ std::vector<float> AnalysisEngine::getAveragePhaseDeg (const std::vector<float>&
     std::vector<float> v (freqs.size(), 0.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
         v[i] = argDeg (interpComplex (averageSmoothed, freqs[i]));
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getSubDb (const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), -120.0f);
+    if (subAverageSmoothed.empty())
+        return v;
+    // Place the sub on the same 0 dB reference as the main average for context.
+    const float refDb = juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = interpDb (subAverageSmoothed, freqs[i]) - refDb;
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getSubPhaseDeg (const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), 0.0f);
+    if (subAverageSmoothed.empty())
+        return v;
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = argDeg (interpComplex (subAverageSmoothed, freqs[i]));
     return v;
 }
 

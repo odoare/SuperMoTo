@@ -65,12 +65,22 @@ public:
     SpectrumBus& getSpectrumBus()           { return spectrumBus; }
     FirFilter& getFir (int out)             { return *firs[(size_t) out]; }
 
+    /** Extra delay (samples / ms) the engine added to this output to align it
+        with the longest output FIR's latency. 0 = no compensation. */
+    int getOutputLatencyCompSamples (int out) const { return compDelay[(size_t) out].load(); }
+    float getOutputLatencyCompMs (int out) const
+    {
+        return (float) (1000.0 * (double) compDelay[(size_t) out].load() / (sr > 0.0 ? sr : 48000.0));
+    }
+
     /** Message thread: (re)load FIR impulse files whose path changed in the
         model, and enable/disable output spectrum taps. */
     void updateFirFiles();
 
 private:
     void pullModelIfChanged();
+    void computeFedMask();          // which outputs the engaged presets feed
+    void recomputeLatencyComp();
 
     ConfigModel& model;
 
@@ -79,6 +89,17 @@ private:
     std::array<juce::LinearSmoothedValue<float>, numChannels> outputGains;
     std::array<std::atomic<float>, numChannels> outputLevels {};
     juce::LinearSmoothedValue<float> smoothedMaster;
+
+    // Inter-output latency compensation: each output that the engaged presets
+    // actually feed is delayed so those outputs share the longest fed output
+    // FIR's bulk latency (keeps multi-way / sub setups time-aligned). Outputs no
+    // active frame routes to are ignored. Power-of-two ring, integer-sample delay.
+    static constexpr int compCap = 1 << 16;     // max compensable latency
+    std::array<std::vector<float>, numChannels> compBuf;
+    std::array<int, numChannels> compWrite {};
+    std::array<std::atomic<int>, numChannels> compDelay {};
+    std::array<bool, numConfigs> activeConfigs {};   // last engaged presets
+    std::atomic<juce::uint32> fedOutputsMask { 0 };  // outputs fed by them
 
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frameSettings {};
     std::array<OutputSettings, numChannels> outputSettings {};

@@ -31,6 +31,10 @@ void MatrixEngine::prepare (double sampleRate, int maxBlockSize)
         outputGains[(size_t) o].reset (sampleRate, 0.05);
         outputGains[(size_t) o].setCurrentAndTargetValue (1.0f);
         outputLevels[(size_t) o].store (0.0f);
+
+        compBuf[(size_t) o].assign ((size_t) compCap, 0.0f);
+        compWrite[(size_t) o] = 0;
+        compDelay[(size_t) o].store (0);
     }
 
     smoothedMaster.reset (sampleRate, 0.05);
@@ -87,6 +91,58 @@ void MatrixEngine::pullModelIfChanged()
         spectrumBus.outputTap (o).setEnabled (outputSettings[(size_t) o].spectrum
                                               && o < visOuts);
     }
+
+    computeFedMask();           // frame active-states / matrix size may have changed
+    recomputeLatencyComp();     // firOn toggles change the alignment
+}
+
+// An output is "fed" if any engaged configuration has an active frame routing
+// into it. Audio-thread only (reads the live frames + activeConfigs).
+void MatrixEngine::computeFedMask()
+{
+    juce::uint32 mask = 0;
+    for (int o = 0; o < visOuts; ++o)
+    {
+        bool fed = false;
+        for (int c = 0; c < numConfigs && ! fed; ++c)
+        {
+            if (! activeConfigs[(size_t) c])
+                continue;
+            for (int i = 0; i < visIns; ++i)
+                if (frames[(size_t) c][(size_t) i][(size_t) o].isActive())
+                {
+                    fed = true;
+                    break;
+                }
+        }
+        if (fed)
+            mask |= (1u << o);
+    }
+    fedOutputsMask.store (mask);
+}
+
+// Delay every fed output so they share the longest fed output FIR's bulk
+// latency. The output owning that FIR gets 0; the rest get the difference. An
+// unfed output, or one whose FIR is not engaged by the current preset, is left
+// alone — so a sub gets aligned to a main's linear-phase correction only when
+// the engaged preset actually routes to both.
+void MatrixEngine::recomputeLatencyComp()
+{
+    const juce::uint32 fed = fedOutputsMask.load();
+    auto isFed = [fed] (int o) { return (fed & (1u << o)) != 0; };
+    auto latOf = [this] (int o)
+    {
+        return outputSettings[(size_t) o].firOn ? firs[(size_t) o]->getLatencySamples() : 0;
+    };
+
+    int lmax = 0;
+    for (int o = 0; o < numChannels; ++o)
+        if (isFed (o))
+            lmax = juce::jmax (lmax, latOf (o));
+
+    for (int o = 0; o < numChannels; ++o)
+        compDelay[(size_t) o].store (isFed (o)
+            ? juce::jlimit (0, compCap - 1, lmax - latOf (o)) : 0);
 }
 
 void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>& output,
@@ -96,7 +152,18 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
     if (! prepared)
         return;
 
+    // Re-derive the latency compensation on preset changes too (which outputs
+    // are fed depends on the engaged configs, not just the model version).
+    const bool configsChanged = (configActive != activeConfigs);
+    activeConfigs = configActive;
+
     pullModelIfChanged();
+    if (configsChanged)
+    {
+        computeFedMask();
+        recomputeLatencyComp();
+    }
+
     smoothedMaster.setTargetValue (masterGain);
 
     for (int o = 0; o < numChannels; ++o)
@@ -147,6 +214,21 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
 
         if (outputSettings[(size_t) o].firOn && firs[(size_t) o]->hasImpulse())
             firs[(size_t) o]->process (data, n);
+
+        // Inter-output latency compensation (integer-sample ring delay).
+        if (const int d = compDelay[(size_t) o].load(); d > 0)
+        {
+            auto& buf = compBuf[(size_t) o];
+            constexpr int mask = compCap - 1;
+            int wp = compWrite[(size_t) o];
+            for (int s = 0; s < n; ++s)
+            {
+                buf[(size_t) wp] = data[s];
+                data[s] = buf[(size_t) ((wp - d) & mask)];
+                wp = (wp + 1) & mask;
+            }
+            compWrite[(size_t) o] = wp;
+        }
 
         spectrumBus.outputTap (o).push (data, n);
 
@@ -202,6 +284,8 @@ void MatrixEngine::updateFirFiles()
         else
             firs[(size_t) o]->loadFile (juce::File (s.firPath));
     }
+
+    recomputeLatencyComp();     // loaded IRs changed the latencies
 }
 
 } // namespace smt

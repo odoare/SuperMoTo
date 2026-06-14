@@ -147,6 +147,48 @@ public:
         exportButton.onClick = [this] { exportIr(); };
         addAndMakeVisible (exportButton);
 
+        // ── Optional subwoofer phase integration ─────────────────────────────
+        loadSubButton.setButtonText ("Load sub measurements...");
+        loadSubButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.4f));
+        loadSubButton.onClick = [this] { loadSubFiles(); };
+        addAndMakeVisible (loadSubButton);
+
+        addLabel (crossoverLabel, "Crossover");
+        for (int f : { 40, 50, 60, 70, 80, 100, 120, 150 })
+            crossoverBox.addItem (juce::String (f) + " Hz", f);
+        crossoverBox.setEditableText (true);
+        crossoverBox.setSelectedId (80, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (crossoverBox, SuperMoToTheme::mono);
+        crossoverBox.onChange = [this]
+        {
+            analysis.setCrossoverHz (crossoverBox.getText().getFloatValue());
+            updatePlotData();
+        };
+        addAndMakeVisible (crossoverBox);
+
+        subInvertToggle.setButtonText ("Invert sub");
+        SuperMoToTheme::accentToggleButton (subInvertToggle, SuperMoToTheme::mono);
+        subInvertToggle.onClick = [this]
+        {
+            analysis.setSubPolarityInverted (subInvertToggle.getToggleState());
+            updatePlotData();
+        };
+        addAndMakeVisible (subInvertToggle);
+
+        addLabel (subDelayLabel, "Sub delay");
+        subDelaySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        subDelaySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18);
+        subDelaySlider.setRange (-20.0, 20.0, 0.1);
+        subDelaySlider.setValue (0.0, juce::dontSendNotification);
+        subDelaySlider.setTextValueSuffix (" ms");
+        SuperMoToTheme::accentSlider (subDelaySlider, SuperMoToTheme::mono);
+        subDelaySlider.onValueChange = [this]
+        {
+            analysis.setSubDelayMs ((float) subDelaySlider.getValue());
+            updatePlotData();
+        };
+        addAndMakeVisible (subDelaySlider);
+
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
@@ -215,6 +257,18 @@ public:
         r3.removeFromLeft (20);
         firInfo.setBounds (r3);
 
+        area.removeFromTop (8);
+        auto r4 = area.removeFromTop (24);
+        loadSubButton.setBounds (r4.removeFromLeft (190));
+        r4.removeFromLeft (16);
+        crossoverLabel.setBounds (r4.removeFromLeft (66));
+        crossoverBox.setBounds (r4.removeFromLeft (90));
+        r4.removeFromLeft (16);
+        subInvertToggle.setBounds (r4.removeFromLeft (96));
+        r4.removeFromLeft (16);
+        subDelayLabel.setBounds (r4.removeFromLeft (64));
+        subDelaySlider.setBounds (r4.removeFromLeft (juce::jmin (230, r4.getWidth())));
+
         area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));
         area.removeFromBottom (4);
@@ -256,6 +310,34 @@ private:
                     return;
                 loadedFiles = fc.getResults();
                 analyze();
+            });
+    }
+
+    void loadSubFiles()
+    {
+        if (! analysis.hasData())
+        {
+            status.setText ("Load the main measurements first.", juce::dontSendNotification);
+            return;
+        }
+
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Select the subwoofer measurements (same positions as the main set)",
+            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.wav");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectMultipleItems,
+            [this] (const juce::FileChooser& fc)
+            {
+                if (fc.getResults().isEmpty())
+                    return;
+                const int ok = analysis.loadSubFiles (fc.getResults());
+                status.setText (ok > 0
+                    ? juce::String (ok) + " sub measurement(s) aligned for phase integration."
+                    : "No sub file could be analyzed (need stereo wavs at the main's rate/length).",
+                    juce::dontSendNotification);
+                updatePlotData();
             });
     }
 
@@ -323,6 +405,8 @@ private:
         averagePhase    = analysis.getAveragePhaseDeg (freqs);
         correctionPhase = analysis.getCorrectionPhaseDeg (freqs);
         correctedPhase  = analysis.getCorrectedPhaseDeg (freqs);
+        subDb           = analysis.getSubDb (freqs);
+        subPhase        = analysis.getSubPhaseDeg (freqs);
         repaint();
     }
 
@@ -499,9 +583,21 @@ private:
                         juce::Justification::centredRight);
         }
 
+        // Crossover marker (where the main phase is steered onto the sub).
+        const bool hasSub = analysis.hasSub();
+        if (hasSub)
+        {
+            const float xc = freqToX (juce::jlimit (fMin, fMax, analysis.getCrossoverHz()), magR);
+            g.setColour (SuperMoToTheme::mono.withAlpha (0.5f));
+            g.drawVerticalLine ((int) xc, magR.getY(), magR.getBottom());
+            g.drawVerticalLine ((int) xc, phR.getY(), phR.getBottom());
+        }
+
         for (const auto& c : curveDbs)
             drawCurve (g, c, magR, juce::Colours::grey.withAlpha (0.55f), 1.0f);
 
+        if (hasSub)
+            drawCurve (g, subDb, magR, SuperMoToTheme::mono, 1.8f);
         drawCurve (g, averageDb, magR, juce::Colours::white, 2.4f);
         drawCurve (g, correctionDb, magR, SuperMoToTheme::master, 1.6f);
         drawCurve (g, correctedDb, magR, SuperMoToTheme::spectrum, 1.6f);
@@ -520,16 +616,20 @@ private:
         for (const auto& c : curvePhases)
             drawPhaseCurve (g, c, phR, juce::Colours::grey.withAlpha (0.45f), 1.0f);
 
+        if (hasSub)
+            drawPhaseCurve (g, subPhase, phR, SuperMoToTheme::mono, 1.8f);
         drawPhaseCurve (g, averagePhase, phR, juce::Colours::white, 2.0f);
         drawPhaseCurve (g, correctionPhase, phR, SuperMoToTheme::master, 1.4f);
         drawPhaseCurve (g, correctedPhase, phR, SuperMoToTheme::spectrum, 1.4f);
 
         // ── Legend & axis descriptions ───────────────────────────────────────
         struct Item { const char* name; juce::Colour col; };
-        const Item items[] = { { "measurements", SuperMoToTheme::dimText },
-                               { "average", juce::Colours::white },
-                               { "correction", SuperMoToTheme::master },
-                               { "corrected", SuperMoToTheme::spectrum } };
+        std::vector<Item> items { { "measurements", SuperMoToTheme::dimText },
+                                  { "average", juce::Colours::white },
+                                  { "correction", SuperMoToTheme::master },
+                                  { "corrected", SuperMoToTheme::spectrum } };
+        if (hasSub)
+            items.push_back ({ "sub", SuperMoToTheme::mono });
         int x = (int) magR.getX() + 6;
         g.setFont (11.0f);
         for (const auto& item : items)
@@ -557,17 +657,19 @@ private:
     smt::AnalysisEngine analysis;
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
-    juce::Label firInfo, rangeLabel, rangeToLabel;
+    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, subDelayLabel;
     juce::Slider boostSlider;
-    juce::TextButton loadButton, exportButton, exportMeasuredButton;
-    juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox;
-    juce::Slider levelSlider;
+    juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
+    juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
+    juce::ToggleButton subInvertToggle;
+    juce::Slider levelSlider, subDelaySlider;
 
     juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;
     std::vector<std::vector<float>> curveDbs, curvePhases;
     std::vector<float> averageDb, correctionDb, correctedDb;
     std::vector<float> averagePhase, correctionPhase, correctedPhase;
+    std::vector<float> subDb, subPhase;
 
     juce::Rectangle<int> plotArea;
     std::unique_ptr<juce::FileChooser> fileChooser;

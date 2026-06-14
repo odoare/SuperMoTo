@@ -95,6 +95,12 @@ public:
         return sourceIR.getNumSamples();
     }
 
+    /** Bulk delay the impulse imposes, in samples at the session rate: the
+        position of its peak. Linear-phase correction IRs (centred at N/2) carry
+        N/2; minimum-phase IRs carry ~0. Used for inter-output latency
+        compensation. Lock-free (atomic). */
+    int getLatencySamples() const noexcept  { return impulseLatency.load(); }
+
     /** In-place convolution of one channel. Audio thread. */
     void process (float* data, int n)
     {
@@ -155,8 +161,15 @@ private:
         impulseBuffer.SetLength (len);
         impulseBuffer.samplerate = currentSampleRate;
         auto* dst = impulseBuffer.impulses[0].Get();
+        int peakIdx = 0;
+        float peakVal = 0.0f;
         for (int i = 0; i < len; ++i)
+        {
             dst[i] = (WDL_FFT_REAL) src[i];
+            const float a = std::abs (src[i]);
+            if (a > peakVal) { peakVal = a; peakIdx = i; }
+        }
+        impulseLatency.store (peakIdx);
 
         engine.SetImpulse (&impulseBuffer);
     }
@@ -167,6 +180,7 @@ private:
         impulseBuffer.SetLength (1);
         impulseBuffer.samplerate = currentSampleRate;
         impulseBuffer.impulses[0].Get()[0] = 0.0;
+        impulseLatency.store (0);
         engine.SetImpulse (&impulseBuffer);
     }
 
@@ -178,6 +192,7 @@ private:
     juce::AudioBuffer<float> sourceIR;   // as loaded (mono)
     double sourceRate = 0.0;
     double currentSampleRate = 44100.0;
+    std::atomic<int> impulseLatency { 0 };   // peak position, session samples
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirFilter)
 };

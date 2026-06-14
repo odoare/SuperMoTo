@@ -72,6 +72,7 @@ private:
     SuperMoToAudioProcessor& audioProcessor;
 
     fxme::FxmeLookAndFeel fxmeLookAndFeel;
+    juce::TooltipWindow tooltipWindow { this, 600 };    // hover help (latency comp, …)
 
     // ── Top bar ──────────────────────────────────────────────────────────────
     juce::Image logo;

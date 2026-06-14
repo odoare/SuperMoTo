@@ -34,6 +34,7 @@
 #include "../Theme.h"
 
 class MatrixComponent : public juce::Component,
+                        public juce::TooltipClient,
                         private juce::Timer,
                         private smt::ConfigModel::Listener
 {
@@ -45,7 +46,11 @@ public:
 
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+
+    /** Tooltip for the cell currently under the mouse (e.g. latency comp). */
+    juce::String getTooltip() override;
 
     /** Which configuration (A..F) is displayed/edited. */
     void setEditConfig (int config);
@@ -98,6 +103,9 @@ private:
     bool draggingFrame = false, draggingOutput = false;
     int dragIn = -1, dragOut = -1;
     float dragStartGain = 0.0f;
+
+    // Cell under the mouse, for tooltips (-1 = none, else output index).
+    int hoverOut = -1;
 
     std::unique_ptr<juce::FileChooser> fileChooser;
 

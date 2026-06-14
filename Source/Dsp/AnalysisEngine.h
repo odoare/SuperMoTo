@@ -32,6 +32,7 @@
 
 #include <JuceHeader.h>
 #include <complex>
+#include <limits>
 #include <vector>
 
 namespace smt
@@ -55,6 +56,30 @@ public:
     int getNumCurves() const noexcept           { return (int) curves.size(); }
     juce::String getCurveName (int i) const     { return curves[(size_t) i].name; }
     double getSampleRate() const noexcept       { return sampleRate; }
+
+    //==========================================================================
+    // Optional subwoofer integration (phase-only alignment). A second set of
+    // measurements taken at the SAME positions as the main set (paired by load
+    // order) is loaded; each is delay-anchored on the corresponding main
+    // measurement so the main-vs-sub relative phase survives the per-position
+    // delay removal. Around the crossover the correction then carries an
+    // all-pass that steers the corrected main's phase onto the sub's, so the
+    // two sum coherently there. The main's magnitude correction is unchanged.
+    /** Loads the sub measurements (main set must be loaded first). Returns the
+        number of successfully analyzed files. */
+    int loadSubFiles (const juce::Array<juce::File>& files);
+    void clearSub();
+    bool hasSub() const noexcept                { return ! subAverageSmoothed.empty(); }
+
+    void setCrossoverHz (float hz);
+    float getCrossoverHz() const noexcept       { return crossoverHz; }
+    void setSubPolarityInverted (bool inverted);
+    bool getSubPolarityInverted() const noexcept { return subInverted; }
+    void setSubDelayMs (float ms);              // fine relative-timing trim
+    float getSubDelayMs() const noexcept        { return subDelayMs; }
+
+    std::vector<float> getSubDb (const std::vector<float>& freqs) const;
+    std::vector<float> getSubPhaseDeg (const std::vector<float>& freqs) const;
 
     //==========================================================================
     /** Correction level: 0 = no correction, 1 = flat (except LF slope). */
@@ -124,11 +149,14 @@ private:
         float delaySamples = 0.0f;
     };
 
-    bool analyzeFile (const juce::File& file, Curve& out);
+    bool analyzeFile (const juce::File& file, Curve& out,
+                      float forcedDelaySamples = std::numeric_limits<float>::quiet_NaN());
     juce::AudioBuffer<float> renderIR (const std::vector<std::complex<float>>& spec,
                                        int firLength) const;
     float bandWeight (double freqHz) const;     // 1 in band, raised-cosine skirts
+    float alignWeight (double freqHz) const;    // 1 at/below crossover, 0 above
     void computeAverage();
+    void computeSubAverage();
     void applySmoothing();
     void recomputeCorrection();
 
@@ -147,11 +175,19 @@ private:
     float lfCornerHz = 30.0f;                   // slope towards low frequency
     float analysisLowHz  = 20.0f;               // band the analysis acts on
     float analysisHighHz = 20000.0f;
+    float crossoverHz    = 80.0f;               // main/sub crossover
+    float alignWidthOct  = 1.0f;                // phase-align release width above it
+    bool  subInverted    = false;
+    float subDelayMs     = 0.0f;
 
     std::vector<Curve> curves;
     std::vector<std::complex<float>> average;           // delay-aligned complex average
     std::vector<std::complex<float>> averageSmoothed;   // what plots & correction use
     std::vector<std::complex<float>> correction;        // designed correction
+
+    std::vector<Curve> subCurves;                       // sub set, anchored on main
+    std::vector<std::complex<float>> subAverage;
+    std::vector<std::complex<float>> subAverageSmoothed; // alignment + display
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalysisEngine)
 };

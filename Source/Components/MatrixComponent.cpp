@@ -127,6 +127,17 @@ void MatrixComponent::paint (juce::Graphics& g)
             g.setColour (SuperMoToTheme::spectrum);
             g.fillEllipse (r.getX() + 2.0f, r.getY() + 2.0f, 5.0f, 5.0f);
         }
+
+        // Latency-compensation LED (top-right): lit when the engine delayed this
+        // output to align it with the longest output FIR. Hover for the amount.
+        if (engine.getOutputLatencyCompSamples (o) > 0)
+        {
+            const juce::Rectangle<float> led (r.getRight() - 7.0f, r.getY() + 2.0f, 5.0f, 5.0f);
+            g.setColour (SuperMoToTheme::dim);
+            g.fillEllipse (led);
+            g.setColour (SuperMoToTheme::dim.brighter (0.6f));
+            g.drawEllipse (led, 0.5f);
+        }
     }
 
     if (! gridVisible)
@@ -314,6 +325,30 @@ void MatrixComponent::mouseDoubleClick (const juce::MouseEvent& e)
     selIn = in; selOut = out;
     if (onFrameSelected != nullptr)
         onFrameSelected (in, out);
+}
+
+void MatrixComponent::mouseMove (const juce::MouseEvent& e)
+{
+    int in = -1, out = -1;
+    bool strip = false;
+    const int newHover = (hitTest (e.getPosition(), in, out, strip) && strip) ? out : -1;
+    if (newHover != hoverOut)
+        hoverOut = newHover;        // tooltip text follows the hovered output
+}
+
+juce::String MatrixComponent::getTooltip()
+{
+    if (hoverOut < 0 || hoverOut >= model.getNumOuts())
+        return {};
+
+    const int comp = engine.getOutputLatencyCompSamples (hoverOut);
+    if (comp <= 0)
+        return {};
+
+    return "Output " + juce::String (hoverOut + 1) + ": +"
+         + juce::String (engine.getOutputLatencyCompMs (hoverOut), 2) + " ms ("
+         + juce::String (comp) + " samples) latency compensation\n"
+         + "added to align this output with the longest output FIR.";
 }
 
 //==============================================================================
