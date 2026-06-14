@@ -109,7 +109,7 @@ void MatrixEngine::computeFedMask()
             if (! activeConfigs[(size_t) c])
                 continue;
             for (int i = 0; i < visIns; ++i)
-                if (frames[(size_t) c][(size_t) i][(size_t) o].isActive())
+                if (frames[(size_t) c][(size_t) i][(size_t) o].isRouted())
                 {
                     fed = true;
                     break;

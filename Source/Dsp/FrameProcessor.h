@@ -85,6 +85,10 @@ public:
                                || smoothedGain.isSmoothing();
     }
 
+    /** Routing intent (ignores the post-deactivation gain ramp): true only while
+        the frame is switched on. Used to decide which outputs are fed. */
+    bool isRouted() const noexcept          { return settings.active; }
+
     bool wantsSpectrum() const noexcept     { return settings.spectrum; }
 
     /** Filters/delays input, adds into dest. Returns pointer to the frame's
