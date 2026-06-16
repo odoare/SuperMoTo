@@ -48,7 +48,7 @@ public:
         if (reader == nullptr || reader->lengthInSamples <= 0)
             return false;
 
-        const int n = (int) std::min (reader->lengthInSamples, (juce::int64) (1 << 20));
+        const int n = (int) juce::jmin (reader->lengthInSamples, (juce::int64) (1 << 20));
         juce::AudioBuffer<float> temp ((int) reader->numChannels, n);
         reader->read (&temp, 0, n, 0, true, true);
 

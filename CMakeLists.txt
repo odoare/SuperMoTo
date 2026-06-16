@@ -88,6 +88,9 @@ target_compile_definitions(SuperMoTo
         JUCE_USE_CURL=0
         JUCE_DISPLAY_SPLASH_SCREEN=0
         JUCE_MODAL_LOOPS_PERMITTED=1
+        # WDL's convoengine.h pulls in <windows.h>; without NOMINMAX its min/max
+        # macros clobber std::min/std::max in headers like FirFilter.h (MSVC C2589).
+        $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
 )
 
 # ── Offline test of the analysis part (build & run manually) ─────────────────
