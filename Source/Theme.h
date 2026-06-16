@@ -34,26 +34,26 @@ namespace SuperMoToTheme
     inline const juce::Colour text        { 0xffd8d8e0 };
     inline const juce::Colour dimText     { 0xff9a9aa8 };
 
-    inline const juce::Colour master      { 0xffe8833a };   // orange (master level)
+    inline const juce::Colour master      { 0xff007070 };   // dark cyan (master level)
     inline const juce::Colour mute        { 0xffe05858 };
     inline const juce::Colour dim         { 0xffd9b13a };
     inline const juce::Colour mono        { 0xff8aa0b8 };
-    inline const juce::Colour exclusive   { 0xffb164d6 };
+    inline const juce::Colour exclusive   { 0xff00ffff };
     inline const juce::Colour fir         { 0xff35c0c0 };   // teal (FIR correction)
     inline const juce::Colour spectrum    { 0xff8fc73e };   // lime (analyzer)
     inline const juce::Colour measure     { 0xffe0586f };   // rose (calibration)
 
-    // One accent per configuration A..F.
-    inline juce::Colour configColour (int c) noexcept
-    {
-        static const juce::Colour col[] = { juce::Colour (0xffe8833a),   // A orange
-                                            juce::Colour (0xff35c0c0),   // B teal
-                                            juce::Colour (0xff8fc73e),   // C lime
-                                            juce::Colour (0xff4a90e0),   // D azure
-                                            juce::Colour (0xffd06fd0),   // E magenta
-                                            juce::Colour (0xffd9b13a) }; // F gold
-        return col[(size_t) juce::jlimit (0, 5, c)];
-    }
+    inline const juce::Colour configEngage { 0xff00ffff };  // cyan: A..F engage / edit
+
+    // Plots, analyzers and meters.
+    inline const juce::Colour plotBackground   { 0xff000000 };   // plot / meter background
+    inline const juce::Colour grid             { 0x66555555 };   // faint grid line
+    inline const juce::Colour gridZero         { 0xcc555555 };   // 0 dB / 0 deg grid line
+    inline const juce::Colour curveAverage     { 0xffffffff };   // analysis average curve
+    inline const juce::Colour curveMeasurement { 0xff808080 };   // individual measurements
+    inline const juce::Colour selection        { 0xe6ffffff };   // selected matrix frame
+    inline const juce::Colour meterOk          { 0xff3b9d3b };   // VU below 0 dB
+    inline const juce::Colour meterClip        { 0xffff0000 };   // VU over 0 dB
 
     // Matrix input-row accents: rotate the hue over the 16 inputs.
     inline juce::Colour inputColour (int in) noexcept

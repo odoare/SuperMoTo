@@ -107,7 +107,7 @@ public:
         addAndMakeVisible (level);
 
         addLabel (pathLabel, "Base pathname (folder + base name)");
-        pathEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colours::black.withAlpha (0.4f));
+        pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
         pathEditor.setText (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
                                 .getChildFile ("supermoto_measure").getFullPathName());
         addAndMakeVisible (pathEditor);

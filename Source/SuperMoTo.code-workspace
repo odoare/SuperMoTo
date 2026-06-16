@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Mechanodd"
+		},
+		{
+			"path": "../../FxmeJuceTools"
+		},
+		{
+			"name": "MoTo",
+			"path": "../../MoTo"
+		}
+	],
+	"settings": {}
+}

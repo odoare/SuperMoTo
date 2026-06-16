@@ -49,7 +49,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     {
         auto* b = configButtons.add (new fxme::FxmeButton (audioProcessor.apvts,
                                                            smt::configName (c),
-                                                           juce::Colours::cyan));
+                                                           SuperMoToTheme::configEngage));
         b->setLookAndFeel (&fxmeLookAndFeel);
         addAndMakeVisible (b);
     }
@@ -132,14 +132,14 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     editLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
     addAndMakeVisible (editLabel);
 
-    // The edit button of the currently displayed configuration lights cyan.
+    // The edit button of the currently displayed configuration lights up.
     for (int c = 0; c < smt::numConfigs; ++c)
     {
         auto* b = editConfigButtons.add (new juce::TextButton (smt::configName (c)));
         b->setClickingTogglesState (false);
         b->setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-        b->setColour (juce::TextButton::buttonOnColourId, juce::Colours::cyan.darker (0.25f));
-        b->setColour (juce::TextButton::textColourOnId, juce::Colours::cyan);
+        b->setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::configEngage.darker (0.25f));
+        b->setColour (juce::TextButton::textColourOnId, SuperMoToTheme::configEngage);
         b->onClick = [this, c] { setEditConfig (c); };
         addAndMakeVisible (b);
     }

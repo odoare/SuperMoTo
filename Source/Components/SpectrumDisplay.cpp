@@ -49,7 +49,7 @@ void SpectrumDisplay::mouseDown (const juce::MouseEvent& e)
 void SpectrumDisplay::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    g.setColour (juce::Colours::black);
+    g.setColour (SuperMoToTheme::plotBackground);
     g.fillRoundedRectangle (bounds, 6.0f);
 
     const auto plot = getPlotArea();
@@ -59,7 +59,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     for (float f : { 20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
     {
         const float x = freqToX (f, plot);
-        g.setColour (juce::Colours::darkgrey.withAlpha (0.4f));
+        g.setColour (SuperMoToTheme::grid);
         g.drawVerticalLine ((int) x, plot.getY(), plot.getBottom());
         g.setColour (SuperMoToTheme::dimText);
         g.drawText (f >= 1000.0f ? juce::String (f / 1000.0f) + "k" : juce::String ((int) f),
@@ -71,7 +71,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     for (float db = 0.0f; db >= minDb; db -= 20.0f)
     {
         const float y = dbToY (db, plot);
-        g.setColour (juce::Colours::darkgrey.withAlpha (db == 0.0f ? 0.8f : 0.4f));
+        g.setColour (db == 0.0f ? SuperMoToTheme::gridZero : SuperMoToTheme::grid);
         g.drawHorizontalLine ((int) y, plot.getX(), plot.getRight());
         g.setColour (SuperMoToTheme::dimText);
         const int label = splCalibrated ? juce::roundToInt (db + splOffset) : (int) db;
@@ -121,7 +121,7 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     // Aggregation-mode badge (click to toggle avg / peak).
     {
         auto badge = modeBadgeBounds().toFloat();
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
         g.fillRoundedRectangle (badge, 3.0f);
         g.setColour (SuperMoToTheme::panelLine);
         g.drawRoundedRectangle (badge, 3.0f, 1.0f);

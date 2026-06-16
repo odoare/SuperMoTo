@@ -117,9 +117,9 @@ void MatrixComponent::paint (juce::Graphics& g)
         const float lvl = engine.getOutputLevelDb (o);
         const float w = juce::jmap (juce::jlimit (-60.0f, 6.0f, lvl),
                                     -60.0f, 6.0f, 0.0f, r.getWidth() - 6.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.6f));
+        g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
         g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, r.getWidth() - 6.0f, 5.0f);
-        g.setColour (lvl > 0.0f ? juce::Colours::red : juce::Colours::green.brighter (0.3f));
+        g.setColour (lvl > 0.0f ? SuperMoToTheme::meterClip : SuperMoToTheme::meterOk);
         g.fillRect (r.getX() + 3.0f, r.getBottom() - 8.0f, w, 5.0f);
 
         if (s.spectrum)
@@ -177,7 +177,7 @@ void MatrixComponent::paint (juce::Graphics& g)
 
             if (i == selIn && o == selOut)
             {
-                g.setColour (juce::Colours::white.withAlpha (0.9f));
+                g.setColour (SuperMoToTheme::selection);
                 g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.4f);
             }
             else
@@ -212,9 +212,9 @@ void MatrixComponent::paint (juce::Graphics& g)
                 const float lvl = engine.getFrameLevelDb (editConfig, i, o);
                 const float h = juce::jmap (juce::jlimit (-60.0f, 6.0f, lvl),
                                             -60.0f, 6.0f, 0.0f, r.getHeight() - 4.0f);
-                g.setColour (juce::Colours::black.withAlpha (0.5f));
+                g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.5f));
                 g.fillRect (r.getRight() - 4.0f, r.getY() + 2.0f, 2.5f, r.getHeight() - 4.0f);
-                g.setColour (lvl > 0.0f ? juce::Colours::red
+                g.setColour (lvl > 0.0f ? SuperMoToTheme::meterClip
                                         : inCol.brighter (0.6f));
                 g.fillRect (r.getRight() - 4.0f, r.getBottom() - 2.0f - h, 2.5f, h);
             }

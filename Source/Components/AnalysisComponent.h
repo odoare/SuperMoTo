@@ -534,7 +534,7 @@ private:
 
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> bounds) const
     {
-        g.setColour (juce::Colours::black);
+        g.setColour (SuperMoToTheme::plotBackground);
         g.fillRoundedRectangle (bounds, 4.0f);
 
         auto inner = bounds.reduced (24.0f, 12.0f);
@@ -547,7 +547,7 @@ private:
         for (float f : { 20.f, 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
         {
             const float x = freqToX (f, magR);
-            g.setColour (juce::Colours::darkgrey.withAlpha (0.4f));
+            g.setColour (SuperMoToTheme::grid);
             g.drawVerticalLine ((int) x, magR.getY(), magR.getBottom());
             g.drawVerticalLine ((int) x, phR.getY(), phR.getBottom());
             g.setColour (SuperMoToTheme::dimText);
@@ -559,7 +559,7 @@ private:
         for (float db = plotMinDb; db <= plotMaxDb; db += 10.0f)
         {
             const float y = dbToY (db, magR);
-            g.setColour (juce::Colours::darkgrey.withAlpha (db == 0.0f ? 0.8f : 0.4f));
+            g.setColour (db == 0.0f ? SuperMoToTheme::gridZero : SuperMoToTheme::grid);
             g.drawHorizontalLine ((int) y, magR.getX(), magR.getRight());
             g.setColour (SuperMoToTheme::dimText);
             g.drawText (juce::String ((int) db), (int) bounds.getX() + 1, (int) y - 7, 23, 14,
@@ -577,11 +577,11 @@ private:
         }
 
         for (const auto& c : curveDbs)
-            drawCurve (g, c, magR, juce::Colours::grey.withAlpha (0.55f), 1.0f);
+            drawCurve (g, c, magR, SuperMoToTheme::curveMeasurement.withAlpha (0.55f), 1.0f);
 
         if (hasSub)
             drawCurve (g, subDb, magR, SuperMoToTheme::mono, 1.8f);
-        drawCurve (g, averageDb, magR, juce::Colours::white, 2.4f);
+        drawCurve (g, averageDb, magR, SuperMoToTheme::curveAverage, 2.4f);
         drawCurve (g, correctionDb, magR, SuperMoToTheme::master, 1.6f);
         drawCurve (g, correctedDb, magR, SuperMoToTheme::spectrum, 1.6f);
 
@@ -589,7 +589,7 @@ private:
         for (float deg = -180.0f; deg <= 180.0f; deg += 90.0f)
         {
             const float y = phaseToY (deg, phR);
-            g.setColour (juce::Colours::darkgrey.withAlpha (deg == 0.0f ? 0.8f : 0.4f));
+            g.setColour (deg == 0.0f ? SuperMoToTheme::gridZero : SuperMoToTheme::grid);
             g.drawHorizontalLine ((int) y, phR.getX(), phR.getRight());
             g.setColour (SuperMoToTheme::dimText);
             g.drawText (juce::String ((int) deg), (int) bounds.getX() + 1, (int) y - 7, 23, 14,
@@ -597,18 +597,18 @@ private:
         }
 
         for (const auto& c : curvePhases)
-            drawPhaseCurve (g, c, phR, juce::Colours::grey.withAlpha (0.45f), 1.0f);
+            drawPhaseCurve (g, c, phR, SuperMoToTheme::curveMeasurement.withAlpha (0.45f), 1.0f);
 
         if (hasSub)
             drawPhaseCurve (g, subPhase, phR, SuperMoToTheme::mono, 1.8f);
-        drawPhaseCurve (g, averagePhase, phR, juce::Colours::white, 2.0f);
+        drawPhaseCurve (g, averagePhase, phR, SuperMoToTheme::curveAverage, 2.0f);
         drawPhaseCurve (g, correctionPhase, phR, SuperMoToTheme::master, 1.4f);
         drawPhaseCurve (g, correctedPhase, phR, SuperMoToTheme::spectrum, 1.4f);
 
         // ── Legend & axis descriptions ───────────────────────────────────────
         struct Item { const char* name; juce::Colour col; };
-        std::vector<Item> items { { "measurements", SuperMoToTheme::dimText },
-                                  { "average", juce::Colours::white },
+        std::vector<Item> items { { "measurements", SuperMoToTheme::curveMeasurement },
+                                  { "average", SuperMoToTheme::curveAverage },
                                   { "correction", SuperMoToTheme::master },
                                   { "corrected", SuperMoToTheme::spectrum } };
         if (hasSub)

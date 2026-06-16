@@ -64,7 +64,7 @@ public:
         const float barBot = bar.getBottom();
 
         // Track background.
-        g.setColour (juce::Colours::black);
+        g.setColour (SuperMoToTheme::plotBackground);
         g.fillRoundedRectangle (bar, 3.0f);
         g.setColour (SuperMoToTheme::panelLine);
         g.drawRoundedRectangle (bar, 3.0f, 1.0f);
