@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  JUCE_VERSION: 8.0.12
+
+jobs:
+  # ── Linux x86_64 ──────────────────────────────────────────────────────────
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            libasound2-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev \
+            libcurl4-openssl-dev libwebkit2gtk-4.1-dev
+
+      - uses: actions/checkout@v4
+        with:
+          path: SuperMoTo
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_VERSION }}
+          path: JUCE
+
+      - name: Checkout FxmeJuceTools
+        uses: actions/checkout@v4
+        with:
+          repository: odoare/FxmeJuceTools
+          path: _fxme_tmp
+
+      - name: Install FxmeJuceTools module
+        shell: bash
+        run: |
+          mkdir -p JUCE/usermodules
+          mv _fxme_tmp/module/FxmeJuceTools JUCE/usermodules/FxmeJuceTools
+
+      - name: Configure & Build
+        run: |
+          cmake -B SuperMoTo/build -S SuperMoTo -DCMAKE_BUILD_TYPE=Release
+          # The embedded binary-data target is RAM-hungry — build it alone first.
+          cmake --build SuperMoTo/build --config Release --target SuperMoToBinaryData --parallel 1
+          # Build the rest (capped at 2 to stay within the runner's RAM).
+          cmake --build SuperMoTo/build --config Release --parallel 2
+
+      - name: Package
+        run: |
+          ART=SuperMoTo/build/SuperMoTo_artefacts/Release
+          mkdir -p staging
+          cp -r "$ART/VST3/SuperMoTo.vst3" staging/
+          cp -r "$ART/Standalone/SuperMoTo" staging/
+          zip -r ${{ github.workspace }}/SuperMoTo-Linux-x86_64.zip staging/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: SuperMoTo-Linux-x86_64.zip
+
+  # ── Windows x86_64 ────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SuperMoTo
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_VERSION }}
+          path: JUCE
+
+      - name: Checkout FxmeJuceTools
+        uses: actions/checkout@v4
+        with:
+          repository: odoare/FxmeJuceTools
+          path: _fxme_tmp
+
+      - name: Install FxmeJuceTools module
+        shell: bash
+        run: |
+          mkdir -p JUCE/usermodules
+          mv _fxme_tmp/module/FxmeJuceTools JUCE/usermodules/FxmeJuceTools
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure & Build
+        run: |
+          cmake -B SuperMoTo/build -S SuperMoTo -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build SuperMoTo/build --target SuperMoToBinaryData --parallel 1
+          cmake --build SuperMoTo/build --parallel
+
+      - name: Package
+        shell: bash
+        run: |
+          ART=SuperMoTo/build/SuperMoTo_artefacts/Release
+          mkdir -p staging
+          cp -r "$ART/VST3/SuperMoTo.vst3" staging/
+          cp -r "$ART/Standalone/SuperMoTo.exe" staging/
+          7z a SuperMoTo-Windows-x86_64.zip ./staging/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: SuperMoTo-Windows-x86_64.zip
+
+  # ── macOS universal (arm64 + x86_64) ──────────────────────────────────────
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SuperMoTo
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_VERSION }}
+          path: JUCE
+
+      - name: Checkout FxmeJuceTools
+        uses: actions/checkout@v4
+        with:
+          repository: odoare/FxmeJuceTools
+          path: _fxme_tmp
+
+      - name: Install FxmeJuceTools module
+        shell: bash
+        run: |
+          mkdir -p JUCE/usermodules
+          mv _fxme_tmp/module/FxmeJuceTools JUCE/usermodules/FxmeJuceTools
+
+      - name: Configure & Build
+        run: |
+          cmake -B SuperMoTo/build -S SuperMoTo -DCMAKE_BUILD_TYPE=Release
+          cmake --build SuperMoTo/build --config Release --target SuperMoToBinaryData --parallel 1
+          # Capped at 2 (universal-binary builds double the compile/link load).
+          cmake --build SuperMoTo/build --config Release --parallel 2
+
+      - name: Verify universal binary
+        run: |
+          lipo -info "SuperMoTo/build/SuperMoTo_artefacts/Release/VST3/SuperMoTo.vst3/Contents/MacOS/SuperMoTo"
+
+      - name: Build pkg installer
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          ART=SuperMoTo/build/SuperMoTo_artefacts/Release
+          mkdir -p pkg_root/Library/Audio/Plug-Ins/VST3
+          mkdir -p pkg_root/Library/Audio/Plug-Ins/Components
+          cp -r "$ART/VST3/SuperMoTo.vst3" pkg_root/Library/Audio/Plug-Ins/VST3/
+          cp -r "$ART/AU/SuperMoTo.component" pkg_root/Library/Audio/Plug-Ins/Components/
+          pkgbuild \
+            --root pkg_root \
+            --identifier com.FXMechanics.SuperMoTo \
+            --version "$VERSION" \
+            --install-location / \
+            SuperMoTo-macOS.pkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: SuperMoTo-macOS.pkg
+
+      - name: Package VST3, AU and Standalone zips
+        run: |
+          ART=SuperMoTo/build/SuperMoTo_artefacts/Release
+          mkdir -p staging
+          cp -r "$ART/VST3/SuperMoTo.vst3" staging/
+          cp -r "$ART/AU/SuperMoTo.component" staging/
+          cp -r "$ART/Standalone/SuperMoTo.app" staging/
+          zip -r ${{ github.workspace }}/SuperMoTo-macOS-universal.zip staging/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-zip
+          path: SuperMoTo-macOS-universal.zip
+
+  # ── Publish GitHub Release ────────────────────────────────────────────────
+  release:
+    needs: [build-linux-x86_64, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.zip
+            artifacts/*.pkg
+          generate_release_notes: true
