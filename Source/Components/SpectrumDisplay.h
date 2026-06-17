@@ -33,7 +33,11 @@ public:
         float thickness = 1.4f;
     };
 
-    SpectrumDisplay() { startTimerHz (25); }
+    SpectrumDisplay()
+    {
+        analyzer.setFftSize (1 << fftOrder);
+        startTimerHz (25);
+    }
 
     /** Registers a tap to display. Traces draw only while their tap is enabled. */
     void addTrace (TraceConfig cfg)
@@ -91,12 +95,29 @@ private:
         return juce::jmap (db, minDb, maxDb, r.getBottom(), r.getY());
     }
 
-    // Small clickable "avg / peak" badge in the bottom-right of the plot.
-    juce::Rectangle<int> modeBadgeBounds() const
+    // Clickable badges. The detector (avg/peak) stays bottom-right; the window
+    // size and temporal-averaging controls sit bottom-left.
+    juce::Rectangle<int> detectorBadgeBounds() const
     {
         auto plot = getPlotArea();
         return { (int) plot.getRight() - 50, (int) plot.getBottom() - 18, 46, 14 };
     }
+    juce::Rectangle<int> fftBadgeBounds() const
+    {
+        auto plot = getPlotArea();
+        return { (int) plot.getX() + 4, (int) plot.getBottom() - 18, 58, 14 };
+    }
+    juce::Rectangle<int> avgBadgeBounds() const
+    {
+        return fftBadgeBounds().translated (62, 0).withWidth (38);
+    }
+    juce::Rectangle<int> nBadgeBounds() const
+    {
+        return avgBadgeBounds().translated (42, 0).withWidth (40);
+    }
+
+    void drawBadge (juce::Graphics& g, juce::Rectangle<int> r,
+                    const juce::String& text, bool active) const;
 
     std::vector<Trace> traces;
     smt::SpectrumAnalyzer analyzer;
@@ -105,6 +126,10 @@ private:
     bool  splCalibrated = false;
     float splOffset = 0.0f;
     Mode  mode = Mode::average;
+
+    int  fftOrder = smt::spectrumFftOrder;      // window size = 1 << fftOrder
+    bool avgOn = true;                          // temporal averaging
+    int  nAvg  = 4;                             // averaged over ~nAvg frames
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };

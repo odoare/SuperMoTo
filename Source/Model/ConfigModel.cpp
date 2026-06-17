@@ -16,6 +16,7 @@ namespace smt
 static const juce::Identifier idConfigurations ("Configurations");
 static const juce::Identifier idConfiguration  ("Configuration");
 static const juce::Identifier idFrame          ("Frame");
+static const juce::Identifier idBand           ("Band");
 static const juce::Identifier idOutput         ("Output");
 
 juce::ValueTree ConfigModel::toValueTree() const
@@ -45,14 +46,22 @@ juce::ValueTree ConfigModel::toValueTree() const
                 vf.setProperty ("out", o, nullptr);
                 vf.setProperty ("active", f.active, nullptr);
                 vf.setProperty ("gain", f.gainDb, nullptr);
-                vf.setProperty ("filterOn", f.filterOn, nullptr);
-                vf.setProperty ("filterType", f.filterType, nullptr);
-                vf.setProperty ("filterOrder", f.filterOrder, nullptr);
-                vf.setProperty ("filterFreq", f.filterFreq, nullptr);
-                vf.setProperty ("filterQ", f.filterQ, nullptr);
                 vf.setProperty ("phaseInvert", f.phaseInvert, nullptr);
                 vf.setProperty ("delayMs", f.delayMs, nullptr);
                 vf.setProperty ("spectrum", f.spectrum, nullptr);
+
+                for (int bi = 0; bi < numFrameBands; ++bi)
+                {
+                    const auto& b = f.bands[(size_t) bi];
+                    juce::ValueTree vb (idBand);
+                    vb.setProperty ("on", b.on, nullptr);
+                    vb.setProperty ("type", b.type, nullptr);
+                    vb.setProperty ("order", b.order, nullptr);
+                    vb.setProperty ("freq", b.freq, nullptr);
+                    vb.setProperty ("q", b.q, nullptr);
+                    vb.setProperty ("gain", b.gainDb, nullptr);
+                    vf.addChild (vb, -1, nullptr);
+                }
                 cfg.addChild (vf, -1, nullptr);
             }
 
@@ -119,14 +128,36 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                     FrameSettings f;
                     f.active      = (bool)  vf.getProperty ("active", f.active);
                     f.gainDb      = (float) (double) vf.getProperty ("gain", f.gainDb);
-                    f.filterOn    = (bool)  vf.getProperty ("filterOn", f.filterOn);
-                    f.filterType  = (int)   vf.getProperty ("filterType", f.filterType);
-                    f.filterOrder = (int)   vf.getProperty ("filterOrder", f.filterOrder);
-                    f.filterFreq  = (float) (double) vf.getProperty ("filterFreq", f.filterFreq);
-                    f.filterQ     = (float) (double) vf.getProperty ("filterQ", f.filterQ);
                     f.phaseInvert = (bool)  vf.getProperty ("phaseInvert", f.phaseInvert);
                     f.delayMs     = (float) (double) vf.getProperty ("delayMs", f.delayMs);
                     f.spectrum    = (bool)  vf.getProperty ("spectrum", f.spectrum);
+
+                    // Backward compatibility: old single-filter format -> band 0.
+                    if (vf.hasProperty ("filterOn"))
+                    {
+                        auto& b = f.bands[0];
+                        b.on     = (bool)  vf.getProperty ("filterOn", false);
+                        b.type   = (int)   vf.getProperty ("filterType", b.type);
+                        b.order  = (int)   vf.getProperty ("filterOrder", b.order);
+                        b.freq   = (float) (double) vf.getProperty ("filterFreq", b.freq);
+                        b.q      = (float) (double) vf.getProperty ("filterQ", b.q);
+                    }
+
+                    // Current format: one child per band.
+                    int bi = 0;
+                    for (int ci = 0; ci < vf.getNumChildren() && bi < numFrameBands; ++ci)
+                    {
+                        auto vb = vf.getChild (ci);
+                        if (! vb.hasType (idBand))
+                            continue;
+                        auto& b = f.bands[(size_t) bi++];
+                        b.on     = (bool)  vb.getProperty ("on", b.on);
+                        b.type   = (int)   vb.getProperty ("type", b.type);
+                        b.order  = (int)   vb.getProperty ("order", b.order);
+                        b.freq   = (float) (double) vb.getProperty ("freq", b.freq);
+                        b.q      = (float) (double) vb.getProperty ("q", b.q);
+                        b.gainDb = (float) (double) vb.getProperty ("gain", b.gainDb);
+                    }
                     frames[(size_t) c][(size_t) i][(size_t) o] = f;
                 }
             }

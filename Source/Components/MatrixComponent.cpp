@@ -201,7 +201,7 @@ void MatrixComponent::paint (juce::Graphics& g)
                 // Indicators
                 g.setFont (8.0f);
                 juce::String tags;
-                if (f.filterOn)         tags << (f.filterType == 0 ? "LP" : f.filterType == 1 ? "HP" : "BP");
+                if (f.anyBandOn())      tags << "EQ";
                 if (f.delayMs > 0.0f)   tags << " D";
                 if (f.phaseInvert)      tags << juce::String::fromUTF8 (" \xc3\x98");
                 g.setColour (inCol.brighter (0.4f));

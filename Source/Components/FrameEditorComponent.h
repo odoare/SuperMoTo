@@ -2,9 +2,13 @@
   ------------------------------------------------------------------------------
     FrameEditorComponent.h
 
-    Detail editor for the selected matrix frame: gain, IIR filter (type,
-    order, frequency, Q), phase, delay and analyzer checkbox. Writes
-    directly into the ConfigModel (these are not host parameters).
+    Detail editor for the selected matrix frame: overall level, phase, delay,
+    analyzer checkbox and a 4-band EQ. Each band has an on/off button (1..4),
+    a type (Lowpass / Highpass / Bandpass / Band) and order (2nd / 4th, except
+    Band), a frequency and Q, and — for the Band (peaking) type — a gain.
+    The compact knobs use the FxmeLookAndFeel value-in-centre + label display
+    (right-click a knob to type a value). Writes directly into the ConfigModel
+    (these are not host parameters).
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -41,49 +45,66 @@ public:
         initToggle (activeButton, "Active", SuperMoToTheme::master);
         initToggle (phaseButton, "Phase inv.", SuperMoToTheme::exclusive);
         initToggle (spectrumButton, "Analyzer", SuperMoToTheme::spectrum);
-        initToggle (filterOnButton, "Filter", SuperMoToTheme::fir);
 
-        auto initRotary = [this] (juce::Slider& s, juce::Label& l, const juce::String& name,
-                                  double min, double max, double step, juce::Colour col)
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+            initToggle (bandOn[bi], juce::String (bi + 1), SuperMoToTheme::fir);
+
+        // Level + delay: horizontal sliders (FxmeLookAndFeel bar + value).
+        auto initBar = [this] (juce::Slider& s, juce::Label& l, const juce::String& name,
+                               double lo, double hi, double step, juce::Colour col)
         {
-            s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-            s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 16);
-            s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-            s.setRange (min, max, step);
+            s.setSliderStyle (juce::Slider::LinearHorizontal);
+            s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            s.setRange (lo, hi, step);
             SuperMoToTheme::accentSlider (s, col);
             s.onValueChange = [this] { pushToModel(); };
             addAndMakeVisible (s);
 
             l.setText (name, juce::dontSendNotification);
-            l.setJustificationType (juce::Justification::centred);
             l.setFont (juce::Font (11.0f));
             l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
             addAndMakeVisible (l);
         };
+        initBar (levelSlider, levelLabel, "Level", -60.0, 12.0, 0.1, SuperMoToTheme::master);
+        initBar (delaySlider, delayLabel, "Delay", 0.0, (double) smt::maxDelayMs, 0.01, SuperMoToTheme::dim);
 
-        initRotary (gainSlider, gainLabel, "Gain (dB)", -60.0, 12.0, 0.1, SuperMoToTheme::master);
-        gainSlider.setDoubleClickReturnValue (true, 0.0);
+        // Per-band controls.
+        auto initKnob = [this] (fxme::FxmeSlider& s, const juce::String& name,
+                                double lo, double hi, double step, juce::Colour col)
+        {
+            s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            s.setRange (lo, hi, step);
+            s.setName (name);
+            s.getProperties().set ("showLabel", true);
+            SuperMoToTheme::accentSlider (s, col);
+            s.onValueChange = [this] { pushToModel(); };
+            addAndMakeVisible (s);
+        };
 
-        initRotary (freqSlider, freqLabel, "Freq (Hz)", 10.0, 20000.0, 1.0, SuperMoToTheme::fir);
-        freqSlider.setSkewFactorFromMidPoint (630.0);
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+        {
+            bandType[bi].addItemList ({ "Lowpass", "Highpass", "Bandpass", "Band" }, 1);
+            SuperMoToTheme::accentComboBox (bandType[bi], SuperMoToTheme::fir);
+            bandType[bi].onChange = [this] { pushToModel(); updateBandEnablement(); resized(); };
+            addAndMakeVisible (bandType[bi]);
 
-        initRotary (qSlider, qLabel, "Q", 0.1, 10.0, 0.01, SuperMoToTheme::fir);
-        qSlider.setSkewFactorFromMidPoint (0.707);
-        qSlider.setDoubleClickReturnValue (true, 0.707);
+            bandOrder[bi].addItemList ({ "2nd", "4th" }, 1);
+            SuperMoToTheme::accentComboBox (bandOrder[bi], SuperMoToTheme::fir);
+            bandOrder[bi].onChange = [this] { pushToModel(); };
+            addAndMakeVisible (bandOrder[bi]);
 
-        initRotary (delaySlider, delayLabel, "Delay (ms)", 0.0, (double) smt::maxDelayMs, 0.01,
-                    SuperMoToTheme::dim);
-        delaySlider.setDoubleClickReturnValue (true, 0.0);
+            initKnob (bandFreq[bi], "Freq", 10.0, 20000.0, 1.0, SuperMoToTheme::fir);
+            bandFreq[bi].setSkewFactorFromMidPoint (630.0);
 
-        typeBox.addItemList ({ "Lowpass", "Highpass", "Bandpass" }, 1);
-        SuperMoToTheme::accentComboBox (typeBox, SuperMoToTheme::fir);
-        typeBox.onChange = [this] { pushToModel(); };
-        addAndMakeVisible (typeBox);
+            initKnob (bandQ[bi], "Q", 0.1, 10.0, 0.01, SuperMoToTheme::fir);
+            bandQ[bi].setSkewFactorFromMidPoint (0.707);
+            bandQ[bi].setDoubleClickReturnValue (true, 0.707);
 
-        orderBox.addItemList ({ "2nd order", "4th order" }, 1);
-        SuperMoToTheme::accentComboBox (orderBox, SuperMoToTheme::fir);
-        orderBox.onChange = [this] { pushToModel(); };
-        addAndMakeVisible (orderBox);
+            initKnob (bandGain[bi], "Gain", -24.0, 24.0, 0.1, SuperMoToTheme::master);
+            bandGain[bi].getProperties().set ("centralValue", 0.0);
+            bandGain[bi].setDoubleClickReturnValue (true, 0.0);
+        }
 
         setFrame (-1, -1, 0);
     }
@@ -109,34 +130,68 @@ public:
     {
         auto area = getLocalBounds().reduced (10);
 
-        title.setBounds (area.removeFromTop (22));
+        title.setBounds (area.removeFromTop (20));
+        area.removeFromTop (2);
 
-        auto toggles = area.removeFromTop (24);
-        const int tw = toggles.getWidth() / 4;
-        activeButton.setBounds (toggles.removeFromLeft (tw));
-        phaseButton.setBounds (toggles.removeFromLeft (tw));
-        spectrumButton.setBounds (toggles.removeFromLeft (tw));
-        filterOnButton.setBounds (toggles);
+        // Row 1: Active / Phase inv. / Analyzer + the four band on/off buttons.
+        auto row1 = area.removeFromTop (24);
+        auto bandBtns = row1.removeFromRight (4 * 28);
+        const int tw = row1.getWidth() / 3;
+        activeButton.setBounds (row1.removeFromLeft (tw));
+        phaseButton.setBounds (row1.removeFromLeft (tw));
+        spectrumButton.setBounds (row1);
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+            bandOn[bi].setBounds (bandBtns.removeFromLeft (bandBtns.getWidth() / (smt::numFrameBands - bi)));
 
-        auto combos = area.removeFromTop (26).reduced (0, 2);
-        typeBox.setBounds (combos.removeFromLeft (combos.getWidth() / 2).reduced (2, 0));
-        orderBox.setBounds (combos.reduced (2, 0));
+        area.removeFromTop (6);
 
-        auto knobs = area;
-        const int kw = knobs.getWidth() / 4;
-        auto place = [&] (juce::Slider& s, juce::Label& l)
-        {
-            auto cell = knobs.removeFromLeft (kw);
-            l.setBounds (cell.removeFromTop (14));
-            s.setBounds (cell);
-        };
-        place (gainSlider, gainLabel);
-        place (freqSlider, freqLabel);
-        place (qSlider, qLabel);
-        place (delaySlider, delayLabel);
+        // Row 2: level + delay horizontal sliders.
+        auto row2 = area.removeFromTop (22);
+        auto lhalf = row2.removeFromLeft (row2.getWidth() / 2).reduced (0, 0);
+        levelLabel.setBounds (lhalf.removeFromLeft (38));
+        levelSlider.setBounds (lhalf.reduced (2, 1));
+        delayLabel.setBounds (row2.removeFromLeft (38));
+        delaySlider.setBounds (row2.reduced (2, 1));
+
+        area.removeFromTop (6);
+
+        // Give the two knob rows all the remaining height (bigger knobs).
+        constexpr int combosH = 24, gap = 6;
+        const int knobsH = juce::jmax (54, (area.getHeight() - 2 * combosH - gap) / 2);
+
+        layoutBandPair (area, 0, 1, combosH, knobsH);
+        area.removeFromTop (gap);
+        layoutBandPair (area, 2, 3, combosH, knobsH);
     }
 
 private:
+    void layoutBandPair (juce::Rectangle<int>& area, int bL, int bR, int combosH, int knobsH)
+    {
+        auto combos = area.removeFromTop (combosH);
+        auto knobs  = area.removeFromTop (knobsH);
+        layoutBand (bL, combos.removeFromLeft (combos.getWidth() / 2),
+                        knobs.removeFromLeft (knobs.getWidth() / 2));
+        layoutBand (bR, combos, knobs);
+    }
+
+    void layoutBand (int bi, juce::Rectangle<int> combos, juce::Rectangle<int> knobs)
+    {
+        bandType[bi].setBounds (combos.removeFromLeft ((int) (combos.getWidth() * 0.58f)).reduced (2, 2));
+        bandOrder[bi].setBounds (combos.reduced (2, 2));
+
+        const bool peaking = currentType (bi) == (int) smt::FilterType::peaking;
+        bandGain[bi].setVisible (peaking);
+
+        const int nk = peaking ? 3 : 2;
+        const int kw = knobs.getWidth() / nk;
+        bandFreq[bi].setBounds (knobs.removeFromLeft (kw));
+        bandQ[bi].setBounds (knobs.removeFromLeft (kw));
+        if (peaking)
+            bandGain[bi].setBounds (knobs);
+    }
+
+    int currentType (int bi) const { return bandType[bi].getSelectedId() - 1; }
+
     void modelChanged() override            { pullFromModel(); }
 
     void pullFromModel()
@@ -160,15 +215,23 @@ private:
         activeButton.setToggleState (f.active, juce::dontSendNotification);
         phaseButton.setToggleState (f.phaseInvert, juce::dontSendNotification);
         spectrumButton.setToggleState (f.spectrum, juce::dontSendNotification);
-        filterOnButton.setToggleState (f.filterOn, juce::dontSendNotification);
-        gainSlider.setValue (f.gainDb, juce::dontSendNotification);
-        freqSlider.setValue (f.filterFreq, juce::dontSendNotification);
-        qSlider.setValue (f.filterQ, juce::dontSendNotification);
+        levelSlider.setValue (f.gainDb, juce::dontSendNotification);
         delaySlider.setValue (f.delayMs, juce::dontSendNotification);
-        typeBox.setSelectedId (f.filterType + 1, juce::dontSendNotification);
-        orderBox.setSelectedId (f.filterOrder >= 4 ? 2 : 1, juce::dontSendNotification);
+
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+        {
+            const auto& b = f.bands[(size_t) bi];
+            bandOn[bi].setToggleState (b.on, juce::dontSendNotification);
+            bandType[bi].setSelectedId (b.type + 1, juce::dontSendNotification);
+            bandOrder[bi].setSelectedId (b.order >= 4 ? 2 : 1, juce::dontSendNotification);
+            bandFreq[bi].setValue (b.freq, juce::dontSendNotification);
+            bandQ[bi].setValue (b.q, juce::dontSendNotification);
+            bandGain[bi].setValue (b.gainDb, juce::dontSendNotification);
+        }
 
         setControlsEnabled (true);
+        updateBandEnablement();
+        resized();
         updating = false;
     }
 
@@ -181,24 +244,41 @@ private:
         f.active      = activeButton.getToggleState();
         f.phaseInvert = phaseButton.getToggleState();
         f.spectrum    = spectrumButton.getToggleState();
-        f.filterOn    = filterOnButton.getToggleState();
-        f.gainDb      = (float) gainSlider.getValue();
-        f.filterFreq  = (float) freqSlider.getValue();
-        f.filterQ     = (float) qSlider.getValue();
+        f.gainDb      = (float) levelSlider.getValue();
         f.delayMs     = (float) delaySlider.getValue();
-        f.filterType  = typeBox.getSelectedId() - 1;
-        f.filterOrder = orderBox.getSelectedId() == 2 ? 4 : 2;
+
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+        {
+            auto& b = f.bands[(size_t) bi];
+            b.on     = bandOn[bi].getToggleState();
+            b.type   = currentType (bi);
+            b.order  = bandOrder[bi].getSelectedId() == 2 ? 4 : 2;
+            b.freq   = (float) bandFreq[bi].getValue();
+            b.q      = (float) bandQ[bi].getValue();
+            b.gainDb = (float) bandGain[bi].getValue();
+        }
         model.setFrame (curConfig, curIn, curOut, f);
+    }
+
+    // The order box is meaningless for a (single-biquad) peaking band.
+    void updateBandEnablement()
+    {
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+            bandOrder[bi].setEnabled (currentType (bi) != (int) smt::FilterType::peaking);
     }
 
     void setControlsEnabled (bool e)
     {
         for (auto* c : { (juce::Component*) &activeButton, (juce::Component*) &phaseButton,
-                         (juce::Component*) &spectrumButton, (juce::Component*) &filterOnButton,
-                         (juce::Component*) &gainSlider, (juce::Component*) &freqSlider,
-                         (juce::Component*) &qSlider, (juce::Component*) &delaySlider,
-                         (juce::Component*) &typeBox, (juce::Component*) &orderBox })
+                         (juce::Component*) &spectrumButton, (juce::Component*) &levelSlider,
+                         (juce::Component*) &delaySlider })
             c->setEnabled (e);
+
+        for (int bi = 0; bi < smt::numFrameBands; ++bi)
+            for (auto* c : { (juce::Component*) &bandOn[bi], (juce::Component*) &bandType[bi],
+                             (juce::Component*) &bandOrder[bi], (juce::Component*) &bandFreq[bi],
+                             (juce::Component*) &bandQ[bi], (juce::Component*) &bandGain[bi] })
+                c->setEnabled (e);
     }
 
     smt::ConfigModel& model;
@@ -206,10 +286,12 @@ private:
     bool updating = false;
 
     juce::Label title;
-    juce::ToggleButton activeButton, phaseButton, spectrumButton, filterOnButton;
-    juce::Slider gainSlider, freqSlider, qSlider, delaySlider;
-    juce::Label gainLabel, freqLabel, qLabel, delayLabel;
-    juce::ComboBox typeBox, orderBox;
+    juce::ToggleButton activeButton, phaseButton, spectrumButton;
+    juce::ToggleButton bandOn[smt::numFrameBands];
+    fxme::FxmeSlider levelSlider, delaySlider;
+    juce::Label levelLabel, delayLabel;
+    juce::ComboBox bandType[smt::numFrameBands], bandOrder[smt::numFrameBands];
+    fxme::FxmeSlider bandFreq[smt::numFrameBands], bandQ[smt::numFrameBands], bandGain[smt::numFrameBands];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrameEditorComponent)
 };

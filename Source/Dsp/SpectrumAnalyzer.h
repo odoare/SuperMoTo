@@ -39,15 +39,25 @@ public:
     /** Display frequency (Hz) of grid point p. */
     static float pointFreq (int p);
 
+    /** FFT window size (number of samples). Clamped to a power of two in
+        [1<<spectrumMinFftOrder, 1<<spectrumMaxFftOrder]; rebuilds on change. */
+    void setFftSize (int sizePow2);
+    int getFftSize() const noexcept             { return fftSize; }
+
     /** Windowed FFT of the tap's latest snapshot, mapped onto the log grid and
-        exponentially smoothed into smoothedDb (read-modified in place). */
+        blended into smoothedDb. newWeight is the weight of this frame (1 = no
+        temporal averaging; 1/N ≈ averaging over the last N frames). */
     void update (SpectrumTap& tap, std::array<float, numPoints>& smoothedDb,
-                 double sampleRate, Mode mode);
+                 double sampleRate, Mode mode, float newWeight);
 
 private:
-    juce::dsp::FFT fft;
-    std::array<float, (size_t) spectrumFftSize> window;
-    std::array<float, (size_t) (2 * spectrumFftSize)> fftData {};
+    void rebuild (int order);
+
+    std::unique_ptr<juce::dsp::FFT> fft;
+    int fftOrder = spectrumFftOrder;
+    int fftSize  = spectrumFftSize;
+    std::array<float, (size_t) spectrumMaxFftSize> window;
+    std::array<float, (size_t) (2 * spectrumMaxFftSize)> fftData {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumAnalyzer)
 };

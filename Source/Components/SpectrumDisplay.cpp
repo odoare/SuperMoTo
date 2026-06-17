@@ -28,7 +28,8 @@ void SpectrumDisplay::timerCallback()
             continue;
 
         any = true;
-        analyzer.update (*tr.cfg.tap, tr.smoothedDb, sr, mode);
+        const float weight = avgOn ? 1.0f / (float) juce::jmax (1, nAvg) : 1.0f;
+        analyzer.update (*tr.cfg.tap, tr.smoothedDb, sr, mode, weight);
     }
 
     if (any)
@@ -37,13 +38,55 @@ void SpectrumDisplay::timerCallback()
 
 void SpectrumDisplay::mouseDown (const juce::MouseEvent& e)
 {
-    if (modeBadgeBounds().contains (e.getPosition()))
+    const auto p = e.getPosition();
+    bool changed = false;
+
+    if (detectorBadgeBounds().contains (p))
     {
         mode = mode == Mode::peak ? Mode::average : Mode::peak;
+        changed = true;
+    }
+    else if (fftBadgeBounds().contains (p))
+    {
+        // Cycle the window size through the supported orders.
+        fftOrder = fftOrder >= smt::spectrumMaxFftOrder ? smt::spectrumMinFftOrder : fftOrder + 1;
+        analyzer.setFftSize (1 << fftOrder);
+        changed = true;
+    }
+    else if (avgBadgeBounds().contains (p))
+    {
+        avgOn = ! avgOn;
+        changed = true;
+    }
+    else if (nBadgeBounds().contains (p))
+    {
+        static const int opts[] = { 2, 4, 8, 16, 32 };
+        int i = 0;
+        while (i < 4 && opts[i] < nAvg) ++i;        // index of current (or next) value
+        nAvg = opts[(i + 1) % 5];
+        avgOn = true;                                // choosing N implies averaging on
+        changed = true;
+    }
+
+    if (changed)
+    {
         for (auto& tr : traces)
-            tr.smoothedDb.fill (-120.0f);    // restart averaging after the switch
+            tr.smoothedDb.fill (-120.0f);            // restart averaging after a change
         repaint();
     }
+}
+
+void SpectrumDisplay::drawBadge (juce::Graphics& g, juce::Rectangle<int> r,
+                                 const juce::String& text, bool active) const
+{
+    auto b = r.toFloat();
+    g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
+    g.fillRoundedRectangle (b, 3.0f);
+    g.setColour (SuperMoToTheme::panelLine);
+    g.drawRoundedRectangle (b, 3.0f, 1.0f);
+    g.setColour (active ? SuperMoToTheme::text : SuperMoToTheme::dimText);
+    g.setFont (10.0f);
+    g.drawText (text, b, juce::Justification::centred);
 }
 
 void SpectrumDisplay::paint (juce::Graphics& g)
@@ -118,17 +161,12 @@ void SpectrumDisplay::paint (juce::Graphics& g)
         }
     }
 
-    // Aggregation-mode badge (click to toggle avg / peak).
-    {
-        auto badge = modeBadgeBounds().toFloat();
-        g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
-        g.fillRoundedRectangle (badge, 3.0f);
-        g.setColour (SuperMoToTheme::panelLine);
-        g.drawRoundedRectangle (badge, 3.0f, 1.0f);
-        g.setColour (SuperMoToTheme::dimText);
-        g.setFont (10.0f);
-        g.drawText (mode == Mode::peak ? "peak" : "avg", badge, juce::Justification::centred);
-    }
+    // Clickable badges: window size + temporal averaging (bottom-left),
+    // per-point detector avg/peak (bottom-right).
+    drawBadge (g, fftBadgeBounds(), "fft " + juce::String (analyzer.getFftSize()), true);
+    drawBadge (g, avgBadgeBounds(), "avg", avgOn);
+    drawBadge (g, nBadgeBounds(),   "N " + juce::String (nAvg), avgOn);
+    drawBadge (g, detectorBadgeBounds(), mode == Mode::peak ? "peak" : "avg", true);
 
     g.setColour (SuperMoToTheme::panelLine);
     g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);

@@ -27,9 +27,12 @@
 namespace smt
 {
 
-constexpr int spectrumFftOrder = 12;
-constexpr int spectrumFftSize  = 1 << spectrumFftOrder;     // 4096
-constexpr int numSpectrumTaps  = numChannels + maxFrameTaps;
+constexpr int spectrumFftOrder    = 13;
+constexpr int spectrumFftSize     = 1 << spectrumFftOrder;  // 4096 (default window)
+constexpr int spectrumMinFftOrder = 10;                     // 1024
+constexpr int spectrumMaxFftOrder = 15;                     // 32768
+constexpr int spectrumMaxFftSize  = 1 << spectrumMaxFftOrder;
+constexpr int numSpectrumTaps     = numChannels + maxFrameTaps;
 
 class SpectrumTap
 {
@@ -57,14 +60,15 @@ public:
         writePos.store (w, std::memory_order_release);
     }
 
-    /** Copies the most recent fftSize samples in chronological order. */
-    void snapshot (float* dest) const noexcept
+    /** Copies the most recent `count` samples in chronological order. */
+    void snapshot (float* dest, int count) const noexcept
     {
+        count = juce::jlimit (1, size, count);
         int w = writePos.load (std::memory_order_acquire);
-        int r = w - spectrumFftSize;
+        int r = w - count;
         if (r < 0)
             r += size;
-        for (int i = 0; i < spectrumFftSize; ++i)
+        for (int i = 0; i < count; ++i)
         {
             dest[i] = buffer[(size_t) r];
             if (++r >= size)
@@ -73,7 +77,7 @@ public:
     }
 
 private:
-    static constexpr int size = 2 * spectrumFftSize;
+    static constexpr int size = 2 * spectrumMaxFftSize;
     std::array<float, (size_t) size> buffer;
     std::atomic<int> writePos { 0 };
     std::atomic<bool> enabled { false };

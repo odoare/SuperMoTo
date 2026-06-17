@@ -14,12 +14,27 @@ namespace smt
 {
 
 SpectrumAnalyzer::SpectrumAnalyzer()
-    : fft (spectrumFftOrder)
 {
-    for (int i = 0; i < spectrumFftSize; ++i)
+    rebuild (spectrumFftOrder);
+}
+
+void SpectrumAnalyzer::rebuild (int order)
+{
+    fftOrder = juce::jlimit (spectrumMinFftOrder, spectrumMaxFftOrder, order);
+    fftSize  = 1 << fftOrder;
+    fft = std::make_unique<juce::dsp::FFT> (fftOrder);
+
+    for (int i = 0; i < fftSize; ++i)
         window[(size_t) i] = 0.5f * (1.0f - std::cos (
-            2.0f * juce::MathConstants<float>::pi * (float) i
-            / (float) (spectrumFftSize - 1)));
+            2.0f * juce::MathConstants<float>::pi * (float) i / (float) (fftSize - 1)));
+}
+
+void SpectrumAnalyzer::setFftSize (int sizePow2)
+{
+    const int order = juce::jlimit (spectrumMinFftOrder, spectrumMaxFftOrder,
+                                    (int) std::round (std::log2 ((double) juce::jmax (1, sizePow2))));
+    if (order != fftOrder)
+        rebuild (order);
 }
 
 float SpectrumAnalyzer::pointFreq (int p)
@@ -28,17 +43,17 @@ float SpectrumAnalyzer::pointFreq (int p)
 }
 
 void SpectrumAnalyzer::update (SpectrumTap& tap, std::array<float, numPoints>& smoothedDb,
-                               double sampleRate, Mode mode)
+                               double sampleRate, Mode mode, float newWeight)
 {
-    tap.snapshot (fftData.data());
-    for (int i = 0; i < spectrumFftSize; ++i)
+    tap.snapshot (fftData.data(), fftSize);
+    for (int i = 0; i < fftSize; ++i)
         fftData[(size_t) i] *= window[(size_t) i];
-    std::fill (fftData.begin() + spectrumFftSize, fftData.end(), 0.0f);
+    std::fill (fftData.begin() + fftSize, fftData.begin() + 2 * fftSize, 0.0f);
 
-    fft.performFrequencyOnlyForwardTransform (fftData.data());
+    fft->performFrequencyOnlyForwardTransform (fftData.data());
 
-    const float binHz = (float) ((sampleRate > 0.0 ? sampleRate : 48000.0)
-                                 / (double) spectrumFftSize);
+    const float binHz = (float) ((sampleRate > 0.0 ? sampleRate : 48000.0) / (double) fftSize);
+    const float w = juce::jlimit (0.0f, 1.0f, newWeight);
 
     for (int p = 0; p < numPoints; ++p)
     {
@@ -46,9 +61,9 @@ void SpectrumAnalyzer::update (SpectrumTap& tap, std::array<float, numPoints>& s
         // At HF many bins fall on one point: average their power (so broadband
         // noise stays flat) or take their peak, per the selected mode.
         const float f  = pointFreq (p);
-        const int   b0 = juce::jlimit (1, spectrumFftSize / 2 - 1, (int) (f / binHz));
+        const int   b0 = juce::jlimit (1, fftSize / 2 - 1, (int) (f / binHz));
         const float f1 = pointFreq (juce::jmin (p + 1, numPoints - 1));
-        const int   b1 = juce::jlimit (b0, spectrumFftSize / 2 - 1, (int) (f1 / binHz));
+        const int   b1 = juce::jlimit (b0, fftSize / 2 - 1, (int) (f1 / binHz));
 
         float mag;
         if (mode == Mode::peak)
@@ -65,11 +80,11 @@ void SpectrumAnalyzer::update (SpectrumTap& tap, std::array<float, numPoints>& s
             mag = (float) std::sqrt (power / (double) (b1 - b0 + 1));
         }
 
-        const float db = juce::Decibels::gainToDecibels (
-            mag * 2.0f / (float) spectrumFftSize, -120.0f);
+        const float db = juce::Decibels::gainToDecibels (mag * 2.0f / (float) fftSize, -120.0f);
 
+        // Temporal averaging: exponential blend, weight w for the new frame.
         auto& s = smoothedDb[(size_t) p];
-        s = s * 0.7f + db * 0.3f;
+        s = s * (1.0f - w) + db * w;
     }
 }
 

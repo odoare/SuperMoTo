@@ -255,10 +255,10 @@ private:
                 f.gainDb = gain;
                 if (bm)
                 {
-                    f.filterOn = true;
-                    f.filterType = (int) smt::FilterType::highpass;
-                    f.filterOrder = 4;
-                    f.filterFreq = fc;
+                    f.bands[0].on    = true;
+                    f.bands[0].type  = (int) smt::FilterType::highpass;
+                    f.bands[0].order = 4;
+                    f.bands[0].freq  = fc;
                 }
                 model.setFrame (target, row->input.getSelectedId() - 1, out, f);
             }
@@ -273,10 +273,10 @@ private:
                     smt::FrameSettings f;
                     f.active = true;
                     f.gainDb = gainDb;
-                    f.filterOn = true;
-                    f.filterType = (int) smt::FilterType::lowpass;
-                    f.filterOrder = 4;
-                    f.filterFreq = fc;
+                    f.bands[0].on    = true;
+                    f.bands[0].type  = (int) smt::FilterType::lowpass;
+                    f.bands[0].order = 4;
+                    f.bands[0].freq  = fc;
                     return f;
                 };
 

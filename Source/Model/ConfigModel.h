@@ -51,29 +51,50 @@ enum class MeasureMode : int { dryOutput = 0, outputFir = 1, fullSystem = 2 };
 inline juce::String configName (int c)      { return juce::String::charToString ((juce::juce_wchar) ('A' + c)); }
 
 //==============================================================================
-enum class FilterType : int { lowpass = 0, highpass = 1, bandpass = 2 };
+enum class FilterType : int { lowpass = 0, highpass = 1, bandpass = 2, peaking = 3 };
+
+constexpr int numFrameBands = 4;        // EQ bands per matrix frame
+
+// One EQ band of a frame's filter chain (the bands are cascaded in series).
+struct FrameBand
+{
+    bool  on     = false;
+    int   type   = (int) FilterType::peaking;
+    int   order  = 2;             // 2 or 4 (ignored for peaking)
+    float freq   = 1000.0f;       // Hz
+    float q      = 0.707f;
+    float gainDb = 0.0f;          // peaking only
+
+    bool operator== (const FrameBand& o) const
+    {
+        return on == o.on && type == o.type && order == o.order
+            && freq == o.freq && q == o.q && gainDb == o.gainDb;
+    }
+    bool operator!= (const FrameBand& o) const { return ! (*this == o); }
+};
 
 struct FrameSettings
 {
     bool  active      = false;
-    float gainDb      = 0.0f;
-    bool  filterOn    = false;
-    int   filterType  = (int) FilterType::lowpass;
-    int   filterOrder = 2;        // 2 or 4
-    float filterFreq  = 100.0f;   // Hz
-    float filterQ     = 0.707f;
+    float gainDb      = 0.0f;     // overall frame level
     bool  phaseInvert = false;
     float delayMs     = 0.0f;
     bool  spectrum    = false;    // show this frame's signal on the analyzer
+    std::array<FrameBand, (size_t) numFrameBands> bands {};
+
+    bool anyBandOn() const
+    {
+        for (const auto& b : bands)
+            if (b.on)
+                return true;
+        return false;
+    }
 
     bool isDefault() const
     {
         const FrameSettings d;
-        return active == d.active && gainDb == d.gainDb && filterOn == d.filterOn
-            && filterType == d.filterType && filterOrder == d.filterOrder
-            && filterFreq == d.filterFreq && filterQ == d.filterQ
-            && phaseInvert == d.phaseInvert && delayMs == d.delayMs
-            && spectrum == d.spectrum;
+        return active == d.active && gainDb == d.gainDb && phaseInvert == d.phaseInvert
+            && delayMs == d.delayMs && spectrum == d.spectrum && bands == d.bands;
     }
 };
 

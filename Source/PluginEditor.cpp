@@ -146,6 +146,19 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 
     addAndMakeVisible (spectrum);
     spectrum.sampleRateProvider = [this] { return audioProcessor.getSampleRate(); };
+
+    // Microphone trace: shown whenever the calibration SPL meter is on (its tap
+    // is enabled with the meter), so the EQ can be tuned against the measured
+    // response right here in the matrix view.
+    {
+        SpectrumDisplay::TraceConfig mic;
+        mic.tap       = &audioProcessor.splMeter.getMicSpectrumTap();
+        mic.colour    = SuperMoToTheme::spectrum;
+        mic.thickness = 1.6f;
+        mic.label     = [] { return juce::String ("Microphone"); };
+        spectrum.addTrace (std::move (mic));
+    }
+
     spectrum.frameLabelProvider = [this] (int slot) -> juce::String
     {
         const auto refs = audioProcessor.configModel.getSpectrumFrames();
@@ -495,7 +508,7 @@ void SuperMoToAudioProcessorEditor::resized()
     matrix.setBounds (main);
     matrixArea = main;                  // matrix corner (info button: top-left)
 
-    frameEditor.setBounds (right.removeFromBottom (210));
+    frameEditor.setBounds (right.removeFromBottom (280));
     right.removeFromBottom (8);
     spectrum.setBounds (right);
 

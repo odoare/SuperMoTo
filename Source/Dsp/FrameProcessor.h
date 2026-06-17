@@ -47,18 +47,13 @@ public:
     /** Called on the audio thread when the model changed (no allocation). */
     void applySettings (const FrameSettings& s, bool force = false)
     {
-        const bool filterChanged = force
-            || s.filterOn != settings.filterOn
-            || s.filterType != settings.filterType
-            || s.filterOrder != settings.filterOrder
-            || s.filterFreq != settings.filterFreq
-            || s.filterQ != settings.filterQ;
+        const bool filterChanged = force || s.bands != settings.bands;
 
         const bool wasActive = settings.active;
         settings = s;
 
         if (filterChanged)
-            updateFilter();
+            updateFilters();
 
         const float target = settings.active
             ? juce::Decibels::decibelsToGain (settings.gainDb) * (settings.phaseInvert ? -1.0f : 1.0f)
@@ -98,14 +93,13 @@ public:
     {
         auto* tmp = scratch.data();
 
-        // Filter
-        if (settings.filterOn)
+        // Filter: cascade every active band's biquad(s) in series.
+        if (activeBiquads > 0)
         {
-            const int nb = numBiquads();
             for (int i = 0; i < n; ++i)
             {
                 float v = input[i];
-                for (int b = 0; b < nb; ++b)
+                for (int b = 0; b < activeBiquads; ++b)
                     v = biquads[(size_t) b].processSample (v);
                 tmp[i] = v;
             }
@@ -155,56 +149,71 @@ public:
     const FrameSettings& getSettings() const noexcept { return settings; }
 
 private:
-    int numBiquads() const noexcept { return settings.filterOrder >= 4 ? 2 : 1; }
-
-    void updateFilter()
+    // Rebuild the flat biquad cascade from the enabled bands. Each LP/HP/BP band
+    // is 1 (2nd order) or 2 (4th order) biquads; a peaking band is 1 biquad.
+    void updateFilters()
     {
-        const auto type = (FilterType) settings.filterType;
-        const float f = settings.filterFreq;
-        const float q = settings.filterQ;
-
-        if (settings.filterOrder >= 4)
+        int n = 0;
+        for (const auto& band : settings.bands)
         {
-            // 4th order: two cascaded biquads. For LP/HP use Butterworth
-            // section Qs scaled by the user Q (q = 0.707 -> Butterworth).
-            const float scale = q / 0.707f;
-            const float q1 = 0.54119610f * scale;
-            const float q2 = 1.30656296f * scale;
-            switch (type)
+            if (! band.on)
+                continue;
+
+            const auto  type = (FilterType) band.type;
+            const float f = band.freq;
+            const float q = band.q;
+
+            if (type == FilterType::peaking)
             {
-                case FilterType::lowpass:
-                    biquads[0].c = BiquadCoeffs::lowpass (sr, f, q1);
-                    biquads[1].c = BiquadCoeffs::lowpass (sr, f, q2);
-                    break;
-                case FilterType::highpass:
-                    biquads[0].c = BiquadCoeffs::highpass (sr, f, q1);
-                    biquads[1].c = BiquadCoeffs::highpass (sr, f, q2);
-                    break;
-                case FilterType::bandpass:
-                    biquads[0].c = BiquadCoeffs::bandpass (sr, f, q);
-                    biquads[1].c = BiquadCoeffs::bandpass (sr, f, q);
-                    break;
+                biquads[(size_t) n++].c = BiquadCoeffs::peaking (sr, f, q, band.gainDb);
+            }
+            else if (band.order >= 4)
+            {
+                // 4th order: two cascaded biquads with Butterworth section Qs
+                // scaled by the user Q (q = 0.707 -> Butterworth).
+                const float scale = q / 0.707f;
+                const float q1 = 0.54119610f * scale;
+                const float q2 = 1.30656296f * scale;
+                switch (type)
+                {
+                    case FilterType::lowpass:
+                        biquads[(size_t) n++].c = BiquadCoeffs::lowpass (sr, f, q1);
+                        biquads[(size_t) n++].c = BiquadCoeffs::lowpass (sr, f, q2);
+                        break;
+                    case FilterType::highpass:
+                        biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q1);
+                        biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q2);
+                        break;
+                    case FilterType::bandpass:
+                        biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q);
+                        biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q);
+                        break;
+                    default: break;
+                }
+            }
+            else
+            {
+                switch (type)
+                {
+                    case FilterType::lowpass:  biquads[(size_t) n++].c = BiquadCoeffs::lowpass  (sr, f, q); break;
+                    case FilterType::highpass: biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q); break;
+                    case FilterType::bandpass: biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q); break;
+                    default: break;
+                }
             }
         }
-        else
-        {
-            switch (type)
-            {
-                case FilterType::lowpass:  biquads[0].c = BiquadCoeffs::lowpass  (sr, f, q); break;
-                case FilterType::highpass: biquads[0].c = BiquadCoeffs::highpass (sr, f, q); break;
-                case FilterType::bandpass: biquads[0].c = BiquadCoeffs::bandpass (sr, f, q); break;
-            }
-            biquads[1].c = BiquadCoeffs();
-        }
 
-        biquads[0].reset();
-        biquads[1].reset();
+        for (int i = 0; i < n; ++i)
+            biquads[(size_t) i].reset();
+        activeBiquads = n;
     }
 
     double sr = 44100.0;
     FrameSettings settings;
 
-    Biquad biquads[2];
+    static constexpr int maxBiquads = numFrameBands * 2;
+    Biquad biquads[maxBiquads];
+    int activeBiquads = 0;
     std::vector<float> delayLine;
     int writePos = 0;
     float delaySamples = 0.0f;

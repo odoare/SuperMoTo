@@ -36,6 +36,26 @@ struct BiquadCoeffs
         return fromRbj (sr, freq, q, Shape::bp);
     }
 
+    /** Peaking ("Band") EQ: boosts/cuts gainDb around freq with bandwidth set
+        by q. (RBJ cookbook peakingEQ.) */
+    static BiquadCoeffs peaking (double sr, float freq, float q, float gainDb)
+    {
+        BiquadCoeffs c;
+        const double f = std::fmin ((double) freq, 0.49 * sr);
+        const double A = std::pow (10.0, (double) gainDb / 40.0);
+        const double w0 = 2.0 * 3.14159265358979323846 * f / sr;
+        const double cw = std::cos (w0), sw = std::sin (w0);
+        const double alpha = sw / (2.0 * std::fmax (0.01, (double) q));
+        const double a0 = 1.0 + alpha / A;
+
+        c.b0 = (float) ((1.0 + alpha * A) / a0);
+        c.b1 = (float) ((-2.0 * cw) / a0);
+        c.b2 = (float) ((1.0 - alpha * A) / a0);
+        c.a1 = (float) ((-2.0 * cw) / a0);
+        c.a2 = (float) ((1.0 - alpha / A) / a0);
+        return c;
+    }
+
 private:
     enum class Shape { lp, hp, bp };
 
