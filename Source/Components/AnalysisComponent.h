@@ -192,6 +192,21 @@ public:
         paintPlot (g, plotArea.toFloat());
     }
 
+    // The four +/- badges adjust the magnitude axis limits (10 dB steps).
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const auto p = e.getPosition();
+        bool changed = true;
+        if      (limitButton (0).contains (p)) plotMaxDb = juce::jmin (60.0f, plotMaxDb + 10.0f);
+        else if (limitButton (1).contains (p)) plotMaxDb = juce::jmax (plotMinDb + 20.0f, plotMaxDb - 10.0f);
+        else if (limitButton (2).contains (p)) plotMinDb = juce::jmin (plotMaxDb - 20.0f, plotMinDb + 10.0f);
+        else if (limitButton (3).contains (p)) plotMinDb = juce::jmax (-90.0f, plotMinDb - 10.0f);
+        else changed = false;
+
+        if (changed)
+            repaint();
+    }
+
     void resized() override
     {
         auto area = getLocalBounds().reduced (14);
@@ -261,7 +276,7 @@ public:
 private:
     static constexpr int numPoints = 400;
     static constexpr float fMin = 20.0f, fMax = 20000.0f;
-    static constexpr float plotMinDb = -30.0f, plotMaxDb = 30.0f;
+    float plotMinDb = -30.0f, plotMaxDb = 30.0f;     // adjustable vertical limits
 
     void addLabel (juce::Label& l, const juce::String& text)
     {
@@ -532,6 +547,37 @@ private:
         g.strokePath (path, juce::PathStrokeType (thickness));
     }
 
+    // Magnitude panel rectangle (mirrors the split done in paintPlot), used to
+    // place the vertical-limit badges so paint and hit-testing agree.
+    juce::Rectangle<float> magPanelArea() const
+    {
+        auto inner = plotArea.toFloat().reduced (24.0f, 12.0f);
+        return inner.removeFromTop (inner.getHeight() * 0.62f);
+    }
+
+    // Vertical-limit badges, just right of the dB axis: a +/- pair at the top
+    // (max) and at the bottom (min). idx 0=max+,1=max-,2=min+,3=min-.
+    juce::Rectangle<int> limitButton (int idx) const
+    {
+        auto m = magPanelArea();
+        constexpr int w = 16, h = 14, gap = 2;
+        const int x = (int) m.getX() + 2 + (idx % 2 == 0 ? 0 : w + gap);
+        const int y = idx < 2 ? (int) m.getY() + 1 : (int) m.getBottom() - h - 1;
+        return { x, y, w, h };
+    }
+
+    void drawLimitButton (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& t) const
+    {
+        auto b = r.toFloat();
+        g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
+        g.fillRoundedRectangle (b, 3.0f);
+        g.setColour (SuperMoToTheme::panelLine);
+        g.drawRoundedRectangle (b, 3.0f, 1.0f);
+        g.setColour (SuperMoToTheme::dimText);
+        g.setFont (12.0f);
+        g.drawText (t, b, juce::Justification::centred);
+    }
+
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> bounds) const
     {
         g.setColour (SuperMoToTheme::plotBackground);
@@ -613,7 +659,7 @@ private:
                                   { "corrected", SuperMoToTheme::spectrum } };
         if (hasSub)
             items.push_back ({ "sub", SuperMoToTheme::mono });
-        int x = (int) magR.getX() + 6;
+        int x = (int) magR.getX() + 42;     // clear the top vertical-limit badges
         g.setFont (11.0f);
         for (const auto& item : items)
         {
@@ -634,6 +680,12 @@ private:
         g.drawText (juce::String::fromUTF8 ("phase (\xc2\xb0, propagation delay removed)"),
                     (int) phR.getX(), (int) phR.getY() + 2,
                     (int) phR.getWidth() - 6, 12, juce::Justification::centredRight);
+
+        // Vertical-limit badges: +/- for the max (top) and the min (bottom).
+        drawLimitButton (g, limitButton (0), "+");
+        drawLimitButton (g, limitButton (1), juce::String::fromUTF8 ("\xe2\x88\x92"));
+        drawLimitButton (g, limitButton (2), "+");
+        drawLimitButton (g, limitButton (3), juce::String::fromUTF8 ("\xe2\x88\x92"));
     }
 
     SuperMoToAudioProcessor& processor;
