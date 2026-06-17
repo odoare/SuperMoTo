@@ -182,6 +182,62 @@ public:
         updateFirInfo();
     }
 
+    //==========================================================================
+    // Mouse interaction over the magnitude panel zooms/pans the dB axis:
+    // wheel = zoom around the cursor, drag = pan, double-click = reset.
+    static constexpr float dbFloor = -90.0f, dbCeil = 60.0f, dbMinSpan = 5.0f;
+
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        auto m = magPanelArea();
+        if (! m.contains (e.position))
+            return;
+
+        const float span  = plotMaxDb - plotMinDb;
+        const float dbAtY  = juce::jmap (e.position.y, m.getBottom(), m.getY(), plotMinDb, plotMaxDb);
+        const float factor = w.deltaY > 0.0f ? 0.85f : 1.0f / 0.85f;
+        const float newSpan = juce::jlimit (dbMinSpan, dbCeil - dbFloor, span * factor);
+        const float frac   = span > 0.0f ? (dbAtY - plotMinDb) / span : 0.5f;
+        setDbWindow (dbAtY - frac * newSpan, newSpan);
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        dragging = magPanelArea().contains (e.position);
+        dragStartY = e.position.y;
+        dragStartMin = plotMinDb;
+        dragStartMax = plotMaxDb;
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! dragging)
+            return;
+        const float span = dragStartMax - dragStartMin;
+        const float dbPerPx = span / juce::jmax (1.0f, magPanelArea().getHeight());
+        setDbWindow (dragStartMin + (e.position.y - dragStartY) * dbPerPx, span);
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        if (magPanelArea().contains (e.position))
+        {
+            plotMinDb = -30.0f;     // default view
+            plotMaxDb = 30.0f;
+            repaint();
+        }
+    }
+
+    // Apply a [min, min+span] dB window, clamped to fit within [floor, ceil].
+    void setDbWindow (float newMin, float span)
+    {
+        span   = juce::jlimit (dbMinSpan, dbCeil - dbFloor, span);
+        newMin = juce::jlimit (dbFloor, dbCeil - span, newMin);
+        plotMinDb = newMin;
+        plotMaxDb = newMin + span;
+        repaint();
+    }
+
     void paint (juce::Graphics& g) override
     {
         g.setColour (SuperMoToTheme::panel.withAlpha (0.7f));
@@ -190,21 +246,6 @@ public:
         g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 6.0f, 1.0f);
 
         paintPlot (g, plotArea.toFloat());
-    }
-
-    // The four +/- badges adjust the magnitude axis limits (10 dB steps).
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        const auto p = e.getPosition();
-        bool changed = true;
-        if      (limitButton (0).contains (p)) plotMaxDb = juce::jmin (60.0f, plotMaxDb + 10.0f);
-        else if (limitButton (1).contains (p)) plotMaxDb = juce::jmax (plotMinDb + 20.0f, plotMaxDb - 10.0f);
-        else if (limitButton (2).contains (p)) plotMinDb = juce::jmin (plotMaxDb - 20.0f, plotMinDb + 10.0f);
-        else if (limitButton (3).contains (p)) plotMinDb = juce::jmax (-90.0f, plotMinDb - 10.0f);
-        else changed = false;
-
-        if (changed)
-            repaint();
     }
 
     void resized() override
@@ -547,35 +588,11 @@ private:
         g.strokePath (path, juce::PathStrokeType (thickness));
     }
 
-    // Magnitude panel rectangle (mirrors the split done in paintPlot), used to
-    // place the vertical-limit badges so paint and hit-testing agree.
+    // Magnitude panel rectangle (mirrors the split done in paintPlot).
     juce::Rectangle<float> magPanelArea() const
     {
         auto inner = plotArea.toFloat().reduced (24.0f, 12.0f);
         return inner.removeFromTop (inner.getHeight() * 0.62f);
-    }
-
-    // Vertical-limit badges, just right of the dB axis: a +/- pair at the top
-    // (max) and at the bottom (min). idx 0=max+,1=max-,2=min+,3=min-.
-    juce::Rectangle<int> limitButton (int idx) const
-    {
-        auto m = magPanelArea();
-        constexpr int w = 16, h = 14, gap = 2;
-        const int x = (int) m.getX() + 2 + (idx % 2 == 0 ? 0 : w + gap);
-        const int y = idx < 2 ? (int) m.getY() + 1 : (int) m.getBottom() - h - 1;
-        return { x, y, w, h };
-    }
-
-    void drawLimitButton (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& t) const
-    {
-        auto b = r.toFloat();
-        g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.6f));
-        g.fillRoundedRectangle (b, 3.0f);
-        g.setColour (SuperMoToTheme::panelLine);
-        g.drawRoundedRectangle (b, 3.0f, 1.0f);
-        g.setColour (SuperMoToTheme::dimText);
-        g.setFont (12.0f);
-        g.drawText (t, b, juce::Justification::centred);
     }
 
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> bounds) const
@@ -659,7 +676,7 @@ private:
                                   { "corrected", SuperMoToTheme::spectrum } };
         if (hasSub)
             items.push_back ({ "sub", SuperMoToTheme::mono });
-        int x = (int) magR.getX() + 42;     // clear the top vertical-limit badges
+        int x = (int) magR.getX() + 6;
         g.setFont (11.0f);
         for (const auto& item : items)
         {
@@ -680,12 +697,6 @@ private:
         g.drawText (juce::String::fromUTF8 ("phase (\xc2\xb0, propagation delay removed)"),
                     (int) phR.getX(), (int) phR.getY() + 2,
                     (int) phR.getWidth() - 6, 12, juce::Justification::centredRight);
-
-        // Vertical-limit badges: +/- for the max (top) and the min (bottom).
-        drawLimitButton (g, limitButton (0), "+");
-        drawLimitButton (g, limitButton (1), juce::String::fromUTF8 ("\xe2\x88\x92"));
-        drawLimitButton (g, limitButton (2), "+");
-        drawLimitButton (g, limitButton (3), juce::String::fromUTF8 ("\xe2\x88\x92"));
     }
 
     SuperMoToAudioProcessor& processor;
@@ -695,6 +706,10 @@ private:
     juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel;
     juce::Slider boostSlider;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
+
+    // dB-axis zoom/pan state.
+    bool dragging = false;
+    float dragStartY = 0.0f, dragStartMin = -30.0f, dragStartMax = 30.0f;
     juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle;
     juce::Slider levelSlider;

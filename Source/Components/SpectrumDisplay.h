@@ -48,7 +48,11 @@ public:
 
     void clearTraces() { traces.clear(); }
 
-    void setDbRange (float lo, float hi) { minDb = lo; maxDb = hi; }
+    void setDbRange (float lo, float hi)
+    {
+        minDb = defaultMinDb = lo;      // also the double-click "reset" view
+        maxDb = defaultMaxDb = hi;
+    }
 
     using Mode = smt::SpectrumAnalyzer::Mode;
     void setSpectrumMode (Mode m) { mode = m; repaint(); }
@@ -67,6 +71,9 @@ public:
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
 
 private:
     struct Trace
@@ -119,10 +126,33 @@ private:
     void drawBadge (juce::Graphics& g, juce::Rectangle<int> r,
                     const juce::String& text, bool active) const;
 
+    bool overBadge (juce::Point<int> p) const
+    {
+        return detectorBadgeBounds().contains (p) || fftBadgeBounds().contains (p)
+            || avgBadgeBounds().contains (p) || nBadgeBounds().contains (p);
+    }
+
+    void restartAveraging()
+    {
+        for (auto& tr : traces)
+            tr.smoothedDb.fill (-120.0f);
+    }
+
+    // Apply a [min, min+span] dB window, clamped to fit within [floor, ceil].
+    void setDbWindow (float newMin, float span)
+    {
+        span   = juce::jlimit (dbMinSpan, dbCeil - dbFloor, span);
+        newMin = juce::jlimit (dbFloor, dbCeil - span, newMin);
+        minDb = newMin;
+        maxDb = newMin + span;
+        repaint();
+    }
+
     std::vector<Trace> traces;
     smt::SpectrumAnalyzer analyzer;
 
     float minDb = -100.0f, maxDb = 10.0f;
+    float defaultMinDb = -100.0f, defaultMaxDb = 10.0f;
     bool  splCalibrated = false;
     float splOffset = 0.0f;
     Mode  mode = Mode::average;
@@ -130,6 +160,11 @@ private:
     int  fftOrder = smt::spectrumFftOrder;      // window size = 1 << fftOrder
     bool avgOn = true;                          // temporal averaging
     int  nAvg  = 4;                             // averaged over ~nAvg frames
+
+    // dB-axis zoom/pan (drag) state.
+    static constexpr float dbFloor = -140.0f, dbCeil = 40.0f, dbMinSpan = 10.0f;
+    bool dragging = false;
+    float dragStartY = 0.0f, dragStartMin = -100.0f, dragStartMax = 10.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };
