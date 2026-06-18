@@ -128,6 +128,27 @@ public:
         firBox.onChange = [this] { updateFirInfo(); };
         addAndMakeVisible (firBox);
 
+        // Linear/mixed-phase corrects magnitude AND phase but adds firLength/2
+        // latency; minimum-phase corrects magnitude only with ~no latency (and
+        // drops the subwoofer phase alignment). See firInfo / the manual.
+        addLabel (phaseLabel, "Phase");
+        phaseBox.addItem ("Linear phase", 1);
+        phaseBox.addItem ("Min phase", 2);
+        phaseBox.setSelectedId (1, juce::dontSendNotification);
+        phaseBox.setTooltip ("Linear: corrects magnitude and phase (incl. subwoofer "
+                             "alignment), adds firLength/2 latency.\n"
+                             "Min phase: magnitude only, near-zero latency, no phase "
+                             "correction or subwoofer alignment \xe2\x80\x94 for tracking.");
+        SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
+        phaseBox.onChange = [this]
+        {
+            analysis.setPhaseType (phaseBox.getSelectedId() == 2
+                                       ? smt::AnalysisEngine::PhaseType::minimum
+                                       : smt::AnalysisEngine::PhaseType::linear);
+            updateFirInfo();
+        };
+        addAndMakeVisible (phaseBox);
+
         firInfo.setFont (juce::Font (12.0f));
         firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
         addAndMakeVisible (firInfo);
@@ -285,6 +306,9 @@ public:
         auto r2 = area.removeFromTop (24);
         firLabel.setBounds (r2.removeFromLeft (70));
         firBox.setBounds (r2.removeFromLeft (100));
+        r2.removeFromLeft (12);
+        phaseLabel.setBounds (r2.removeFromLeft (40));
+        phaseBox.setBounds (r2.removeFromLeft (110));
         r2.removeFromLeft (16);
         assignLabel.setBounds (r2.removeFromLeft (62));
         assignBox.setBounds (r2.removeFromLeft (110));
@@ -415,6 +439,7 @@ private:
         if (! known)
             fs = 48000.0;
 
+        const bool minPhase = analysis.getPhaseType() == smt::AnalysisEngine::PhaseType::minimum;
         const double durMs  = 1000.0 * (double) N / fs;
         const double latMs  = 1000.0 * (double) (N / 2) / fs;
         const double fMinHz = 2.0 * fs / (double) N;
@@ -423,7 +448,9 @@ private:
             juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
                 + juce::String (fMinHz, fMinHz < 100.0 ? 1 : 0) + " Hz   "
                 + juce::String::fromUTF8 ("\xc2\xb7  ") + juce::String (durMs, 0) + " ms long  "
-                + juce::String::fromUTF8 ("\xc2\xb7  ") + juce::String (latMs, 0) + " ms latency"
+                + juce::String::fromUTF8 ("\xc2\xb7  ")
+                + (minPhase ? juce::String ("~0 ms latency (min phase)")
+                            : juce::String (latMs, 0) + " ms latency")
                 + (known ? juce::String() : juce::String ("   (at 48 kHz)")),
             juce::dontSendNotification);
     }
@@ -719,14 +746,14 @@ private:
     smt::AnalysisEngine analysis;
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
-    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel;
+    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel;
     juce::Slider boostSlider;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     // dB-axis zoom/pan state.
     bool dragging = false;
     float dragStartY = 0.0f, dragStartMin = -30.0f, dragStartMax = 30.0f;
-    juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
+    juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle;
     juce::Slider levelSlider;
 

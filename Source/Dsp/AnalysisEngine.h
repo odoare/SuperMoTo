@@ -87,6 +87,20 @@ public:
     /** Maximum correction boost in dB (regularization of deep notches). */
     void setMaxBoostDb (float db)               { maxBoostDb = db; recomputeCorrection(); }
 
+    /** Phase type of the rendered correction IR. Affects only
+        exportCorrectionIR / renderCorrectionIR, not the displayed design.
+
+        linear  - mixed/linear-phase: the IR is centred at firLength/2, so it
+                  corrects magnitude AND phase (including the subwoofer
+                  alignment) but adds ~firLength/2 samples of latency.
+        minimum - minimum-phase, built from the correction MAGNITUDE only: the
+                  IR is causal and front-loaded, adding ~no latency, at the
+                  cost of the phase correction and the subwoofer phase
+                  alignment. Use it for low-latency monitoring while tracking. */
+    enum class PhaseType { linear, minimum };
+    void setPhaseType (PhaseType t) noexcept    { phaseType = t; }
+    PhaseType getPhaseType() const noexcept     { return phaseType; }
+
     /** Octave-fraction smoothing applied to the displayed transfer functions
         AND to the average the correction is derived from (complex smoothing,
         so magnitude and phase together). 1/6 octave = 1.0f/6.0f; 0 = off.
@@ -158,7 +172,7 @@ private:
     bool analyzeFile (const juce::File& file, Curve& out,
                       float forcedDelaySamples = std::numeric_limits<float>::quiet_NaN());
     juce::AudioBuffer<float> renderIR (const std::vector<std::complex<float>>& spec,
-                                       int firLength) const;
+                                       int firLength, bool minimumPhase = false) const;
     float bandWeight (double freqHz) const;     // 1 in band, raised-cosine skirts
     float alignWeight (double freqHz) const;    // 1 at/below crossover, 0 above
     void computeAverage();
@@ -182,6 +196,7 @@ private:
     double referenceGain = 1.0;                 // mid-band mean of the average
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
+    PhaseType phaseType = PhaseType::linear;     // rendered correction IR phase
     float smoothingLowFraction  = 1.0f / 6.0f;  // octave fraction at LF (0 = off)
     float smoothingHighFraction = 1.0f / 6.0f;  // octave fraction at HF (0 = off)
     static constexpr double smoothLowAnchorHz  = 100.0;    // <= here: lowFraction

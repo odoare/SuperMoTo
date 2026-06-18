@@ -612,7 +612,7 @@ std::vector<float> AnalysisEngine::getCorrectedDb (const std::vector<float>& fre
 
 //==============================================================================
 juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::complex<float>>& spec,
-                                                   int firLength) const
+                                                   int firLength, bool minimumPhase) const
 {
     juce::AudioBuffer<float> ir;
     if (spec.empty() || sampleRate <= 0.0)
@@ -622,18 +622,72 @@ juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::comple
     const int numBins = N / 2 + 1;
     const int order = (int) std::log2 ((double) N);
 
-    // Resample the spectrum onto the FIR grid and add a half-length linear
-    // phase shift so the (mixed phase) response stays causal in the FIR.
-    std::vector<float> buf ((size_t) (2 * N), 0.0f);
-    for (int k = 0; k < numBins; ++k)
+    // Resample the source spectrum onto this FIR's frequency grid (linear
+    // interpolation between the nearest Welch bins).
+    auto sampleSpec = [&] (int k) -> std::complex<float>
     {
-        const double f = (double) k * sampleRate / (double) N;
+        const double f   = (double) k * sampleRate / (double) N;
         const double bin = f * (double) windowSize / sampleRate;
         const int b0 = juce::jlimit (0, (int) spec.size() - 1, (int) bin);
         const int b1 = juce::jlimit (0, (int) spec.size() - 1, b0 + 1);
         const float frac = (float) (bin - (double) b0);
+        return spec[(size_t) b0] * (1.0f - frac) + spec[(size_t) b1] * frac;
+    };
 
-        auto c = spec[(size_t) b0] * (1.0f - frac) + spec[(size_t) b1] * frac;
+    juce::dsp::FFT fft (order);
+    ir.setSize (1, N);
+    auto* d = ir.getWritePointer (0);
+
+    if (minimumPhase)
+    {
+        // Minimum-phase rendering from the target MAGNITUDE only (the designed
+        // phase, including the subwoofer alignment, is intentionally dropped).
+        // Real-cepstrum method: the minimum-phase log spectrum is the causal
+        // part of the real cepstrum of the log magnitude. The resulting IR is
+        // front-loaded (peak near sample 0), so it adds essentially no bulk
+        // latency and the inter-output compensation sees ~0 for it.
+        using Cplx = std::complex<float>;
+        std::vector<Cplx> a ((size_t) N), b ((size_t) N);
+        const float floorMag = 1.0e-6f;             // -120 dB: avoids log(0)
+
+        for (int k = 0; k <= N / 2; ++k)
+            a[(size_t) k] = Cplx (std::log (juce::jmax (floorMag, std::abs (sampleSpec (k)))), 0.0f);
+        for (int k = 1; k < N / 2; ++k)             // real, even spectrum: mirror
+            a[(size_t) (N - k)] = a[(size_t) k];
+
+        fft.perform (a.data(), b.data(), true);      // b = real cepstrum (1/N scaled)
+
+        // Keep the causal part: double bins 1..N/2-1, zero the anti-causal
+        // half, leave n = 0 and n = N/2 untouched.
+        for (int n = 1; n < N / 2; ++n)        b[(size_t) n] *= 2.0f;
+        for (int n = N / 2 + 1; n < N; ++n)    b[(size_t) n]  = Cplx();
+
+        fft.perform (b.data(), a.data(), false);     // a = minimum-phase log spectrum
+        for (int k = 0; k < N; ++k)
+            a[(size_t) k] = std::exp (a[(size_t) k]);
+
+        fft.perform (a.data(), b.data(), true);      // b = minimum-phase impulse (real)
+
+        // One-sided taper: keep the front intact, fade only the tail so the
+        // truncation at the end is clean.
+        const int tn = juce::jmax (1, (int) ((float) N * 0.1f));
+        for (int i = 0; i < N; ++i)
+        {
+            float w = 1.0f;
+            if (i >= N - tn)
+                w = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi
+                                              * (float) (N - 1 - i) / (float) tn));
+            d[i] = b[(size_t) i].real() * w;
+        }
+        return ir;
+    }
+
+    // Linear / mixed-phase path: resample, add a half-length linear phase shift
+    // so the (mixed phase) response stays causal, then inverse-transform.
+    std::vector<float> buf ((size_t) (2 * N), 0.0f);
+    for (int k = 0; k < numBins; ++k)
+    {
+        auto c = sampleSpec (k);
 
         // shift by N/2 samples: multiply by exp(-j*pi*k)  ( = (-1)^k )
         if ((k & 1) != 0)
@@ -643,12 +697,9 @@ juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::comple
         buf[(size_t) (2 * k + 1)] = c.imag();
     }
 
-    juce::dsp::FFT fft (order);
     fft.performRealOnlyInverseTransform (buf.data());
 
     // Tukey window centred on N/2 to clean up edges.
-    ir.setSize (1, N);
-    auto* d = ir.getWritePointer (0);
     const float taper = 0.1f;
     const int tn = juce::jmax (1, (int) ((float) N * taper));
     for (int i = 0; i < N; ++i)
@@ -666,7 +717,7 @@ juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::comple
 
 juce::AudioBuffer<float> AnalysisEngine::renderCorrectionIR (int firLength) const
 {
-    return renderIR (correction, firLength);
+    return renderIR (correction, firLength, phaseType == PhaseType::minimum);
 }
 
 juce::AudioBuffer<float> AnalysisEngine::renderMeasuredIR (int firLength) const
