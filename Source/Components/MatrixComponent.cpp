@@ -9,6 +9,7 @@
 */
 
 #include "MatrixComponent.h"
+#include "../AppSettings.h"
 
 using namespace smt;
 
@@ -421,7 +422,7 @@ void MatrixComponent::loadIrForOutput (int out)
 {
     fileChooser = std::make_unique<juce::FileChooser> (
         "Load impulse response for output " + juce::String (out + 1),
-        juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.wav");
+        smt::getLastBrowseDir(), "*.wav");
 
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectFiles,
@@ -430,6 +431,7 @@ void MatrixComponent::loadIrForOutput (int out)
             const auto file = fc.getResult();
             if (! file.existsAsFile())
                 return;
+            smt::setLastBrowseDir (file);
             auto so = model.getOutput (out);
             so.firPath = file.getFullPathName();
             so.firOn = true;

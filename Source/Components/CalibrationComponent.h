@@ -27,6 +27,7 @@
 
 #include <JuceHeader.h>
 #include "../PluginProcessor.h"
+#include "../AppSettings.h"
 #include "../Theme.h"
 #include "SplMeterComponent.h"
 #include "SpectrumDisplay.h"
@@ -108,7 +109,7 @@ public:
 
         addLabel (pathLabel, "Base pathname (folder + base name)");
         pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
-        pathEditor.setText (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+        pathEditor.setText (smt::getLastBrowseDir()
                                 .getChildFile ("supermoto_measure").getFullPathName());
         addAndMakeVisible (pathEditor);
 
@@ -438,6 +439,7 @@ private:
                 auto f = fc.getResult();
                 if (f == juce::File())
                     return;
+                smt::setLastBrowseDir (f);
                 pathEditor.setText (f.getFullPathName().upToLastOccurrenceOf (".wav", false, true));
             });
     }
@@ -471,6 +473,10 @@ private:
             status.setText (juce::String ("Cannot start: select at least one ")
                             + (s.mode == smt::MeasureMode::fullSystem ? "input" : "output")
                             + " and a valid folder.", juce::dontSendNotification);
+        else if (juce::File::isAbsolutePath (s.basePath))
+            // Remember where the measurements are written so the Analysis view's
+            // "Load measurements" starts in the same folder.
+            smt::setLastBrowseDir (juce::File (s.basePath));
     }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override

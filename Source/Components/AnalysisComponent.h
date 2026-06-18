@@ -20,6 +20,7 @@
 #include <JuceHeader.h>
 #include "../PluginProcessor.h"
 #include "../Dsp/AnalysisEngine.h"
+#include "../AppSettings.h"
 #include "../Theme.h"
 
 class AnalysisComponent : public juce::Component
@@ -368,7 +369,7 @@ private:
     {
         fileChooser = std::make_unique<juce::FileChooser> (
             "Select the measurement files of one speaker",
-            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.wav");
+            smt::getLastBrowseDir(), "*.wav");
 
         fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles
@@ -378,6 +379,7 @@ private:
                 if (fc.getResults().isEmpty())
                     return;
                 loadedFiles = fc.getResults();
+                smt::setLastBrowseDir (loadedFiles[0]);
                 analyze();
             });
     }
@@ -392,7 +394,7 @@ private:
 
         fileChooser = std::make_unique<juce::FileChooser> (
             "Select the subwoofer measurements (same positions as the main set)",
-            juce::File::getSpecialLocation (juce::File::userHomeDirectory), "*.wav");
+            smt::getLastBrowseDir(), "*.wav");
 
         fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectFiles
@@ -401,6 +403,7 @@ private:
             {
                 if (fc.getResults().isEmpty())
                     return;
+                smt::setLastBrowseDir (fc.getResults()[0]);
                 const int ok = analysis.loadSubFiles (fc.getResults());
                 status.setText (ok > 0
                     ? juce::String (ok) + " sub measurement(s) aligned for phase integration."
@@ -502,8 +505,7 @@ private:
 
         fileChooser = std::make_unique<juce::FileChooser> (
             "Export measured impulse response",
-            juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                .getChildFile ("measurement.wav"), "*.wav");
+            smt::getLastBrowseDir().getChildFile ("measurement.wav"), "*.wav");
 
         fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
                                   | juce::FileBrowserComponent::canSelectFiles
@@ -515,6 +517,7 @@ private:
                     return;
                 if (! file.hasFileExtension ("wav"))
                     file = file.withFileExtension ("wav");
+                smt::setLastBrowseDir (file);
 
                 status.setText (analysis.exportMeasuredIR (file, firBox.getSelectedId())
                                     ? "Exported " + file.getFileName()
@@ -533,8 +536,7 @@ private:
 
         fileChooser = std::make_unique<juce::FileChooser> (
             "Export correction impulse response",
-            juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                .getChildFile ("correction.wav"), "*.wav");
+            smt::getLastBrowseDir().getChildFile ("correction.wav"), "*.wav");
 
         fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
                                   | juce::FileBrowserComponent::canSelectFiles
@@ -546,6 +548,7 @@ private:
                     return;
                 if (! file.hasFileExtension ("wav"))
                     file = file.withFileExtension ("wav");
+                smt::setLastBrowseDir (file);
 
                 if (! analysis.exportCorrectionIR (file, firBox.getSelectedId()))
                 {
