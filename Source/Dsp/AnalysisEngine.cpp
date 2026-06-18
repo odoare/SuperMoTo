@@ -444,6 +444,9 @@ void AnalysisEngine::recomputeCorrection()
         // crossover, steer the corrected main's phase onto the sub's so the two
         // sum coherently. Built from the sub's unit-magnitude (pure-phase)
         // response, complex-blended towards no change above the crossover.
+        // (The blend interpolates the wrapped phasor along the short arc, so it
+        // applies only the minimal rotation; scaling the unwrapped phase instead
+        // forces large accumulated phase to unwind across the band.)
         if (! subAverageSmoothed.empty())
         {
             std::complex<double> S = subAverageSmoothed[(size_t) k];
