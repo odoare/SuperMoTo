@@ -89,9 +89,17 @@ public:
 
     /** Octave-fraction smoothing applied to the displayed transfer functions
         AND to the average the correction is derived from (complex smoothing,
-        so magnitude and phase together). 1/6 octave = 1.0f/6.0f; 0 = off. */
-    void setSmoothing (float octaveFraction);
-    float getSmoothing() const noexcept         { return smoothingFraction; }
+        so magnitude and phase together). 1/6 octave = 1.0f/6.0f; 0 = off.
+
+        The smoothing is frequency dependent: the octave fraction is
+        interpolated (log-frequency) between lowFraction at/below
+        smoothLowAnchorHz and highFraction at/above smoothHighAnchorHz. This
+        lets the correction stay fine in the bass (resolving room modes) while
+        only following broad trends in the treble. Pass the same value for both
+        to get uniform smoothing. */
+    void setSmoothing (float lowFraction, float highFraction);
+    float getSmoothingLow() const noexcept      { return smoothingLowFraction; }
+    float getSmoothingHigh() const noexcept     { return smoothingHighFraction; }
 
     /** Frequency band the analysis acts on. Outside [lowHz, highHz] (with a
         half-octave skirt) the correction is faded to unity and the exported
@@ -158,8 +166,13 @@ private:
     void applySmoothing();
     void recomputeCorrection();
 
-    static std::vector<std::complex<float>> smoothOctaveFraction (
-        const std::vector<std::complex<float>>& in, float fraction);
+    // Complex fractional-octave smoothing with a frequency-dependent fraction
+    // (lowFraction at LF, highFraction at HF, log-interpolated between the
+    // anchors). sampleRate/windowSize map bins to frequency.
+    static std::vector<std::complex<float>> smoothVariableOctave (
+        const std::vector<std::complex<float>>& in,
+        float lowFraction, float highFraction,
+        double sampleRate, int windowSize);
 
     float interpDb (const std::vector<std::complex<float>>& spec, float freq) const;
     std::complex<float> interpComplex (const std::vector<std::complex<float>>& spec, float freq) const;
@@ -169,7 +182,10 @@ private:
     double referenceGain = 1.0;                 // mid-band mean of the average
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
-    float smoothingFraction = 1.0f / 6.0f;      // 0 = off
+    float smoothingLowFraction  = 1.0f / 6.0f;  // octave fraction at LF (0 = off)
+    float smoothingHighFraction = 1.0f / 6.0f;  // octave fraction at HF (0 = off)
+    static constexpr double smoothLowAnchorHz  = 100.0;    // <= here: lowFraction
+    static constexpr double smoothHighAnchorHz = 10000.0;  // >= here: highFraction
     float lfCornerHz = 30.0f;                   // slope towards low frequency
     float analysisLowHz  = 20.0f;               // band the analysis acts on
     float analysisHighHz = 20000.0f;

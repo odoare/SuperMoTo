@@ -49,23 +49,27 @@ public:
         };
         addAndMakeVisible (windowBox);
 
-        addLabel (smoothLabel, "Smoothing");
-        smoothBox.addItem ("Off", 1);
-        smoothBox.addItem ("1/24 oct", 2);
-        smoothBox.addItem ("1/12 oct", 3);
-        smoothBox.addItem ("1/6 oct", 4);
-        smoothBox.addItem ("1/3 oct", 5);
-        smoothBox.addItem ("1 oct", 6);
-        smoothBox.setSelectedId (4, juce::dontSendNotification);
-        SuperMoToTheme::accentComboBox (smoothBox, SuperMoToTheme::spectrum);
-        smoothBox.onChange = [this]
+        // Frequency-dependent smoothing: separate octave fraction for the low
+        // and the high end, log-interpolated across frequency by the engine.
+        // Finer in the bass (resolve modes), broader in the treble (trends only).
+        addLabel (smoothLabel, "Smooth LF/HF");
+        auto setupSmoothBox = [this] (juce::ComboBox& box, const juce::String& tip)
         {
-            static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
-                                               1.0f / 6.0f, 1.0f / 3.0f, 1.0f };
-            analysis.setSmoothing (fractions[juce::jlimit (0, 5, smoothBox.getSelectedId() - 1)]);
-            updatePlotData();
+            box.addItem ("Off", 1);
+            box.addItem ("1/24 oct", 2);
+            box.addItem ("1/12 oct", 3);
+            box.addItem ("1/6 oct", 4);
+            box.addItem ("1/3 oct", 5);
+            box.addItem ("1/2 oct", 6);
+            box.addItem ("1 oct", 7);
+            box.setSelectedId (4, juce::dontSendNotification);
+            box.setTooltip (tip);
+            SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
+            box.onChange = [this] { pushSmoothing(); };
+            addAndMakeVisible (box);
         };
-        addAndMakeVisible (smoothBox);
+        setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
+        setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
 
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -266,8 +270,10 @@ public:
         windowLabel.setBounds (r1.removeFromLeft (90));
         windowBox.setBounds (r1.removeFromLeft (100));
         r1.removeFromLeft (16);
-        smoothLabel.setBounds (r1.removeFromLeft (70));
-        smoothBox.setBounds (r1.removeFromLeft (90));
+        smoothLabel.setBounds (r1.removeFromLeft (96));
+        smoothLowBox.setBounds (r1.removeFromLeft (78));
+        r1.removeFromLeft (4);
+        smoothHighBox.setBounds (r1.removeFromLeft (78));
         r1.removeFromLeft (16);
         exportMeasuredButton.setBounds (r1.removeFromLeft (exportW));
         const int exportX = exportMeasuredButton.getX();
@@ -426,6 +432,16 @@ private:
     {
         analysis.setAnalysisRange (lowFreqBox.getText().getFloatValue(),
                                    highFreqBox.getText().getFloatValue());
+        updatePlotData();
+    }
+
+    void pushSmoothing()
+    {
+        // Index 0..6 -> Off, 1/24, 1/12, 1/6, 1/3, 1/2, 1 oct.
+        static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
+                                           1.0f / 6.0f, 1.0f / 3.0f, 1.0f / 2.0f, 1.0f };
+        analysis.setSmoothing (fractions[juce::jlimit (0, 6, smoothLowBox.getSelectedId()  - 1)],
+                               fractions[juce::jlimit (0, 6, smoothHighBox.getSelectedId() - 1)]);
         updatePlotData();
     }
 
@@ -710,7 +726,7 @@ private:
     // dB-axis zoom/pan state.
     bool dragging = false;
     float dragStartY = 0.0f, dragStartMin = -30.0f, dragStartMax = 30.0f;
-    juce::ComboBox windowBox, smoothBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
+    juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle;
     juce::Slider levelSlider;
 

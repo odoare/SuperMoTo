@@ -83,23 +83,27 @@ int AnalysisEngine::loadSubFiles (const juce::Array<juce::File>& files)
     return (int) subCurves.size();
 }
 
-void AnalysisEngine::setSmoothing (float octaveFraction)
+void AnalysisEngine::setSmoothing (float lowFraction, float highFraction)
 {
-    smoothingFraction = juce::jlimit (0.0f, 1.0f, octaveFraction);
+    smoothingLowFraction  = juce::jlimit (0.0f, 1.0f, lowFraction);
+    smoothingHighFraction = juce::jlimit (0.0f, 1.0f, highFraction);
     applySmoothing();
     recomputeCorrection();
 }
 
 void AnalysisEngine::applySmoothing()
 {
-    const bool on = smoothingFraction > 0.0f;
+    const bool on = smoothingLowFraction > 0.0f || smoothingHighFraction > 0.0f;
+    auto smooth = [this] (const std::vector<std::complex<float>>& in)
+    {
+        return smoothVariableOctave (in, smoothingLowFraction, smoothingHighFraction,
+                                     sampleRate, windowSize);
+    };
+
     for (auto& c : curves)
-        c.Hs = on ? smoothOctaveFraction (c.H, smoothingFraction) : c.H;
-    averageSmoothed = on && ! average.empty() ? smoothOctaveFraction (average, smoothingFraction)
-                                              : average;
-    subAverageSmoothed = on && ! subAverage.empty()
-                             ? smoothOctaveFraction (subAverage, smoothingFraction)
-                             : subAverage;
+        c.Hs = on ? smooth (c.H) : c.H;
+    averageSmoothed    = on && ! average.empty()    ? smooth (average)    : average;
+    subAverageSmoothed = on && ! subAverage.empty() ? smooth (subAverage) : subAverage;
 }
 
 bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out, float forcedDelaySamples)
@@ -254,24 +258,46 @@ void AnalysisEngine::computeSubAverage()
         v *= inv;
 }
 
-std::vector<std::complex<float>> AnalysisEngine::smoothOctaveFraction (
-    const std::vector<std::complex<float>>& in, float fraction)
+std::vector<std::complex<float>> AnalysisEngine::smoothVariableOctave (
+    const std::vector<std::complex<float>>& in,
+    float lowFraction, float highFraction, double sampleRate, int windowSize)
 {
     // Moving complex average over a +/- (fraction/2) octave band around each
-    // bin, computed with prefix sums for O(n).
+    // bin, computed with prefix sums for O(n). The octave fraction is
+    // frequency dependent: log-interpolated from lowFraction at/below
+    // smoothLowAnchorHz to highFraction at/above smoothHighAnchorHz, so the
+    // bass can stay finely resolved while the treble is smoothed broadly.
     const int n = (int) in.size();
     std::vector<std::complex<double>> prefix ((size_t) n + 1, { 0.0, 0.0 });
     for (int k = 0; k < n; ++k)
         prefix[(size_t) k + 1] = prefix[(size_t) k] + std::complex<double> (in[(size_t) k]);
 
-    const double r = std::pow (2.0, fraction * 0.5);
+    const double logLo = std::log2 (smoothLowAnchorHz);
+    const double logHi = std::log2 (smoothHighAnchorHz);
+    const double binToHz = (windowSize > 0 && sampleRate > 0.0)
+                               ? sampleRate / (double) windowSize : 0.0;
+
     std::vector<std::complex<float>> outv ((size_t) n);
 
     for (int k = 0; k < n; ++k)
     {
-        const int lo = juce::jlimit (0, n - 1, (int) std::floor ((double) k / r));
-        const int hi = juce::jlimit (0, n - 1, (int) std::ceil ((double) k * r));
-        const auto sum = prefix[(size_t) hi + 1] - prefix[(size_t) lo];
+        // Interpolate the octave fraction for this bin's frequency.
+        const double f = (double) k * binToHz;
+        double t = 0.0;
+        if (f > 0.0 && logHi > logLo)
+            t = juce::jlimit (0.0, 1.0, (std::log2 (f) - logLo) / (logHi - logLo));
+        const double fraction = (double) lowFraction + t * ((double) highFraction - (double) lowFraction);
+
+        if (fraction <= 0.0)        // no smoothing at this bin
+        {
+            outv[(size_t) k] = in[(size_t) k];
+            continue;
+        }
+
+        const double r  = std::pow (2.0, fraction * 0.5);
+        const int    lo = juce::jlimit (0, n - 1, (int) std::floor ((double) k / r));
+        const int    hi = juce::jlimit (0, n - 1, (int) std::ceil  ((double) k * r));
+        const auto sum  = prefix[(size_t) hi + 1] - prefix[(size_t) lo];
         outv[(size_t) k] = std::complex<float> (sum / (double) (hi - lo + 1));
     }
     return outv;
