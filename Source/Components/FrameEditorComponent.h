@@ -56,6 +56,7 @@ public:
             s.setSliderStyle (juce::Slider::LinearHorizontal);
             s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
             s.setRange (lo, hi, step);
+            s.setDoubleClickReturnValue (true, 0.0);    // double-click resets to 0
             SuperMoToTheme::accentSlider (s, col);
             s.onValueChange = [this] { pushToModel(); };
             addAndMakeVisible (s);

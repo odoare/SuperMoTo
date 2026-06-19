@@ -102,7 +102,7 @@ public:
         // Frequency band the analysis acts on: outside it the correction is
         // unity and the exported measured IR is rolled off. Editable, with a
         // few standard values preset.
-        addLabel (rangeLabel, "Analysis range");
+        addLabel (rangeLabel, "Range");
         auto setupFreqBox = [this] (juce::ComboBox& box,
                                     std::initializer_list<int> presets, int def)
         {
@@ -280,64 +280,66 @@ public:
         title.setBounds (area.removeFromTop (26).withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
-        // The two export buttons share a column: "Export IR" sits to the right
-        // of the smoothing control on row 1, the correction export directly
-        // below it on row 2 (same x, same width). The level / boost sliders take
-        // whatever is left to the right of that column.
+        // The two export buttons share a right-aligned column: "Export IR" on
+        // row 1 and "Export correction IR" directly below it on row 2, both
+        // flush to the right edge (same width) so they always line up.
         constexpr int exportW = 165;
 
+        // Row 1: load, Welch window, smoothing, analysis range, Export IR.
         auto r1 = area.removeFromTop (24);
+        exportMeasuredButton.setBounds (r1.removeFromRight (exportW));
         loadButton.setBounds (r1.removeFromLeft (170));
         r1.removeFromLeft (16);
         windowLabel.setBounds (r1.removeFromLeft (90));
-        windowBox.setBounds (r1.removeFromLeft (100));
+        windowBox.setBounds (r1.removeFromLeft (90));
         r1.removeFromLeft (16);
         smoothLabel.setBounds (r1.removeFromLeft (96));
         smoothLowBox.setBounds (r1.removeFromLeft (78));
         r1.removeFromLeft (4);
         smoothHighBox.setBounds (r1.removeFromLeft (78));
         r1.removeFromLeft (16);
-        exportMeasuredButton.setBounds (r1.removeFromLeft (exportW));
-        const int exportX = exportMeasuredButton.getX();
-        r1.removeFromLeft (16);
-        levelLabel.setBounds (r1.removeFromLeft (100));
-        levelSlider.setBounds (r1);
+        rangeLabel.setBounds (r1.removeFromLeft (50));
+        lowFreqBox.setBounds (r1.removeFromLeft (86));
+        rangeToLabel.setBounds (r1.removeFromLeft (12));
+        highFreqBox.setBounds (r1.removeFromLeft (86));
 
+        // Row 2: correction level, max boost, Phase, FIR length, Assign to,
+        // Export correction IR (aligned under "Export IR"). The two sliders
+        // share whatever width is left after the fixed labels/boxes.
         area.removeFromTop (8);
         auto r2 = area.removeFromTop (24);
-        firLabel.setBounds (r2.removeFromLeft (70));
-        firBox.setBounds (r2.removeFromLeft (100));
+        exportButton.setBounds (r2.removeFromRight (exportW));
+        r2.removeFromRight (16);
+
+        const int fixedW  = 100 + 64 + 40 + 110 + 64 + 90 + 58 + 110;
+        const int sliderW = juce::jmax (96, (r2.getWidth() - fixedW - 12 * 4) / 2);
+
+        levelLabel.setBounds (r2.removeFromLeft (100));
+        levelSlider.setBounds (r2.removeFromLeft (sliderW));
+        r2.removeFromLeft (12);
+        boostLabel.setBounds (r2.removeFromLeft (64));
+        boostSlider.setBounds (r2.removeFromLeft (sliderW));
         r2.removeFromLeft (12);
         phaseLabel.setBounds (r2.removeFromLeft (40));
         phaseBox.setBounds (r2.removeFromLeft (110));
-        r2.removeFromLeft (16);
-        assignLabel.setBounds (r2.removeFromLeft (62));
+        r2.removeFromLeft (12);
+        firLabel.setBounds (r2.removeFromLeft (64));
+        firBox.setBounds (r2.removeFromLeft (90));
+        r2.removeFromLeft (12);
+        assignLabel.setBounds (r2.removeFromLeft (58));
         assignBox.setBounds (r2.removeFromLeft (110));
-        // Jump to the export column so the correction button lines up under
-        // "Export IR" regardless of the controls on its left.
-        r2.removeFromLeft (juce::jmax (16, exportX - r2.getX()));
-        exportButton.setBounds (r2.removeFromLeft (exportW));
-        r2.removeFromLeft (16);
-        boostLabel.setBounds (r2.removeFromLeft (70));
-        boostSlider.setBounds (r2);
 
-        area.removeFromTop (6);
-        auto r3 = area.removeFromTop (22);
-        rangeLabel.setBounds (r3.removeFromLeft (96));
-        lowFreqBox.setBounds (r3.removeFromLeft (88));
-        rangeToLabel.setBounds (r3.removeFromLeft (14));
-        highFreqBox.setBounds (r3.removeFromLeft (88));
-        r3.removeFromLeft (20);
-        firInfo.setBounds (r3);
-
+        // Row 3: FIR info line on the left, subwoofer controls on the right.
         area.removeFromTop (8);
-        auto r4 = area.removeFromTop (24);
-        loadSubButton.setBounds (r4.removeFromLeft (190));
-        r4.removeFromLeft (16);
-        crossoverLabel.setBounds (r4.removeFromLeft (66));
-        crossoverBox.setBounds (r4.removeFromLeft (90));
-        r4.removeFromLeft (16);
-        subInvertToggle.setBounds (r4.removeFromLeft (96));
+        auto r3 = area.removeFromTop (24);
+        subInvertToggle.setBounds (r3.removeFromRight (96));
+        r3.removeFromRight (16);
+        crossoverBox.setBounds (r3.removeFromRight (90));
+        crossoverLabel.setBounds (r3.removeFromRight (66));
+        r3.removeFromRight (16);
+        loadSubButton.setBounds (r3.removeFromRight (190));
+        r3.removeFromRight (16);
+        firInfo.setBounds (r3);
 
         area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));

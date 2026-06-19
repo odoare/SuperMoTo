@@ -72,8 +72,10 @@ public:
             b.setClickingTogglesState (true);
             b.setRadioGroupId (7);
             b.setConnectedEdges (edges);
-            b.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::measure.darker (0.5f));
-            b.setColour (juce::TextButton::textColourOnId, SuperMoToTheme::text);
+            b.setColour (juce::TextButton::buttonColourId,   SuperMoToTheme::panel);
+            b.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::measure.darker (0.25f));
+            b.setColour (juce::TextButton::textColourOffId,  SuperMoToTheme::dimText);
+            b.setColour (juce::TextButton::textColourOnId,   SuperMoToTheme::measure.brighter (0.7f));
             b.onClick = [this] { updateModeUi(); };
             addAndMakeVisible (b);
         };
@@ -89,21 +91,21 @@ public:
         SuperMoToTheme::accentComboBox (signalBox, SuperMoToTheme::measure);
         addAndMakeVisible (signalBox);
 
+        // Duration / level bars: FxmeSlider gives right-click value entry (and
+        // double-click resets to the default), matching the matrix frame bars.
         addLabel (durationLabel, "Duration");
         duration.setSliderStyle (juce::Slider::LinearHorizontal);
-        duration.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 18);
         duration.setRange (5.0, 30.0, 1.0);
         duration.setValue (10.0, juce::dontSendNotification);
-        duration.setTextValueSuffix (" s");
+        duration.setDoubleClickReturnValue (true, 10.0);
         SuperMoToTheme::accentSlider (duration, SuperMoToTheme::measure);
         addAndMakeVisible (duration);
 
         addLabel (levelLabel, "Level");
         level.setSliderStyle (juce::Slider::LinearHorizontal);
-        level.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 18);
         level.setRange (-60.0, 0.0, 0.5);
         level.setValue (-12.0, juce::dontSendNotification);
-        level.setTextValueSuffix (" dB");
+        level.setDoubleClickReturnValue (true, -12.0);
         SuperMoToTheme::accentSlider (level, SuperMoToTheme::measure);
         addAndMakeVisible (level);
 
@@ -170,6 +172,12 @@ public:
         r1.removeFromLeft (20);
         signalLabel.setBounds (r1.removeFromLeft (46));
         signalBox.setBounds (r1.removeFromLeft (200));
+        r1.removeFromLeft (16);
+        durationLabel.setBounds (r1.removeFromLeft (56));
+        duration.setBounds (r1.removeFromLeft (96));
+        r1.removeFromLeft (14);
+        levelLabel.setBounds (r1.removeFromLeft (38));
+        level.setBounds (r1.removeFromLeft (96));
 
         area.removeFromTop (10);
         outputsLabel.setBounds (area.removeFromTop (18));
@@ -182,14 +190,6 @@ public:
             if (o < numCh)
                 outputToggles[o]->setBounds (toggleArea.removeFromLeft (tw));
         }
-
-        area.removeFromTop (10);
-        auto r2 = area.removeFromTop (24);
-        durationLabel.setBounds (r2.removeFromLeft (70));
-        duration.setBounds (r2.removeFromLeft (250));
-        r2.removeFromLeft (24);
-        levelLabel.setBounds (r2.removeFromLeft (50));
-        level.setBounds (r2.removeFromLeft (250));
 
         area.removeFromTop (10);
         pathLabel.setBounds (area.removeFromTop (18));
@@ -518,7 +518,7 @@ private:
     juce::ComboBox micBox, signalBox;
     juce::OwnedArray<juce::ToggleButton> outputToggles;
     juce::TextButton modeDryButton, modeFirButton, modeSystemButton;
-    juce::Slider duration, level;
+    fxme::FxmeSlider duration, level;
     juce::TextEditor pathEditor;
     juce::TextButton browseButton, runButton;
     bool lastModeWasFull = false;
