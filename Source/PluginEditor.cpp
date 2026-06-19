@@ -17,6 +17,7 @@
 
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "AppSettings.h"
 
 //==============================================================================
 // Width of the matrix component for a given window width (expanded layout):
@@ -191,11 +192,16 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
             initial = c;
 
     setEditConfig (initial);
-    setView (View::matrix);
+
+    // Restore the interface mode left last time (which panel, compact or not).
+    setView (static_cast<View> (juce::jlimit (0, 3, smt::getUiView())));
 
     setResizable (true, true);
     setResizeLimits (1100, 720, 2400, 1600);
     setSize (1280, 820);
+
+    if (smt::getUiCollapsed())
+        setCollapsed (true);
 }
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
@@ -237,6 +243,7 @@ void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parame
 void SuperMoToAudioProcessorEditor::setView (View v)
 {
     currentView = v;
+    smt::setUiView (static_cast<int> (v));
     const bool m = v == View::matrix && ! collapsed;
 
     // In collapsed mode the matrix stays visible but shrinks to its output
@@ -387,6 +394,7 @@ void SuperMoToAudioProcessorEditor::setCollapsed (bool shouldCollapse)
     if (collapsed == shouldCollapse)
         return;
     collapsed = shouldCollapse;
+    smt::setUiCollapsed (collapsed);
 
     collapseButton.setButtonText (juce::String::fromUTF8 (collapsed ? "\xe2\x96\xbc"      // down
                                                                     : "\xe2\x96\xb2"));   // up

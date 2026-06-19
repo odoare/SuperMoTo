@@ -68,4 +68,40 @@ inline void setLastBrowseDir (const juce::File& fileOrDir)
     }
 }
 
+//==============================================================================
+// Interface mode: which view/panel is open and whether the editor is in
+// compact (collapsed) mode, so the editor reopens the way it was left.
+
+/** Last open view, as the editor's View enum cast to int (default 0 = matrix). */
+inline int getUiView()
+{
+    auto* s = appProperties().getUserSettings();
+    return s != nullptr ? s->getIntValue ("uiView", 0) : 0;
+}
+
+inline void setUiView (int view)
+{
+    if (auto* s = appProperties().getUserSettings())
+    {
+        s->setValue ("uiView", view);
+        s->saveIfNeeded();
+    }
+}
+
+/** Whether the editor was last left in compact (collapsed) mode. */
+inline bool getUiCollapsed()
+{
+    auto* s = appProperties().getUserSettings();
+    return s != nullptr && s->getBoolValue ("uiCollapsed", false);
+}
+
+inline void setUiCollapsed (bool collapsed)
+{
+    if (auto* s = appProperties().getUserSettings())
+    {
+        s->setValue ("uiCollapsed", collapsed);
+        s->saveIfNeeded();
+    }
+}
+
 } // namespace smt
