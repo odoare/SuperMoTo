@@ -93,6 +93,26 @@ void SpectrumDisplay::mouseDrag (const juce::MouseEvent& e)
     setDbWindow (dragStartMin + (e.position.y - dragStartY) * dbPerPx, span);
 }
 
+void SpectrumDisplay::mouseMove (const juce::MouseEvent& e)
+{
+    cursorPos = e.position;
+    const bool in = getPlotArea().contains (e.position) && ! overBadge (e.getPosition());
+    if (in != cursorInPlot || in)
+    {
+        cursorInPlot = in;
+        repaint();
+    }
+}
+
+void SpectrumDisplay::mouseExit (const juce::MouseEvent&)
+{
+    if (cursorInPlot)
+    {
+        cursorInPlot = false;
+        repaint();
+    }
+}
+
 void SpectrumDisplay::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (getPlotArea().contains (e.position) && ! overBadge (e.getPosition()))
@@ -128,6 +148,35 @@ void SpectrumDisplay::drawBadge (juce::Graphics& g, juce::Rectangle<int> r,
     g.setColour (active ? SuperMoToTheme::text : SuperMoToTheme::dimText);
     g.setFont (10.0f);
     g.drawText (text, b, juce::Justification::centred);
+}
+
+void SpectrumDisplay::drawCursorReadout (juce::Graphics& g, juce::Rectangle<float> plot) const
+{
+    if (! cursorInPlot)
+        return;
+
+    // Invert the axis mappings to get frequency / level under the pointer.
+    const float lo = smt::SpectrumAnalyzer::fMin, hi = smt::SpectrumAnalyzer::fMax;
+    const float relX = juce::jlimit (0.0f, 1.0f, (cursorPos.x - plot.getX()) / plot.getWidth());
+    const float f  = lo * std::exp (relX * std::log (hi / lo));
+    const float db = juce::jmap (juce::jlimit (plot.getY(), plot.getBottom(), cursorPos.y),
+                                 plot.getBottom(), plot.getY(), minDb, maxDb);
+    const float shown = splCalibrated ? db + splOffset : db;
+
+    const juce::String txt =
+        (f >= 1000.0f ? juce::String (f / 1000.0f, 2) + " kHz"
+                      : juce::String (juce::roundToInt (f)) + " Hz")
+        + "   " + juce::String (shown, 1) + (splCalibrated ? " dB SPL" : " dBFS");
+
+    g.setFont (10.0f);
+    const int tw = (int) juce::GlyphArrangement::getStringWidth (juce::Font (10.0f), txt) + 12;
+    juce::Rectangle<int> box ((int) plot.getRight() - tw - 2, (int) plot.getY() + 2, tw, 14);
+    g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.75f));
+    g.fillRoundedRectangle (box.toFloat(), 3.0f);
+    g.setColour (SuperMoToTheme::panelLine);
+    g.drawRoundedRectangle (box.toFloat(), 3.0f, 1.0f);
+    g.setColour (SuperMoToTheme::text);
+    g.drawText (txt, box, juce::Justification::centred);
 }
 
 void SpectrumDisplay::paint (juce::Graphics& g)
@@ -218,6 +267,9 @@ void SpectrumDisplay::paint (juce::Graphics& g)
     drawBadge (g, avgBadgeBounds(), "avg", avgOn);
     drawBadge (g, nBadgeBounds(),   "N " + juce::String (nAvg), avgOn);
     drawBadge (g, detectorBadgeBounds(), mode == Mode::peak ? "peak" : "avg", true);
+
+    // Cursor frequency / level read-out (top-right), drawn over the SPL tag.
+    drawCursorReadout (g, plot);
 
     g.setColour (SuperMoToTheme::panelLine);
     g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);

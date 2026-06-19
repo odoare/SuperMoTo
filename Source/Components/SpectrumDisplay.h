@@ -72,6 +72,8 @@ public:
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
+    void mouseExit (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
 
@@ -165,6 +167,11 @@ private:
     static constexpr float dbFloor = -140.0f, dbCeil = 40.0f, dbMinSpan = 10.0f;
     bool dragging = false;
     float dragStartY = 0.0f, dragStartMin = -100.0f, dragStartMax = 10.0f;
+
+    // Cursor read-out (frequency / level at the pointer), shown top-right.
+    juce::Point<float> cursorPos;
+    bool cursorInPlot = false;
+    void drawCursorReadout (juce::Graphics& g, juce::Rectangle<float> plot) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectrumDisplay)
 };
