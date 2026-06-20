@@ -1,0 +1,179 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {chapter}{\numberline {1}Overview}{3}{chapter.1}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {1.1}What SuperMoTo is}{3}{section.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1.2}Why calibrate a monitoring system?}{3}{section.1.2}\protected@file@percent }
+\newlabel{sec:why}{{1.2}{3}{Why calibrate a monitoring system?}{section.1.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.1}The room's low-frequency modes}{3}{subsection.1.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.2}Boundary and early reflections}{3}{subsection.1.2.2}\protected@file@percent }
+\citation{Linkwitz1976}
+\citation{NeelyAllen}
+\citation{Mourjopoulos1994}
+\citation{Toole}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.3}Imperfect loudspeakers}{4}{subsection.1.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.4}Subwoofers and the crossover region}{4}{subsection.1.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.5}What SuperMoTo can and cannot do}{4}{subsection.1.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.6}Treat the room first}{4}{subsection.1.2.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1.3}Signal flow at a glance}{5}{section.1.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1.1}{\ignorespaces Per-block signal flow of the matrix engine. Each crosspoint (``frame'') of the matrix has its own gain, 4-band EQ, phase inversion and fractional delay; each output has a trim and an optional FIR correction filter. Outputs are then re-aligned so loudspeakers with different FIR lengths stay time-coherent.}}{5}{figure.1.1}\protected@file@percent }
+\newlabel{fig:signalflow}{{1.1}{5}{Per-block signal flow of the matrix engine. Each crosspoint (``frame'') of the matrix has its own gain, 4-band EQ, phase inversion and fractional delay; each output has a trim and an optional FIR correction filter. Outputs are then re-aligned so loudspeakers with different FIR lengths stay time-coherent}{figure.1.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.4}Plugin format and channel layout}{5}{section.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {2}Host (DAW) compatibility}{6}{chapter.2}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:daw}{{2}{6}{Host (DAW) compatibility}{chapter.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.1}Recommended and likely-compatible hosts}{6}{section.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.2}Hosts likely to be awkward}{6}{section.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.3}Suggested REAPER setup (reference)}{6}{section.2.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2.1}{\ignorespaces Hosts that can drive SuperMoTo. ``Fit'' is the author's assessment based on the routing / monitor-section requirements; only REAPER is formally tested.}}{7}{table.2.1}\protected@file@percent }
+\newlabel{tab:hosts}{{2.1}{7}{Hosts that can drive SuperMoTo. ``Fit'' is the author's assessment based on the routing / monitor-section requirements; only REAPER is formally tested}{table.2.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2.1}{\ignorespaces REAPER ``Monitoring FX'' window with SuperMoTo inserted, showing the 16-in/16-out pin/channel mapping to the hardware outputs.}}{7}{figure.2.1}\protected@file@percent }
+\newlabel{fig:reaper-monitoring-fx.png}{{2.1}{7}{REAPER ``Monitoring FX'' window with SuperMoTo inserted, showing the 16-in/16-out pin/channel mapping to the hardware outputs}{figure.2.1}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {3}The monitoring matrix}{8}{chapter.3}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:matrix}{{3}{8}{The monitoring matrix}{chapter.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3.1}{\ignorespaces The Matrix view: top bar with configuration buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the 16$\times $16 grid of frames each with its vu-meter; the per-output strip; the global spectrum analyzer; and the frame editor panel (bottom-right).}}{8}{figure.3.1}\protected@file@percent }
+\newlabel{fig:SuperMoTo_matrix_view.png}{{3.1}{8}{The Matrix view: top bar with configuration buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the 16$\times $16 grid of frames each with its vu-meter; the per-output strip; the global spectrum analyzer; and the frame editor panel (bottom-right)}{figure.3.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3.1}Concepts}{8}{section.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1.1}What a frame contains}{8}{subsection.3.1.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3.2}{\ignorespaces Processing inside a single frame (crosspoint). Every active frame feeding a given output is summed into that output's bus before the output trim and FIR.}}{9}{figure.3.2}\protected@file@percent }
+\newlabel{fig:frame}{{3.2}{9}{Processing inside a single frame (crosspoint). Every active frame feeding a given output is summed into that output's bus before the output trim and FIR}{figure.3.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1.2}Configurations A--F}{9}{subsection.3.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.2}Interacting with the matrix}{9}{section.3.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.1}{\ignorespaces Mouse interactions in the matrix and output strip. Every page also has an info button \textbf  {(i)} summarising its controls and shortcuts.}}{9}{table.3.1}\protected@file@percent }
+\newlabel{tab:gestures}{{3.1}{9}{Mouse interactions in the matrix and output strip. Every page also has an info button \textbf {(i)} summarising its controls and shortcuts}{table.3.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3.3}Per-output FIR correction and latency compensation}{9}{section.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3.3}{\ignorespaces Output strip close-up: the gold LED marks an output that received automatic latency compensation; the tooltip shows how many samples / milliseconds were added to keep it aligned with the longest FIR.}}{10}{figure.3.3}\protected@file@percent }
+\newlabel{fig:latency-led.png}{{3.3}{10}{Output strip close-up: the gold LED marks an output that received automatic latency compensation; the tooltip shows how many samples / milliseconds were added to keep it aligned with the longest FIR}{figure.3.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3.4}The global spectrum analyzer}{10}{section.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.5}The Configuration tool}{10}{section.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.6}Host-automatable parameters}{10}{section.3.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3.4}{\ignorespaces The Configuration tool: a standard layout (here 5.1) with per-speaker input/output assignment, gains and the bass-management crossover frequency, ready to Apply into one of the A--F configurations.}}{11}{figure.3.4}\protected@file@percent }
+\newlabel{fig:config-tool.png}{{3.4}{11}{The Configuration tool: a standard layout (here 5.1) with per-speaker input/output assignment, gains and the bass-management crossover frequency, ready to Apply into one of the A--F configurations}{figure.3.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3.7}Compact (collapsed) view}{11}{section.3.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3.2}{\ignorespaces The complete set of host-automatable parameters (APVTS).}}{12}{table.3.2}\protected@file@percent }
+\newlabel{tab:params}{{3.2}{12}{The complete set of host-automatable parameters (APVTS)}{table.3.2}{}}
+\@writefile{toc}{\contentsline {chapter}{\numberline {4}Measurement (Calibration view)}{13}{chapter.4}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:measure}{{4}{13}{Measurement (Calibration view)}{chapter.4}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.1}{\ignorespaces The Calibration view: microphone input, measurement type, channel selection, stimulus (noise / sweep), duration, level and base path, the Run control, and the right-hand SPL-meter section with its dual dBFS / dB\,SPL bar and test-signal generators.}}{13}{figure.4.1}\protected@file@percent }
+\newlabel{fig:calibration-view.png}{{4.1}{13}{The Calibration view: microphone input, measurement type, channel selection, stimulus (noise / sweep), duration, level and base path, the Run control, and the right-hand SPL-meter section with its dual dBFS / dB\,SPL bar and test-signal generators}{figure.4.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.1}Running a measurement}{13}{section.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.2}The measurement microphone}{14}{section.4.2}\protected@file@percent }
+\newlabel{sec:micchoice}{{4.2}{14}{The measurement microphone}{section.4.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2.1}Why a measurement microphone}{14}{subsection.4.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2.2}Orientation matters}{14}{subsection.4.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.3}Microphone calibration}{14}{section.4.3}\protected@file@percent }
+\newlabel{sec:miccal}{{4.3}{14}{Microphone calibration}{section.4.3}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.2}{\ignorespaces The \textbf  {Mic cal} control on the Calibration view: the loaded file name, the load (\ldots  ) and clear ($\times $) buttons, beside the microphone-input selector. The same calibration is shown (read-only) in the Analysis view.}}{14}{figure.4.2}\protected@file@percent }
+\newlabel{fig:mic-cal-control.png}{{4.2}{14}{The \textbf {Mic cal} control on the Calibration view: the loaded file name, the load (\ldots ) and clear ($\times $) buttons, beside the microphone-input selector. The same calibration is shown (read-only) in the Analysis view}{figure.4.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.1}Why calibrate}{15}{subsection.4.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.2}The calibration file format}{15}{subsection.4.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.3}How SuperMoTo applies it}{15}{subsection.4.3.3}\protected@file@percent }
+\newlabel{eq:miccal}{{4.1}{15}{How SuperMoTo applies it}{equation.4.3.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3.4}Practical recommendations}{15}{subsection.4.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.4}The three measurement modes}{16}{section.4.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.1}{\ignorespaces Measurement modes. ``Dry'' characterises a bare speaker, ``FIR'' verifies its correction, ``System'' captures the complete monitored chain.}}{16}{table.4.1}\protected@file@percent }
+\newlabel{tab:measmodes}{{4.1}{16}{Measurement modes. ``Dry'' characterises a bare speaker, ``FIR'' verifies its correction, ``System'' captures the complete monitored chain}{table.4.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.3}{\ignorespaces Where each mode injects the stimulus. \textbf  {Dry} drives the output directly (bypassing trim and FIR); \textbf  {FIR} enters at the output trim so the signal passes trim + FIR; \textbf  {System} enters at a plugin input and traverses the entire engine.}}{16}{figure.4.3}\protected@file@percent }
+\newlabel{fig:measmodes}{{4.3}{16}{Where each mode injects the stimulus. \textbf {Dry} drives the output directly (bypassing trim and FIR); \textbf {FIR} enters at the output trim so the signal passes trim + FIR; \textbf {System} enters at a plugin input and traverses the entire engine}{figure.4.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4.1}Dry — the raw loudspeaker}{16}{subsection.4.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4.2}FIR — verifying the correction}{17}{subsection.4.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4.3}System — the complete monitored chain}{17}{subsection.4.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4.4}The ``sent'' channel convention}{17}{subsection.4.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4.5}Capture timing}{17}{subsection.4.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.5}The SPL meter}{17}{section.4.5}\protected@file@percent }
+\citation{Welch1967}
+\@writefile{toc}{\contentsline {chapter}{\numberline {5}Analysis \& correction design}{18}{chapter.5}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:analysis}{{5}{18}{Analysis \& correction design}{chapter.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5.1}{\ignorespaces The Analysis view: individual smoothed transfer functions (thin), their average (thick), the proposed correction and the corrected response, in magnitude and phase; with the nth-octave smoothing, correction-level, boost-ceiling and analysis-range controls, the subwoofer integration section, and the Export buttons.}}{18}{figure.5.1}\protected@file@percent }
+\newlabel{fig:analysis-view.png}{{5.1}{18}{The Analysis view: individual smoothed transfer functions (thin), their average (thick), the proposed correction and the corrected response, in magnitude and phase; with the nth-octave smoothing, correction-level, boost-ceiling and analysis-range controls, the subwoofer integration section, and the Export buttons}{figure.5.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.1}Transfer-function estimation (Welch method)}{18}{section.5.1}\protected@file@percent }
+\citation{BendatPiersol}
+\citation{ShinHammond}
+\citation{OppenheimSchafer}
+\citation{Harris1978}
+\citation{MullerMassarani}
+\citation{Toole}
+\citation{Mourjopoulos1994}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.1}The $H_1$ estimator}{19}{subsection.5.1.1}\protected@file@percent }
+\newlabel{eq:h1}{{5.2}{19}{The $H_1$ estimator}{equation.5.1.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.2}Windowing, overlap and resolution}{19}{subsection.5.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.3}Propagation-delay estimation and removal}{19}{subsection.5.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1.4}Complex spatial averaging}{19}{subsection.5.1.4}\protected@file@percent }
+\newlabel{sec:spatialavg}{{5.1.4}{19}{Complex spatial averaging}{subsection.5.1.4}{}}
+\citation{Hatziantoniou2000}
+\citation{NeelyAllen}
+\citation{Mourjopoulos1994}
+\@writefile{toc}{\contentsline {section}{\numberline {5.2}What the plot shows}{20}{section.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.3}Fractional-octave smoothing}{20}{section.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3.1}Frequency-dependent smoothing}{20}{subsection.5.3.1}\protected@file@percent }
+\newlabel{sec:varsmooth}{{5.3.1}{20}{Frequency-dependent smoothing}{subsection.5.3.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3.2}Why smoothing matters — and a recommendation}{20}{subsection.5.3.2}\protected@file@percent }
+\newlabel{sec:smoothrec}{{5.3.2}{20}{Why smoothing matters — and a recommendation}{subsection.5.3.2}{}}
+\citation{Toole}
+\citation{NeelyAllen}
+\citation{Mourjopoulos1994}
+\citation{Kirkeby1999}
+\@writefile{toc}{\contentsline {paragraph}{Practical guidance.}{21}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.4}Designing the correction}{21}{section.5.4}\protected@file@percent }
+\newlabel{sec:correction}{{5.4}{21}{Designing the correction}{section.5.4}{}}
+\newlabel{eq:inverse}{{5.7}{21}{Designing the correction}{equation.5.4.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{1. Soft-knee boost ceiling.}{21}{section*.3}\protected@file@percent }
+\citation{Linkwitz1976}
+\@writefile{toc}{\contentsline {paragraph}{2. Low-frequency slope.}{22}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{3. Correction level.}{22}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{4. Analysis band.}{22}{section*.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5.2}{\ignorespaces Schematic of the correction principle: the correction (gold, dashed) is the regularised inverse of the smoothed measured average (blue); applying it yields an approximately flat corrected response (green). The boost ceiling prevents the correction from fully inverting deep notches; the low-frequency slope rolls the correction off below the target corner. \emph  {This plot is illustrative, not real measurement data.}}}{22}{figure.5.2}\protected@file@percent }
+\newlabel{fig:correction}{{5.2}{22}{Schematic of the correction principle: the correction (gold, dashed) is the regularised inverse of the smoothed measured average (blue); applying it yields an approximately flat corrected response (green). The boost ceiling prevents the correction from fully inverting deep notches; the low-frequency slope rolls the correction off below the target corner. \emph {This plot is illustrative, not real measurement data.}}{figure.5.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.5}Subwoofer phase alignment}{23}{section.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5.1}Preserving the relative main/sub timing}{23}{subsection.5.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5.2}The all-pass alignment term}{23}{subsection.5.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5.3}The complete correction filter}{23}{subsection.5.5.3}\protected@file@percent }
+\newlabel{sec:fullfilter}{{5.5.3}{23}{The complete correction filter}{subsection.5.5.3}{}}
+\newlabel{eq:fullfilter}{{5.13}{23}{The complete correction filter}{equation.5.5.13}{}}
+\citation{OppenheimSchafer}
+\citation{Gardner1995}
+\citation{OppenheimSchafer}
+\@writefile{toc}{\contentsline {section}{\numberline {5.6}Rendering the FIR filter}{24}{section.5.6}\protected@file@percent }
+\newlabel{sec:render}{{5.6}{24}{Rendering the FIR filter}{section.5.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6.1}Linear- / mixed-phase rendering}{24}{subsection.5.6.1}\protected@file@percent }
+\citation{OppenheimSchafer}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6.2}Minimum-phase rendering}{25}{subsection.5.6.2}\protected@file@percent }
+\newlabel{sec:minphase}{{5.6.2}{25}{Minimum-phase rendering}{subsection.5.6.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5.7}Exporting}{25}{section.5.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {6}Workflows}{26}{chapter.6}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:workflows}{{6}{26}{Workflows}{chapter.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6.1}A — Stereo monitoring with corrected speakers}{26}{section.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.2}B — 2.1 / bass-managed system with an aligned subwoofer}{26}{section.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.3}C — Verifying the complete system end to end}{26}{section.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6.4}D — Multiple speaker sets / quick A/B}{26}{section.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{\numberline {7}Building from source}{27}{chapter.7}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{ch:build}{{7}{27}{Building from source}{chapter.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7.1}License}{27}{section.7.1}\protected@file@percent }
+\bibcite{Welch1967}{1}
+\bibcite{BendatPiersol}{2}
+\bibcite{ShinHammond}{3}
+\bibcite{OppenheimSchafer}{4}
+\bibcite{Harris1978}{5}
+\bibcite{MullerMassarani}{6}
+\bibcite{Hatziantoniou2000}{7}
+\bibcite{Mourjopoulos1994}{8}
+\bibcite{NeelyAllen}{9}
+\bibcite{Kirkeby1999}{10}
+\bibcite{Toole}{11}
+\bibcite{Linkwitz1976}{12}
+\bibcite{Gardner1995}{13}
+\gdef \@abspage@last{29}

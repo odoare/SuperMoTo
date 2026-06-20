@@ -1,0 +1,73 @@
+\contentsline {chapter}{\numberline {1}Overview}{3}{chapter.1}%
+\contentsline {section}{\numberline {1.1}What SuperMoTo is}{3}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Why calibrate a monitoring system?}{3}{section.1.2}%
+\contentsline {subsection}{\numberline {1.2.1}The room's low-frequency modes}{3}{subsection.1.2.1}%
+\contentsline {subsection}{\numberline {1.2.2}Boundary and early reflections}{3}{subsection.1.2.2}%
+\contentsline {subsection}{\numberline {1.2.3}Imperfect loudspeakers}{4}{subsection.1.2.3}%
+\contentsline {subsection}{\numberline {1.2.4}Subwoofers and the crossover region}{4}{subsection.1.2.4}%
+\contentsline {subsection}{\numberline {1.2.5}What SuperMoTo can and cannot do}{4}{subsection.1.2.5}%
+\contentsline {subsection}{\numberline {1.2.6}Treat the room first}{4}{subsection.1.2.6}%
+\contentsline {section}{\numberline {1.3}Signal flow at a glance}{5}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Plugin format and channel layout}{5}{section.1.4}%
+\contentsline {chapter}{\numberline {2}Host (DAW) compatibility}{6}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Recommended and likely-compatible hosts}{6}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Hosts likely to be awkward}{6}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Suggested REAPER setup (reference)}{6}{section.2.3}%
+\contentsline {chapter}{\numberline {3}The monitoring matrix}{8}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Concepts}{8}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}What a frame contains}{8}{subsection.3.1.1}%
+\contentsline {subsection}{\numberline {3.1.2}Configurations A--F}{9}{subsection.3.1.2}%
+\contentsline {section}{\numberline {3.2}Interacting with the matrix}{9}{section.3.2}%
+\contentsline {section}{\numberline {3.3}Per-output FIR correction and latency compensation}{9}{section.3.3}%
+\contentsline {section}{\numberline {3.4}The global spectrum analyzer}{10}{section.3.4}%
+\contentsline {section}{\numberline {3.5}The Configuration tool}{10}{section.3.5}%
+\contentsline {section}{\numberline {3.6}Host-automatable parameters}{10}{section.3.6}%
+\contentsline {section}{\numberline {3.7}Compact (collapsed) view}{11}{section.3.7}%
+\contentsline {chapter}{\numberline {4}Measurement (Calibration view)}{13}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Running a measurement}{13}{section.4.1}%
+\contentsline {section}{\numberline {4.2}The measurement microphone}{14}{section.4.2}%
+\contentsline {subsection}{\numberline {4.2.1}Why a measurement microphone}{14}{subsection.4.2.1}%
+\contentsline {subsection}{\numberline {4.2.2}Orientation matters}{14}{subsection.4.2.2}%
+\contentsline {section}{\numberline {4.3}Microphone calibration}{14}{section.4.3}%
+\contentsline {subsection}{\numberline {4.3.1}Why calibrate}{15}{subsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.3.2}The calibration file format}{15}{subsection.4.3.2}%
+\contentsline {subsection}{\numberline {4.3.3}How SuperMoTo applies it}{15}{subsection.4.3.3}%
+\contentsline {subsection}{\numberline {4.3.4}Practical recommendations}{15}{subsection.4.3.4}%
+\contentsline {section}{\numberline {4.4}The three measurement modes}{16}{section.4.4}%
+\contentsline {subsection}{\numberline {4.4.1}Dry — the raw loudspeaker}{16}{subsection.4.4.1}%
+\contentsline {subsection}{\numberline {4.4.2}FIR — verifying the correction}{17}{subsection.4.4.2}%
+\contentsline {subsection}{\numberline {4.4.3}System — the complete monitored chain}{17}{subsection.4.4.3}%
+\contentsline {subsection}{\numberline {4.4.4}The ``sent'' channel convention}{17}{subsection.4.4.4}%
+\contentsline {subsection}{\numberline {4.4.5}Capture timing}{17}{subsection.4.4.5}%
+\contentsline {section}{\numberline {4.5}The SPL meter}{17}{section.4.5}%
+\contentsline {chapter}{\numberline {5}Analysis \& correction design}{18}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Transfer-function estimation (Welch method)}{18}{section.5.1}%
+\contentsline {subsection}{\numberline {5.1.1}The $H_1$ estimator}{19}{subsection.5.1.1}%
+\contentsline {subsection}{\numberline {5.1.2}Windowing, overlap and resolution}{19}{subsection.5.1.2}%
+\contentsline {subsection}{\numberline {5.1.3}Propagation-delay estimation and removal}{19}{subsection.5.1.3}%
+\contentsline {subsection}{\numberline {5.1.4}Complex spatial averaging}{19}{subsection.5.1.4}%
+\contentsline {section}{\numberline {5.2}What the plot shows}{20}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Fractional-octave smoothing}{20}{section.5.3}%
+\contentsline {subsection}{\numberline {5.3.1}Frequency-dependent smoothing}{20}{subsection.5.3.1}%
+\contentsline {subsection}{\numberline {5.3.2}Why smoothing matters — and a recommendation}{20}{subsection.5.3.2}%
+\contentsline {paragraph}{Practical guidance.}{21}{section*.2}%
+\contentsline {section}{\numberline {5.4}Designing the correction}{21}{section.5.4}%
+\contentsline {paragraph}{1. Soft-knee boost ceiling.}{21}{section*.3}%
+\contentsline {paragraph}{2. Low-frequency slope.}{22}{section*.4}%
+\contentsline {paragraph}{3. Correction level.}{22}{section*.5}%
+\contentsline {paragraph}{4. Analysis band.}{22}{section*.6}%
+\contentsline {section}{\numberline {5.5}Subwoofer phase alignment}{23}{section.5.5}%
+\contentsline {subsection}{\numberline {5.5.1}Preserving the relative main/sub timing}{23}{subsection.5.5.1}%
+\contentsline {subsection}{\numberline {5.5.2}The all-pass alignment term}{23}{subsection.5.5.2}%
+\contentsline {subsection}{\numberline {5.5.3}The complete correction filter}{23}{subsection.5.5.3}%
+\contentsline {section}{\numberline {5.6}Rendering the FIR filter}{24}{section.5.6}%
+\contentsline {subsection}{\numberline {5.6.1}Linear- / mixed-phase rendering}{24}{subsection.5.6.1}%
+\contentsline {subsection}{\numberline {5.6.2}Minimum-phase rendering}{25}{subsection.5.6.2}%
+\contentsline {section}{\numberline {5.7}Exporting}{25}{section.5.7}%
+\contentsline {chapter}{\numberline {6}Workflows}{26}{chapter.6}%
+\contentsline {section}{\numberline {6.1}A — Stereo monitoring with corrected speakers}{26}{section.6.1}%
+\contentsline {section}{\numberline {6.2}B — 2.1 / bass-managed system with an aligned subwoofer}{26}{section.6.2}%
+\contentsline {section}{\numberline {6.3}C — Verifying the complete system end to end}{26}{section.6.3}%
+\contentsline {section}{\numberline {6.4}D — Multiple speaker sets / quick A/B}{26}{section.6.4}%
+\contentsline {chapter}{\numberline {7}Building from source}{27}{chapter.7}%
+\contentsline {section}{\numberline {7.1}License}{27}{section.7.1}%
