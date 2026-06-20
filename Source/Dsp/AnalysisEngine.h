@@ -31,6 +31,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "MicCalibration.h"
 #include <complex>
 #include <limits>
 #include <vector>
@@ -115,6 +116,14 @@ public:
     float getSmoothingLow() const noexcept      { return smoothingLowFraction; }
     float getSmoothingHigh() const noexcept     { return smoothingHighFraction; }
 
+    /** Microphone calibration applied to the measured transfer functions (and
+        thus to the displayed curves, the correction and the exported measured
+        IR). The mic response is divided out per bin; pass a default-constructed
+        (invalid) calibration to disable. Recomputes the smoothed spectra and
+        the correction. */
+    void setMicCalibration (const MicCalibration& cal);
+    const MicCalibration& getMicCalibration() const noexcept { return micCal; }
+
     /** Frequency band the analysis acts on. Outside [lowHz, highHz] (with a
         half-octave skirt) the correction is faded to unity and the exported
         measured IR is rolled off, so out-of-band room/mic noise and content
@@ -197,6 +206,7 @@ private:
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
     PhaseType phaseType = PhaseType::linear;     // rendered correction IR phase
+    MicCalibration micCal;                       // divided out of the measurements
     float smoothingLowFraction  = 1.0f / 6.0f;  // octave fraction at LF (0 = off)
     float smoothingHighFraction = 1.0f / 6.0f;  // octave fraction at HF (0 = off)
     static constexpr double smoothLowAnchorHz  = 100.0;    // <= here: lowFraction

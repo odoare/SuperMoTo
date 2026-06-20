@@ -69,6 +69,11 @@ public:
 
     std::function<double()> sampleRateProvider;
 
+    // Optional per-frequency dB offset added to every plotted trace (e.g. a
+    // microphone calibration: pass -micDeviationDb(f) to show corrected level).
+    // Evaluated at paint time; leave null for no offset.
+    std::function<float (float freqHz)> magnitudeOffsetDb;
+
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;

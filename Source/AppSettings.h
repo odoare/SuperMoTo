@@ -20,6 +20,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Dsp/MicCalibration.h"
 
 namespace smt
 {
@@ -102,6 +103,53 @@ inline void setUiCollapsed (bool collapsed)
         s->setValue ("uiCollapsed", collapsed);
         s->saveIfNeeded();
     }
+}
+
+//==============================================================================
+// Measurement-microphone calibration. One physical mic, so a single shared
+// MicCalibration is kept here and used by both the live SPL/spectrum display
+// and the analysis transfer functions. The chosen file path is persisted; the
+// curve is (re)loaded from it on first access.
+
+/** The process-wide microphone calibration (loaded lazily from the stored
+    path; invalid / flat when none is set). */
+inline MicCalibration& sharedMicCalibration()
+{
+    static MicCalibration cal;
+    static const bool inited = [&]
+    {
+        if (auto* s = appProperties().getUserSettings())
+        {
+            const juce::File f (s->getValue ("micCalPath"));
+            if (f.existsAsFile())
+                cal.loadFromFile (f);
+        }
+        return true;
+    }();
+    juce::ignoreUnused (inited);
+    return cal;
+}
+
+inline juce::File getMicCalibrationFile()
+{
+    auto* s = appProperties().getUserSettings();
+    return s != nullptr ? juce::File (s->getValue ("micCalPath")) : juce::File();
+}
+
+/** Loads (or clears, when the file is empty/missing) the shared calibration
+    and persists the path. Returns true if a valid calibration is now loaded. */
+inline bool setMicCalibrationFile (const juce::File& file)
+{
+    const bool ok = file.existsAsFile() && sharedMicCalibration().loadFromFile (file);
+    if (! ok)
+        sharedMicCalibration().clear();
+
+    if (auto* s = appProperties().getUserSettings())
+    {
+        s->setValue ("micCalPath", ok ? file.getFullPathName() : juce::String());
+        s->saveIfNeeded();
+    }
+    return ok;
 }
 
 } // namespace smt

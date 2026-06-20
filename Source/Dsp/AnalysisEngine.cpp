@@ -100,10 +100,25 @@ void AnalysisEngine::applySmoothing()
                                      sampleRate, windowSize);
     };
 
+    // The microphone calibration is divided out of every spectrum used for
+    // display / correction / export (a no-op when none is loaded). The raw
+    // H / average stay untouched, so this stays idempotent across re-smoothing.
     for (auto& c : curves)
+    {
         c.Hs = on ? smooth (c.H) : c.H;
-    averageSmoothed    = on && ! average.empty()    ? smooth (average)    : average;
+        micCal.applyToSpectrum (c.Hs, sampleRate, windowSize);
+    }
+    averageSmoothed = on && ! average.empty() ? smooth (average) : average;
+    micCal.applyToSpectrum (averageSmoothed, sampleRate, windowSize);
     subAverageSmoothed = on && ! subAverage.empty() ? smooth (subAverage) : subAverage;
+    micCal.applyToSpectrum (subAverageSmoothed, sampleRate, windowSize);
+}
+
+void AnalysisEngine::setMicCalibration (const MicCalibration& cal)
+{
+    micCal = cal;
+    applySmoothing();           // re-derives the cal-corrected smoothed spectra
+    recomputeCorrection();
 }
 
 bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out, float forcedDelaySamples)

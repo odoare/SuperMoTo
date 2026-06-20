@@ -240,8 +240,10 @@ void SpectrumDisplay::paint (juce::Graphics& g)
         bool started = false;
         for (int p = 0; p < smt::SpectrumAnalyzer::numPoints; ++p)
         {
-            const float x = freqToX (smt::SpectrumAnalyzer::pointFreq (p), plot);
-            const float y = dbToY (juce::jlimit (minDb, maxDb, tr.smoothedDb[(size_t) p]), plot);
+            const float freq = smt::SpectrumAnalyzer::pointFreq (p);
+            const float off  = magnitudeOffsetDb != nullptr ? magnitudeOffsetDb (freq) : 0.0f;
+            const float x = freqToX (freq, plot);
+            const float y = dbToY (juce::jlimit (minDb, maxDb, tr.smoothedDb[(size_t) p] + off), plot);
             if (! started) { path.startNewSubPath (x, y); started = true; }
             else           path.lineTo (x, y);
         }

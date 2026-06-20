@@ -1,0 +1,10 @@
+* Synthetic microphone calibration for unit tests (MicCalTest.cpp)
+* Mimics a miniDSP / REW / FRD text file: whitespace-separated
+*     freq_Hz   magnitude_dB   phase_deg
+* with '*' comment lines (the Sens Factor line below must be ignored).
+* Sens Factor =-1.5dB, AlignSPL @ 94dB
+20        1.0     0.0
+100       2.0    10.0
+1000     -4.0   -20.0
+10000     6.0    45.0
+20000    -2.0     5.0

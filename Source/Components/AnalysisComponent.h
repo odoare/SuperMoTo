@@ -33,6 +33,16 @@ public:
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
 
+        // Read-only reminder of the (global) mic calibration applied to the data;
+        // it is loaded/cleared in the Measurement & Calibration pane.
+        micCalInfo.setFont (juce::Font (11.0f));
+        micCalInfo.setJustificationType (juce::Justification::centredRight);
+        micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
+                               "Load it in the Measurement & Calibration pane.");
+        addAndMakeVisible (micCalInfo);
+        updateMicCalInfo();
+
         loadButton.setButtonText ("Load measurements...");
         loadButton.onClick = [this] { loadFiles(); };
         addAndMakeVisible (loadButton);
@@ -254,6 +264,23 @@ public:
         }
     }
 
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        cursorPos = e.position;
+        const bool in = magPanelArea().contains (e.position)
+                     || phasePanelArea().contains (e.position);
+        if (in != cursorInPlot || in)
+        {
+            cursorInPlot = in;
+            repaint();
+        }
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        if (cursorInPlot) { cursorInPlot = false; repaint(); }
+    }
+
     // Apply a [min, min+span] dB window, clamped to fit within [floor, ceil].
     void setDbWindow (float newMin, float span)
     {
@@ -277,7 +304,9 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (14);
-        title.setBounds (area.removeFromTop (26).withTrimmedLeft (30));   // room for the info button
+        auto titleRow = area.removeFromTop (26);
+        micCalInfo.setBounds (titleRow.removeFromRight (260));
+        title.setBounds (titleRow.withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
         // The two export buttons share a right-aligned column: "Export IR" on
@@ -421,6 +450,7 @@ private:
                         juce::dontSendNotification);
 
         analysis.setCorrectionLevel ((float) levelSlider.getValue());
+        pushMicCalibration();               // apply the current mic cal to the data
         const int ok = analysis.loadFiles (loadedFiles);
 
         status.setText (ok > 0
@@ -431,6 +461,33 @@ private:
 
         updateFirInfo();
         updatePlotData();
+    }
+
+    // Push the shared (global) mic calibration into the engine and refresh the
+    // read-only reminder. The engine divides it out of the measured data.
+    void pushMicCalibration()
+    {
+        analysis.setMicCalibration (smt::sharedMicCalibration());
+        updateMicCalInfo();
+    }
+
+    void updateMicCalInfo()
+    {
+        auto& cal = smt::sharedMicCalibration();
+        micCalInfo.setText (cal.isValid() ? "Mic cal: " + cal.getName()
+                                          : juce::String ("Mic cal: none"),
+                            juce::dontSendNotification);
+    }
+
+    // The calibration can change in the Measurement pane while this view is
+    // hidden; re-apply it (and redraw) whenever the view becomes visible.
+    void visibilityChanged() override
+    {
+        if (isVisible())
+        {
+            pushMicCalibration();
+            updatePlotData();
+        }
     }
 
     // Spell out what the selected FIR length can actually correct: a FIR of N
@@ -643,6 +700,15 @@ private:
         return inner.removeFromTop (inner.getHeight() * 0.62f);
     }
 
+    // Phase panel rectangle (the lower part, mirroring paintPlot).
+    juce::Rectangle<float> phasePanelArea() const
+    {
+        auto inner = plotArea.toFloat().reduced (24.0f, 12.0f);
+        inner.removeFromTop (inner.getHeight() * 0.62f);
+        inner.removeFromTop (14.0f);
+        return inner;
+    }
+
     void paintPlot (juce::Graphics& g, juce::Rectangle<float> bounds) const
     {
         g.setColour (SuperMoToTheme::plotBackground);
@@ -745,12 +811,44 @@ private:
         g.drawText (juce::String::fromUTF8 ("phase (\xc2\xb0, propagation delay removed)"),
                     (int) phR.getX(), (int) phR.getY() + 2,
                     (int) phR.getWidth() - 6, 12, juce::Justification::centredRight);
+
+        // Cursor read-out (top-right): frequency + level over the magnitude
+        // panel, frequency + phase over the phase panel.
+        if (cursorInPlot)
+        {
+            const bool inPhase = phR.contains (cursorPos);
+            const auto& r = inPhase ? phR : magR;
+            const float relX = juce::jlimit (0.0f, 1.0f, (cursorPos.x - magR.getX()) / magR.getWidth());
+            const float f = fMin * std::exp (relX * std::log (fMax / fMin));
+            const float cy = juce::jlimit (r.getY(), r.getBottom(), cursorPos.y);
+
+            juce::String txt = (f >= 1000.0f ? juce::String (f / 1000.0f, 2) + " kHz"
+                                             : juce::String (juce::roundToInt (f)) + " Hz") + "   ";
+            if (inPhase)
+                txt += juce::String (juce::roundToInt (
+                           juce::jmap (cy, r.getBottom(), r.getY(), -180.0f, 180.0f)))
+                       + juce::String::fromUTF8 ("\xc2\xb0");
+            else
+                txt += juce::String (juce::jmap (cy, r.getBottom(), r.getY(), plotMinDb, plotMaxDb), 1)
+                       + " dB";
+
+            g.setFont (11.0f);
+            const int tw = (int) juce::GlyphArrangement::getStringWidth (juce::Font (11.0f), txt) + 12;
+            juce::Rectangle<int> box ((int) magR.getRight() - tw, (int) magR.getY() - 2, tw, 15);
+            g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.8f));
+            g.fillRoundedRectangle (box.toFloat(), 3.0f);
+            g.setColour (SuperMoToTheme::panelLine);
+            g.drawRoundedRectangle (box.toFloat(), 3.0f, 1.0f);
+            g.setColour (SuperMoToTheme::text);
+            g.drawText (txt, box, juce::Justification::centred);
+        }
     }
 
     SuperMoToAudioProcessor& processor;
     smt::AnalysisEngine analysis;
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
+    juce::Label micCalInfo;
     juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel;
     juce::Slider boostSlider;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
@@ -758,6 +856,10 @@ private:
     // dB-axis zoom/pan state.
     bool dragging = false;
     float dragStartY = 0.0f, dragStartMin = -30.0f, dragStartMax = 30.0f;
+
+    // Cursor read-out (frequency / level or phase at the pointer), top-right.
+    juce::Point<float> cursorPos;
+    bool cursorInPlot = false;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle;
     juce::Slider levelSlider;

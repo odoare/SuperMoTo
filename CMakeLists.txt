@@ -9,6 +9,8 @@ project(SuperMoTo VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+enable_testing()        # register the offline test executables with CTest
+
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version")
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures")
@@ -98,6 +100,7 @@ juce_add_console_app(SuperMoToTests PRODUCT_NAME "SuperMoToTests")
 target_sources(SuperMoToTests PRIVATE
     Tests/AnalysisTest.cpp
     Source/Dsp/AnalysisEngine.cpp
+    Source/Dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToTests)
 target_compile_definitions(SuperMoToTests PRIVATE
@@ -111,6 +114,27 @@ target_link_libraries(SuperMoToTests PRIVATE
     juce::juce_recommended_config_flags
 )
 set_target_properties(SuperMoToTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME analysis COMMAND SuperMoToTests)
+
+# ── Offline test of the microphone-calibration logic ─────────────────────────
+juce_add_console_app(SuperMoToMicCalTests PRODUCT_NAME "SuperMoToMicCalTests")
+target_sources(SuperMoToMicCalTests PRIVATE
+    Tests/MicCalTest.cpp
+    Source/Dsp/MicCalibration.cpp
+)
+juce_generate_juce_header(SuperMoToMicCalTests)
+target_compile_definitions(SuperMoToMicCalTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    MICCAL_TEST_FILE="${CMAKE_CURRENT_SOURCE_DIR}/Tests/mic_cal_synthetic.txt"
+)
+target_link_libraries(SuperMoToMicCalTests PRIVATE
+    juce::juce_core juce::juce_data_structures juce::juce_events
+    juce::juce_recommended_config_flags
+)
+set_target_properties(SuperMoToMicCalTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME miccal COMMAND SuperMoToMicCalTests)
 
 target_link_libraries(SuperMoTo
     PRIVATE

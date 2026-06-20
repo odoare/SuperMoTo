@@ -55,6 +55,29 @@ public:
         SuperMoToTheme::accentComboBox (micBox, SuperMoToTheme::measure);
         addAndMakeVisible (micBox);
 
+        // Microphone calibration (global, shared with the analysis pane). The
+        // live spectrum reads it directly; here we just load / clear / show it.
+        addLabel (micCalLabel, "Mic cal");
+        micCalValue.setFont (juce::Font (12.0f));
+        micCalValue.setColour (juce::Label::textColourId, SuperMoToTheme::text);
+        micCalValue.setColour (juce::Label::backgroundColourId,
+                               SuperMoToTheme::plotBackground.withAlpha (0.4f));
+        micCalValue.setTooltip ("REW / miniDSP / FRD text calibration; divided out of the "
+                                "live spectrum and the analysis measurements.");
+        addAndMakeVisible (micCalValue);
+
+        micCalLoadButton.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xa6"));   // ellipsis
+        micCalLoadButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::measure.darker (0.8f));
+        micCalLoadButton.onClick = [this] { loadMicCal(); };
+        addAndMakeVisible (micCalLoadButton);
+
+        micCalClearButton.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));      // multiply sign
+        micCalClearButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
+        micCalClearButton.onClick = [this] { clearMicCal(); };
+        addAndMakeVisible (micCalClearButton);
+
+        updateMicCalLabel();
+
         addLabel (outputsLabel, "Outputs to measure");
         for (int o = 0; o < smt::numChannels; ++o)
         {
@@ -138,6 +161,12 @@ public:
         buildSplMeterControls();
         updateModeUi();
 
+        // Show mic-corrected level: subtract the mic's deviation from each point.
+        spectrum.magnitudeOffsetDb = [] (float f)
+        {
+            return -smt::sharedMicCalibration().magnitudeDbAt (f);
+        };
+
         startTimerHz (20);
     }
 
@@ -164,12 +193,14 @@ public:
         auto r1 = area.removeFromTop (26);
         micLabel.setBounds (r1.removeFromLeft (118));
         micBox.setBounds (r1.removeFromLeft (104));
-        r1.removeFromLeft (20);
-        measureLabel.setBounds (r1.removeFromLeft (56));
-        modeDryButton.setBounds (r1.removeFromLeft (56));
-        modeFirButton.setBounds (r1.removeFromLeft (56));
-        modeSystemButton.setBounds (r1.removeFromLeft (74));
-        r1.removeFromLeft (20);
+        r1.removeFromLeft (16);
+        micCalLabel.setBounds (r1.removeFromLeft (56));
+        micCalValue.setBounds (r1.removeFromLeft (130));
+        r1.removeFromLeft (4);
+        micCalLoadButton.setBounds (r1.removeFromLeft (30));
+        r1.removeFromLeft (3);
+        micCalClearButton.setBounds (r1.removeFromLeft (24));
+        r1.removeFromLeft (16);
         signalLabel.setBounds (r1.removeFromLeft (46));
         signalBox.setBounds (r1.removeFromLeft (200));
         r1.removeFromLeft (16);
@@ -179,16 +210,28 @@ public:
         levelLabel.setBounds (r1.removeFromLeft (38));
         level.setBounds (r1.removeFromLeft (96));
 
+        // Measurement mode on the left, numbered input/output toggles on the
+        // right; each keeps its label on the row above.
         area.removeFromTop (10);
-        outputsLabel.setBounds (area.removeFromTop (18));
-        auto toggleArea = area.removeFromTop (26);
+        auto labelRow  = area.removeFromTop (18);
+        auto toggleRow = area.removeFromTop (26);
+        constexpr int modeW = 56 + 56 + 64;
+        measureLabel.setBounds (labelRow.removeFromLeft (modeW));
+        labelRow.removeFromLeft (16);
+        outputsLabel.setBounds (labelRow);
+
+        modeDryButton.setBounds (toggleRow.removeFromLeft (56));
+        modeFirButton.setBounds (toggleRow.removeFromLeft (56));
+        modeSystemButton.setBounds (toggleRow.removeFromLeft (64));
+        toggleRow.removeFromLeft (16);
+
         const int numCh = measureChannelCount();
-        const int tw = toggleArea.getWidth() / juce::jmax (1, numCh);
+        const int tw = toggleRow.getWidth() / juce::jmax (1, numCh);
         for (int o = 0; o < outputToggles.size(); ++o)
         {
             outputToggles[o]->setVisible (o < numCh);
             if (o < numCh)
-                outputToggles[o]->setBounds (toggleArea.removeFromLeft (tw));
+                outputToggles[o]->setBounds (toggleRow.removeFromLeft (tw));
         }
 
         area.removeFromTop (10);
@@ -425,6 +468,44 @@ private:
         spl.setNoiseAmpDb ((float) noiseAmp.getValue());
     }
 
+    void updateMicCalLabel()
+    {
+        auto& cal = smt::sharedMicCalibration();
+        micCalValue.setText (cal.isValid() ? cal.getName() : juce::String ("none"),
+                             juce::dontSendNotification);
+        micCalValue.setColour (juce::Label::textColourId,
+                               cal.isValid() ? SuperMoToTheme::text : SuperMoToTheme::dimText);
+    }
+
+    void loadMicCal()
+    {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Load microphone calibration (REW / miniDSP / FRD text file)",
+            smt::getLastBrowseDir(), "*.txt;*.cal;*.frd");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto f = fc.getResult();
+                if (f == juce::File())
+                    return;
+                smt::setLastBrowseDir (f);
+                const bool ok = smt::setMicCalibrationFile (f);
+                updateMicCalLabel();
+                status.setText (ok ? "Loaded mic calibration: " + f.getFileName()
+                                   : "Could not read the calibration file.",
+                                juce::dontSendNotification);
+            });
+    }
+
+    void clearMicCal()
+    {
+        smt::setMicCalibrationFile ({});
+        updateMicCalLabel();
+        status.setText ("Mic calibration cleared.", juce::dontSendNotification);
+    }
+
     void browse()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
@@ -514,10 +595,11 @@ private:
     SuperMoToAudioProcessor& processor;
 
     juce::Label title, micLabel, outputsLabel, signalLabel, measureLabel, durationLabel,
-                levelLabel, pathLabel, status;
+                levelLabel, pathLabel, status, micCalLabel, micCalValue;
     juce::ComboBox micBox, signalBox;
     juce::OwnedArray<juce::ToggleButton> outputToggles;
     juce::TextButton modeDryButton, modeFirButton, modeSystemButton;
+    juce::TextButton micCalLoadButton, micCalClearButton;
     fxme::FxmeSlider duration, level;
     juce::TextEditor pathEditor;
     juce::TextButton browseButton, runButton;

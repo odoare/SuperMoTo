@@ -148,11 +148,11 @@ int main()
                       ("corrected phase = LF target @ " + juce::String (phBand[i]) + " Hz").toRawUTF8());
 
     // With smoothing off the inverse is exact: corrected even flatter.
-    engine.setSmoothing (0.0f);
+    engine.setSmoothing (0.0f, 0.0f);
     const auto correctedRaw = engine.getCorrectedDb ({ 300.0f, 1000.0f, 6000.0f });
     for (auto v : correctedRaw)
         ok &= approx (v - correctedRaw[0], 0.0f, 0.5f, "corrected flat (smoothing off)");
-    engine.setSmoothing (1.0f / 6.0f);
+    engine.setSmoothing (1.0f / 6.0f, 1.0f / 6.0f);
 
     // Zero correction level must leave a flat (0 dB) correction curve.
     engine.setCorrectionLevel (0.0f);
