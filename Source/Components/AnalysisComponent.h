@@ -211,11 +211,56 @@ public:
         };
         addAndMakeVisible (subInvertToggle);
 
+        // Time-alignment: the slider is the bulk delay you apply physically to
+        // the mains; the correction is then designed for the residual only.
+        addLabel (alignLabel, "Mains delay");
+        alignSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        alignSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 18);
+        alignSlider.setRange (-40.0, 40.0, 0.1);
+        alignSlider.setValue (0.0, juce::dontSendNotification);
+        alignSlider.setTextValueSuffix (" ms");
+        SuperMoToTheme::accentSlider (alignSlider, SuperMoToTheme::mono);
+        alignSlider.onValueChange = [this]
+        {
+            analysis.setTimeAlignMs ((float) alignSlider.getValue());
+            updatePlotData();
+            updateAlignInfo();
+        };
+        addAndMakeVisible (alignSlider);
+
+        alignInfo.setFont (juce::Font (12.0f));
+        alignInfo.setColour (juce::Label::textColourId, SuperMoToTheme::mono.brighter (0.3f));
+        addAndMakeVisible (alignInfo);
+
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
         buildFreqGrid();
         updateFirInfo();
+        updateAlignInfo();
+    }
+
+    // Recommendation + matrix instruction shown while a sub set is loaded.
+    void updateAlignInfo()
+    {
+        if (! analysis.hasSub())
+        {
+            alignInfo.setText ({}, juce::dontSendNotification);
+            return;
+        }
+
+        const float v = (float) alignSlider.getValue();
+        juce::String msg = juce::String::fromUTF8 ("\xe2\x86\x92 ~")
+            + juce::String (recommendedAlignMs, 0) + " ms main/sub offset detected.  ";
+
+        if (std::abs (v) < 0.05f)
+            msg += "Set 'Mains delay' to time-align (correction designed for the residual).";
+        else
+            msg += "Add " + juce::String (std::abs (v), 1) + " ms delay to the "
+                 + juce::String (v >= 0.0f ? "main output(s)" : "subwoofer output")
+                 + " (Matrix view) to match.";
+
+        alignInfo.setText (msg, juce::dontSendNotification);
     }
 
     //==========================================================================
@@ -370,6 +415,14 @@ public:
         r3.removeFromRight (16);
         firInfo.setBounds (r3);
 
+        // Row 4: time-alignment (mains delay) + the recommendation/instruction.
+        area.removeFromTop (6);
+        auto r4 = area.removeFromTop (22);
+        alignLabel.setBounds (r4.removeFromLeft (78));
+        alignSlider.setBounds (r4.removeFromLeft (220));
+        r4.removeFromLeft (16);
+        alignInfo.setBounds (r4);
+
         area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));
         area.removeFromBottom (4);
@@ -440,6 +493,12 @@ private:
                     ? juce::String (ok) + " sub measurement(s) aligned for phase integration."
                     : "No sub file could be analyzed (need stereo wavs at the main's rate/length).",
                     juce::dontSendNotification);
+
+                // Auto-detect the main/sub time offset (recommendation only;
+                // the user drives the slider to apply it).
+                if (ok > 0)
+                    recommendedAlignMs = analysis.estimateMainSubOffsetMs();
+                updateAlignInfo();
                 updatePlotData();
             });
     }
@@ -850,7 +909,9 @@ private:
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
     juce::Label micCalInfo;
     juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel;
-    juce::Slider boostSlider;
+    juce::Label alignLabel, alignInfo;
+    juce::Slider boostSlider, alignSlider;
+    float recommendedAlignMs = 0.0f;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     // dB-axis zoom/pan state.

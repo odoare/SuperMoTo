@@ -365,6 +365,52 @@ void AnalysisEngine::setSubPolarityInverted (bool inverted)
     recomputeCorrection();
 }
 
+void AnalysisEngine::setTimeAlignMs (float ms)
+{
+    timeAlignMs = juce::jlimit (-40.0f, 40.0f, ms);
+    recomputeCorrection();
+}
+
+// Recommended main delay: the sub's group delay near the crossover, from a
+// linear fit of the (delay-anchored) sub phase over [crossover/2 .. crossover*2].
+float AnalysisEngine::estimateMainSubOffsetMs() const
+{
+    if (subAverageSmoothed.empty() || sampleRate <= 0.0)
+        return 0.0f;
+
+    const double fLo = juce::jmax (1.0, (double) crossoverHz * 0.5);
+    const double fHi = (double) crossoverHz * 2.0;
+    constexpr int N = 48;
+
+    // Sample and unwrap the phase, then least-squares slope dphi/df (rad/Hz).
+    double sf = 0, sp = 0, sff = 0, sfp = 0, prev = 0, unwrapped = 0;
+    for (int i = 0; i < N; ++i)
+    {
+        const double f = fLo * std::pow (fHi / fLo, (double) i / (double) (N - 1));
+        double p = std::arg (std::complex<double> (interpComplex (subAverageSmoothed, (float) f)));
+        if (i == 0)
+        {
+            unwrapped = p;
+        }
+        else
+        {
+            double d = p - prev;
+            while (d >  juce::MathConstants<double>::pi) d -= juce::MathConstants<double>::twoPi;
+            while (d < -juce::MathConstants<double>::pi) d += juce::MathConstants<double>::twoPi;
+            unwrapped += d;
+        }
+        prev = p;
+        sf += f; sp += unwrapped; sff += f * f; sfp += f * unwrapped;
+    }
+
+    const double denom = (double) N * sff - sf * sf;
+    if (std::abs (denom) < 1.0e-12)
+        return 0.0f;
+    const double slope = ((double) N * sfp - sf * sp) / denom;   // dphi/df
+    const double tauMs = -slope / juce::MathConstants<double>::twoPi * 1000.0;  // phi = -2pi f tau
+    return juce::jlimit (-40.0f, 40.0f, (float) tauMs);
+}
+
 // Phase-alignment weight: full (1) at and below the crossover, released to 0
 // over `alignWidthOct` octaves above it (where the main dominates and should
 // keep its own flat-phase correction rather than inherit the sub's phase).
@@ -467,6 +513,13 @@ void AnalysisEngine::recomputeCorrection()
             std::complex<double> S = subAverageSmoothed[(size_t) k];
             if (subInverted)
                 S = -S;
+
+            // Assume the main is physically delayed by timeAlignMs: align to the
+            // sub phase advanced by that delay, so the all-pass only carries the
+            // residual (the bulk delay lands in the matrix, keeping the FIR short).
+            if (timeAlignMs != 0.0f)
+                S *= std::polar (1.0, 2.0 * juce::MathConstants<double>::pi
+                                          * f * (double) timeAlignMs / 1000.0);
 
             const double aS = std::abs (S);
             const std::complex<double> ph = aS > 1.0e-20 ? S / aS

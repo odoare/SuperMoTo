@@ -77,6 +77,17 @@ public:
     void setSubPolarityInverted (bool inverted);
     bool getSubPolarityInverted() const noexcept { return subInverted; }
 
+    /** Bulk time-alignment delay (ms) ASSUMED to be applied physically to the
+        main output(s). The all-pass then only corrects the residual phase, so a
+        short correction FIR can integrate the sub. Positive = main is delayed
+        (the usual case: the sub lags); negative = the sub is delayed instead. */
+    void setTimeAlignMs (float ms);
+    float getTimeAlignMs() const noexcept       { return timeAlignMs; }
+
+    /** Recommended main delay (ms) from the measured sub group delay around the
+        crossover: a linear fit of the (delay-anchored) sub phase. */
+    float estimateMainSubOffsetMs() const;
+
     std::vector<float> getSubDb (const std::vector<float>& freqs) const;
     std::vector<float> getSubPhaseDeg (const std::vector<float>& freqs) const;
 
@@ -217,6 +228,7 @@ private:
     float crossoverHz    = 80.0f;               // main/sub crossover
     float alignWidthOct  = 1.0f;                // phase-align release width above it
     bool  subInverted    = false;
+    float timeAlignMs    = 0.0f;                // assumed physical main delay
 
     std::vector<Curve> curves;
     std::vector<std::complex<float>> average;           // delay-aligned complex average

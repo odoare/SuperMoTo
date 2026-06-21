@@ -100,8 +100,12 @@ the same positions as the main, anchored on the main's per-position delay so
 the relative timing is preserved. Around the chosen **crossover** the
 correction carries an all-pass that steers the corrected main's phase onto
 the sub's, so they sum coherently. The relative main/sub timing comes from
-the measurements; **Invert** flips the sub polarity if needed. (Time-align
-the drivers physically with the per-output delays in the matrix.)
+the measurements; **Invert** flips the sub polarity if needed. A **Mains
+delay** control (±40 ms, auto-detected from the sub's group delay around the
+crossover) lets you declare a bulk delay applied physically to the mains so
+the all-pass only corrects the residual — keeping the FIR short; the corrected
+phase flattens as you tune it, and an on-screen message states the exact
+per-output delay to set in the matrix.
 
 **Export IR** saves the measured response itself; **Export correction IR**
 renders the correction to an impulse response wav (selectable FIR length,
@@ -128,11 +132,14 @@ then absorbs automatically.
 3. Measure the **sub** alone (Dry) at the same mic positions as one main.
 4. Analysis: load the main set, then **Load sub measurements**; set the
    crossover (toggle **Invert** if the sub is wired out of polarity) — the
-   corrected-main phase is steered onto the sub's through the crossover. Export
-   and assign.
-5. Time-align the drivers physically with the per-output **delays** in the
-   matrix; it then automatically delays the sub output to match the mains' FIR
-   latency too (gold LED on the sub output). Verify in Calibration **System**
+   corrected-main phase is steered onto the sub's through the crossover.
+5. Read the recommended **Mains delay** and raise the slider until the
+   corrected-main phase flattens through the crossover; note the delay it asks
+   for. Export and assign.
+6. Time-align the drivers physically: enter that **Mains delay** in the
+   per-output **delays** in the matrix; it then automatically delays the sub
+   output to match the mains' FIR latency too (gold LED on the sub output).
+   Verify in Calibration **System**
    mode by measuring the input: the summed response should be smooth through
    the crossover.
 

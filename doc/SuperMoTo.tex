@@ -814,7 +814,7 @@ and type that value into the plugin.
 functions (thin), their average (thick), the proposed correction and the
 corrected response, in magnitude and phase; with the nth-octave smoothing,
 correction-level, boost-ceiling and analysis-range controls, the subwoofer
-integration section, and the Export buttons.}
+integration section (crossover, Invert, Mains delay), and the Export buttons.}
 
 \section{Transfer-function estimation (Welch method)}
 Load the set of measurement files of \emph{one} speaker, the microphone moved
@@ -1120,9 +1120,10 @@ it, so the averaged sub response $\bar S(f)$ retains its true phase relative to
 $\bar H$.
 
 \subsection{The all-pass alignment term}
-From the (unit-magnitude) phase of the sub, $\hat s = \bar S_s/|\bar S_s|$, an
-\textbf{all-pass} factor is built and blended towards ``no change'' above the
-crossover,
+From the (unit-magnitude) phase of the sub, $\hat s$ (its phasor
+$\bar S_s/|\bar S_s|$, optionally time-shifted as in
+Section~\ref{sec:timealign}), an \textbf{all-pass} factor is built and blended
+towards ``no change'' above the crossover,
 \begin{equation}
   A(f) = \frac{(1-w_x) + w_x\,\hat s(f)}{\bigl|(1-w_x) + w_x\,\hat s(f)\bigr|},
   \qquad C \longmapsto C\cdot A(f),
@@ -1136,9 +1137,34 @@ Blending the \emph{phasors} (rather than scaling an unwrapped phase angle)
 keeps the rotation on the short arc between $1$ and $\hat s$, so $A$ applies
 only the minimal phase shift and never unwinds the sub's large accumulated
 low-frequency phase. \textbf{Invert} negates $\bar S$ to flip the sub polarity
-if it is wired (or behaves) out of phase. The relative timing comes from the
-measurements; physically time-align the drivers with the per-output
-\textbf{delays} in the matrix.
+if it is wired (or behaves) out of phase.
+
+\subsection{Bulk time alignment: the \emph{Mains delay} control}\label{sec:timealign}
+The sub usually lags the mains by several milliseconds — its own group delay
+plus any extra path or processing latency. Folding that whole offset into the
+all-pass $A(f)$ would demand a long, low-frequency-heavy correction FIR. Instead
+the \textbf{Mains delay} control $t_a$ (\SI{-40}{} to \SI{40}{\milli\second})
+declares a bulk delay that the user applies \emph{physically} to the main
+output(s) with the per-output \textbf{delays} in the matrix, leaving the
+all-pass to carry only the \emph{residual}. The sub phasor entering the blend is
+advanced by $t_a$ before its phase is taken,
+\begin{equation}
+  \hat s(f) = \frac{\hat S(f)}{|\hat S(f)|},\qquad
+  \hat S(f) = \pm\,\bar S_s(f)\,e^{\,j 2\pi f\, t_a},
+\end{equation}
+so when $t_a$ matches the measured offset the corrected main's phase is already
+flat through the crossover and $A\to 1$: a short, well-behaved FIR. The
+corrected-phase curve visibly flattens as $t_a$ is tuned to the right value.
+
+On loading the sub set the plugin estimates the offset automatically, from a
+least-squares fit of the unwrapped, delay-anchored sub phase over
+$[\,f_c/2,\,2f_c\,]$ — the local group delay
+$\hat\tau=-\,\mathrm{d}\varphi/\mathrm{d}\omega$ — and shows it as a
+recommendation. It is \textbf{not} applied automatically: $t_a$ is a promise
+that the matching physical delay will be set in the matrix, so the user opts in
+by moving the slider, and the on-screen message then states the exact delay
+(and which output) to dial in. Positive $t_a$ delays the main(s); negative
+delays the sub.
 
 \subsection{The complete correction filter}\label{sec:fullfilter}
 Collecting the stages of Sections~\ref{sec:correction}--\ref{sec:fullfilter},
@@ -1174,6 +1200,8 @@ out, the operators are exactly the design steps above:
         && \text{LF slope, } f_c=\SI{30}{\hertz},\\[2pt]
   \mathcal{P}_{\lambda}[z] &= |z|^{\lambda}\,e^{\,j\lambda\arg z}
         && \text{correction level } \lambda\in[0,1],\\[2pt]
+  \hat s(f) &= \frac{\pm\,\bar S_s(f)\,e^{\,j2\pi f t_a}}{\bigl|\bar S_s(f)\bigr|}
+        && \text{time-aligned sub phasor, } t_a=\text{Mains delay,}\\[2pt]
   A(f) &= \frac{(1-w_x)+w_x\,\hat s(f)}{\bigl|(1-w_x)+w_x\,\hat s(f)\bigr|}
         && \text{sub phase alignment } (A\equiv 1 \text{ if no sub}),\\[2pt]
   w(f) &\in [0,1]
@@ -1290,10 +1318,14 @@ but carries its minimum-phase companion instead.
   \item Analysis: load the main set, then \textbf{Load sub measurements}; set
         the crossover (toggle \textbf{Invert} if the sub is wired out of
         polarity) — the corrected-main phase is steered onto the sub's through
-        the crossover. Export and assign.
-  \item Time-align the drivers physically with the per-output \textbf{delays}
-        in the matrix; SuperMoTo then automatically delays the sub output to
-        match the mains' FIR latency (gold LED on the sub output). Verify in
+        the crossover.
+  \item Read the recommended \textbf{Mains delay}; raise the slider until the
+        corrected-main phase flattens through the crossover, then note the
+        delay it asks for. Export and assign.
+  \item Time-align the drivers physically: enter that \textbf{Mains delay} in
+        the matrix's per-output \textbf{delays}; SuperMoTo then automatically
+        delays the sub output to match the mains' FIR latency (gold LED on the
+        sub output). Verify in
         Calibration \textbf{System} mode by measuring the input: the summed
         response should be smooth through the crossover.
 \end{enumerate}

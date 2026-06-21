@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2024.12.6)  20 JUN 2026 07:38
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2024.12.6)  21 JUN 2026 10:08
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1028,7 +1028,7 @@ pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has
 been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.40 ... channel convention}{16}{subsection.4.4.4}
+l.40 ... channel convention}{17}{subsection.4.4.4}
                                                   % [1
 
 ])
@@ -1085,7 +1085,7 @@ Underfull \hbox (badness 2547) in paragraph at lines 293--293
 T1/lmr/m/n/10.95 chain
  []
 
-<figures/reaper-monitoring-fx.png, id=404, 1484.54625pt x 361.35pt>
+<figures/reaper-monitoring-fx.png, id=409, 1484.54625pt x 361.35pt>
 File: figures/reaper-monitoring-fx.png Graphic file (type png)
 <use figures/reaper-monitoring-fx.png>
 Package pdftex.def Info: figures/reaper-monitoring-fx.png  used on input line 3
@@ -1104,7 +1104,7 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 
 [7 <./figures/reaper-monitoring-fx.png>]
 Chapter 3.
-<figures/SuperMoTo_matrix_view.png, id=424, 1648.1575pt x 1075.01625pt>
+<figures/SuperMoTo_matrix_view.png, id=429, 1648.1575pt x 1075.01625pt>
 File: figures/SuperMoTo_matrix_view.png Graphic file (type png)
 <use figures/SuperMoTo_matrix_view.png>
 Package pdftex.def Info: figures/SuperMoTo_matrix_view.png  used on input line 
@@ -1137,12 +1137,12 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 (fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
 
 [9]
-<figures/latency-led.png, id=440, 800.9925pt x 308.15125pt>
+<figures/latency-led.png, id=445, 800.9925pt x 308.15125pt>
 File: figures/latency-led.png Graphic file (type png)
 <use figures/latency-led.png>
 Package pdftex.def Info: figures/latency-led.png  used on input line 449.
 (pdftex.def)             Requested size: 409.71692pt x 157.62524pt.
-<figures/config-tool.png, id=441, 1648.1575pt x 1075.01625pt>
+<figures/config-tool.png, id=446, 1648.1575pt x 1075.01625pt>
 File: figures/config-tool.png Graphic file (type png)
 <use figures/config-tool.png>
 Package pdftex.def Info: figures/config-tool.png  used on input line 474.
@@ -1176,7 +1176,7 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 
 [12]
 Chapter 4.
-<figures/calibration-view.png, id=461, 1651.16875pt x 1079.03125pt>
+<figures/calibration-view.png, id=466, 1651.16875pt x 1079.03125pt>
 File: figures/calibration-view.png Graphic file (type png)
 <use figures/calibration-view.png>
 Package pdftex.def Info: figures/calibration-view.png  used on input line 516.
@@ -1226,7 +1226,7 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 
 [17]
 Chapter 5.
-<figures/analysis-view.png, id=505, 1651.16875pt x 1079.03125pt>
+<figures/analysis-view.png, id=510, 1651.16875pt x 1079.03125pt>
 File: figures/analysis-view.png Graphic file (type png)
 <use figures/analysis-view.png>
 Package pdftex.def Info: figures/analysis-view.png  used on input line 817.
@@ -1285,10 +1285,6 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 (fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
 
 [22]
-Overfull \hbox (22.39136pt too wide) detected at line 1181
-[]
- []
-
 
 Package fancyhdr Warning: \headheight is too small (12.0pt): 
 (fancyhdr)                Make it at least 13.59999pt, for example:
@@ -1298,6 +1294,10 @@ Package fancyhdr Warning: \headheight is too small (12.0pt):
 (fancyhdr)                \addtolength{\topmargin}{-1.59999pt}.
 
 [23]
+Overfull \hbox (22.39136pt too wide) detected at line 1209
+[]
+ []
+
 
 Package fancyhdr Warning: \headheight is too small (12.0pt): 
 (fancyhdr)                Make it at least 13.59999pt, for example:
@@ -1322,7 +1322,7 @@ Chapter 6.
 ]
 Chapter 7.
 
-Overfull \hbox (21.90077pt too wide) in paragraph at lines 1323--1323
+Overfull \hbox (21.90077pt too wide) in paragraph at lines 1355--1355
 []\T1/lmtt/m/n/10.95 ../JUCE/usermodules/FxmeJuceTools/    symlink to FxmeJuceT
 ools/module/FxmeJuceTools[] 
  []
@@ -1336,42 +1336,39 @@ ools/module/FxmeJuceTools[]
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
  ***********
-
-
-LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
-
 Package rerunfilecheck Info: File `SuperMoTo.out' has not changed.
-(rerunfilecheck)             Checksum: 06BCA69B11D05BF9D061D7871B72BB67;13573.
+(rerunfilecheck)             Checksum: B03B7BC7AC313E985670EA8FD92F3E79;13873.
  ) 
 Here is how much of TeX's memory you used:
- 37337 strings out of 476080
- 898993 string characters out of 5792744
- 1944975 words of memory out of 5000000
- 58602 multiletter control sequences out of 15000+600000
- 654850 words of font info for 103 fonts, out of 8000000 for 9000
+ 37345 strings out of 476080
+ 899104 string characters out of 5792744
+ 1946975 words of memory out of 5000000
+ 58605 multiletter control sequences out of 15000+600000
+ 659121 words of font info for 104 fonts, out of 8000000 for 9000
  59 hyphenation exceptions out of 8191
  84i,19n,87p,730b,2193s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texmf/fonts/type1/public/lm/lmbx10.pfb></usr/share/texmf/fonts/ty
 pe1/public/lm/lmbx12.pfb></usr/share/texmf/fonts/type1/public/lm/lmbx9.pfb></us
-r/share/texmf/fonts/type1/public/lm/lmcsc10.pfb></usr/share/texmf/fonts/type1/p
-ublic/lm/lmex10.pfb></usr/share/texmf/fonts/type1/public/lm/lmmi10.pfb></usr/sh
-are/texmf/fonts/type1/public/lm/lmmi12.pfb></usr/share/texmf/fonts/type1/public
-/lm/lmmi6.pfb></usr/share/texmf/fonts/type1/public/lm/lmmi8.pfb></usr/share/tex
-mf/fonts/type1/public/lm/lmmi9.pfb></usr/share/texmf/fonts/type1/public/lm/lmr1
-0.pfb></usr/share/texmf/fonts/type1/public/lm/lmr12.pfb></usr/share/texmf/fonts
-/type1/public/lm/lmr6.pfb></usr/share/texmf/fonts/type1/public/lm/lmr8.pfb></us
-r/share/texmf/fonts/type1/public/lm/lmr9.pfb></usr/share/texmf/fonts/type1/publ
-ic/lm/lmri10.pfb></usr/share/texmf/fonts/type1/public/lm/lmri12.pfb></usr/share
-/texmf/fonts/type1/public/lm/lmss10.pfb></usr/share/texmf/fonts/type1/public/lm
-/lmsy10.pfb></usr/share/texmf/fonts/type1/public/lm/lmsy8.pfb></usr/share/texmf
-/fonts/type1/public/lm/lmsy9.pfb></usr/share/texmf/fonts/type1/public/lm/lmtt10
-.pfb></usr/share/texmf/fonts/type1/public/lm/lmtt12.pfb></usr/share/texmf/fonts
-/type1/public/lm/lmtti10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/
-amsfonts/symbols/msam10.pfb>
-Output written on SuperMoTo.pdf (29 pages, 1801704 bytes).
+r/share/texmf/fonts/type1/public/lm/lmbxi10.pfb></usr/share/texmf/fonts/type1/p
+ublic/lm/lmcsc10.pfb></usr/share/texmf/fonts/type1/public/lm/lmex10.pfb></usr/s
+hare/texmf/fonts/type1/public/lm/lmmi10.pfb></usr/share/texmf/fonts/type1/publi
+c/lm/lmmi12.pfb></usr/share/texmf/fonts/type1/public/lm/lmmi6.pfb></usr/share/t
+exmf/fonts/type1/public/lm/lmmi8.pfb></usr/share/texmf/fonts/type1/public/lm/lm
+mi9.pfb></usr/share/texmf/fonts/type1/public/lm/lmr10.pfb></usr/share/texmf/fon
+ts/type1/public/lm/lmr12.pfb></usr/share/texmf/fonts/type1/public/lm/lmr6.pfb><
+/usr/share/texmf/fonts/type1/public/lm/lmr8.pfb></usr/share/texmf/fonts/type1/p
+ublic/lm/lmr9.pfb></usr/share/texmf/fonts/type1/public/lm/lmri10.pfb></usr/shar
+e/texmf/fonts/type1/public/lm/lmri12.pfb></usr/share/texmf/fonts/type1/public/l
+m/lmss10.pfb></usr/share/texmf/fonts/type1/public/lm/lmsy10.pfb></usr/share/tex
+mf/fonts/type1/public/lm/lmsy8.pfb></usr/share/texmf/fonts/type1/public/lm/lmsy
+9.pfb></usr/share/texmf/fonts/type1/public/lm/lmtt10.pfb></usr/share/texmf/font
+s/type1/public/lm/lmtt12.pfb></usr/share/texmf/fonts/type1/public/lm/lmtti10.pf
+b></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb
+>
+Output written on SuperMoTo.pdf (29 pages, 1819895 bytes).
 PDF statistics:
- 811 PDF objects out of 1000 (max. 8388607)
- 694 compressed objects within 7 object streams
- 171 named destinations out of 1000 (max. 500000)
- 587 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 827 PDF objects out of 1000 (max. 8388607)
+ 707 compressed objects within 8 object streams
+ 175 named destinations out of 1000 (max. 500000)
+ 595 words of extra memory for PDF output out of 10000 (max. 10000000)
 
