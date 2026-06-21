@@ -99,8 +99,16 @@ void MatrixComponent::paint (juce::Graphics& g)
 
         g.setColour (SuperMoToTheme::panel);
         g.fillRoundedRectangle (r, 3.0f);
-        g.setColour (SuperMoToTheme::panelLine);
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 0.8f);
+        if (o == selStrip)
+        {
+            g.setColour (SuperMoToTheme::selection);
+            g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.4f);
+        }
+        else
+        {
+            g.setColour (SuperMoToTheme::panelLine);
+            g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 0.8f);
+        }
 
         // Trim value
         g.setColour (SuperMoToTheme::text);
@@ -113,6 +121,19 @@ void MatrixComponent::paint (juce::Graphics& g)
                                       : SuperMoToTheme::dimText.darker (0.8f));
         g.drawText ("FIR", r.toNearestInt().withTrimmedTop (13).removeFromTop (12),
                     juce::Justification::centred);
+
+        // EQ / delay indicators (bottom-left, above the meter).
+        juce::String tag;
+        if (s.anyBandOn())     tag << "EQ";
+        if (s.delayMs > 0.0f)  tag << (tag.isEmpty() ? "" : " ") << "D";
+        if (tag.isNotEmpty())
+        {
+            g.setColour (SuperMoToTheme::fir.brighter (0.2f));
+            g.setFont (8.0f);
+            g.drawText (tag, r.toNearestInt().withTrimmedLeft (3)
+                              .withTop ((int) r.getBottom() - 16).withHeight (8),
+                        juce::Justification::centredLeft);
+        }
 
         // Output vu-meter (horizontal, at the bottom of the cell)
         const float lvl = engine.getOutputLevelDb (o);
@@ -199,12 +220,10 @@ void MatrixComponent::paint (juce::Graphics& g)
                             r.toNearestInt().withTrimmedBottom ((int) (r.getHeight() * 0.35f)),
                             juce::Justification::centred);
 
-                // Indicators
+                // Indicators (EQ / delay now live on the output strip).
                 g.setFont (8.0f);
                 juce::String tags;
-                if (f.anyBandOn())      tags << "EQ";
-                if (f.delayMs > 0.0f)   tags << " D";
-                if (f.phaseInvert)      tags << juce::String::fromUTF8 (" \xc3\x98");
+                if (f.phaseInvert)      tags << juce::String::fromUTF8 ("\xc3\x98");
                 g.setColour (inCol.brighter (0.4f));
                 g.drawText (tags, (int) r.getX() + 2, (int) (r.getBottom() - 11.0f),
                             (int) r.getWidth() - 10, 9, juce::Justification::centredLeft);
@@ -252,12 +271,16 @@ void MatrixComponent::mouseDown (const juce::MouseEvent& e)
             return;
         }
 
-        // Prepare trim drag; a click without drag toggles the FIR (mouseUp
-        // equivalent handled via double semantics: short click toggles in
-        // mouseDown for simplicity, drag adjusts trim).
+        // Select the output for the output editor, and prepare a trim drag.
+        selStrip = out;
+        selIn = selOut = -1;
+        if (onOutputSelected != nullptr)
+            onOutputSelected (out);
+
         draggingOutput = true;
         dragOut = out;
         dragStartGain = s.gainDb;
+        repaint();
         return;
     }
 
@@ -273,6 +296,7 @@ void MatrixComponent::mouseDown (const juce::MouseEvent& e)
     }
 
     selIn = in; selOut = out;
+    selStrip = -1;
     if (onFrameSelected != nullptr)
         onFrameSelected (in, out);
 
@@ -324,6 +348,7 @@ void MatrixComponent::mouseDoubleClick (const juce::MouseEvent& e)
     model.setFrame (editConfig, in, out, f);
 
     selIn = in; selOut = out;
+    selStrip = -1;
     if (onFrameSelected != nullptr)
         onFrameSelected (in, out);
 }

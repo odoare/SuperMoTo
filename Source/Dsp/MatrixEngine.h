@@ -23,6 +23,7 @@
 #include <JuceHeader.h>
 #include "../Model/ConfigModel.h"
 #include "FrameProcessor.h"
+#include "OutputProcessor.h"
 #include "FirFilter.h"
 #include "SpectrumTap.h"
 
@@ -86,6 +87,7 @@ private:
 
     std::array<std::array<std::array<FrameProcessor, numChannels>, numChannels>, numConfigs> frames;
     std::array<std::unique_ptr<FirFilter>, numChannels> firs;
+    std::array<OutputProcessor, numChannels> outputProc;   // per-output EQ + delay
     std::array<juce::LinearSmoothedValue<float>, numChannels> outputGains;
     std::array<std::atomic<float>, numChannels> outputLevels {};
     juce::LinearSmoothedValue<float> smoothedMaster;

@@ -2,11 +2,12 @@
   ------------------------------------------------------------------------------
     MatrixComponent.h
 
-    The 16x16 monitoring matrix view. Rows are inputs, columns are outputs.
-    Each frame (crosspoint) shows its state (active, gain, filter, delay,
-    phase, analyzer checkbox) and a small vu-meter. The strip at the TOP
-    shows the per-output chain: trim, FIR correction state and output
-    vu-meter; the column numbers run along the bottom edge.
+    The monitoring matrix view. Rows are inputs, columns are outputs. Each
+    frame (crosspoint) shows its routing state (active, gain, phase, analyzer
+    checkbox) and a small vu-meter. The strip at the TOP shows the per-output
+    (per-speaker) chain: trim, EQ / delay tags, FIR correction state and output
+    vu-meter; the column numbers run along the bottom edge. Clicking an output
+    cell opens it in the output editor.
 
     When the component is sized down to outputStripH (collapsed editor),
     only the output strip is shown and the grid is skipped entirely.
@@ -17,7 +18,8 @@
               vertical drag = gain
               alt+click = toggle analyzer trace
               right-click = context menu
-      output strip: double-click = toggle FIR, vertical drag = trim,
+      output strip: click = select (opens in the output editor),
+              double-click = toggle FIR, vertical drag = trim,
               alt+click = analyzer trace, right-click = load/clear IR
 
     Author: Olivier Doaré, github.com/odoare
@@ -60,6 +62,10 @@ public:
         in the frame editor panel. */
     std::function<void (int in, int out)> onFrameSelected;
 
+    /** Called when the user selects an output (top strip) — the editor shows it
+        in the output editor panel. */
+    std::function<void (int out)> onOutputSelected;
+
     void setSelectedFrame (int in, int out)     { selIn = in; selOut = out; repaint(); }
 
     static constexpr int outputStripH = 54;     // height of the output strip
@@ -75,6 +81,12 @@ private:
             selIn = selOut = -1;
             if (onFrameSelected != nullptr)
                 onFrameSelected (-1, -1);
+        }
+        if (selStrip >= model.getNumOuts())
+        {
+            selStrip = -1;
+            if (onOutputSelected != nullptr)
+                onOutputSelected (-1);
         }
         repaint();
     }
@@ -98,6 +110,7 @@ private:
 
     int editConfig = 0;
     int selIn = -1, selOut = -1;
+    int selStrip = -1;          // selected output (top strip), -1 = none
 
     // Drag state
     bool draggingFrame = false, draggingOutput = false;

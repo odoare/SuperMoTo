@@ -28,6 +28,8 @@ void MatrixEngine::prepare (double sampleRate, int maxBlockSize)
             firs[(size_t) o] = std::make_unique<FirFilter>();
         firs[(size_t) o]->prepare (sampleRate, maxBlockSize);
 
+        outputProc[(size_t) o].prepare (sampleRate, maxBlockSize);
+
         outputGains[(size_t) o].reset (sampleRate, 0.05);
         outputGains[(size_t) o].setCurrentAndTargetValue (1.0f);
         outputLevels[(size_t) o].store (0.0f);
@@ -88,6 +90,7 @@ void MatrixEngine::pullModelIfChanged()
     {
         outputGains[(size_t) o].setTargetValue (
             juce::Decibels::decibelsToGain (outputSettings[(size_t) o].gainDb));
+        outputProc[(size_t) o].applySettings (outputSettings[(size_t) o]);
         spectrumBus.outputTap (o).setEnabled (outputSettings[(size_t) o].spectrum
                                               && o < visOuts);
     }
@@ -212,6 +215,9 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
         for (int s = 0; s < n; ++s)
             data[s] *= outputGains[(size_t) o].getNextValue();
 
+        // Per-output EQ (e.g. the bass-management crossover) + time-align delay.
+        outputProc[(size_t) o].process (data, n);
+
         if (outputSettings[(size_t) o].firOn && firs[(size_t) o]->hasImpulse())
             firs[(size_t) o]->process (data, n);
 
@@ -263,6 +269,11 @@ void MatrixEngine::processOutputChainOnly (juce::AudioBuffer<float>& buffer, int
     const float g = juce::Decibels::decibelsToGain (outputSettings[(size_t) channel].gainDb);
     for (int s = 0; s < n; ++s)
         data[s] *= g;
+
+    // Measuring "output + FIR" includes the per-output EQ (the speaker's own
+    // processing); skip the alignment delay so the captured IR stays at t=0.
+    if (applyFir)
+        outputProc[(size_t) channel].process (data, n, false);
 
     if (applyFir && outputSettings[(size_t) channel].firOn
         && firs[(size_t) channel]->hasImpulse())

@@ -36,6 +36,7 @@
 #include "Components/MatrixComponent.h"
 #include "Components/InfoButton.h"
 #include "Components/FrameEditorComponent.h"
+#include "Components/OutputEditorComponent.h"
 #include "Components/SpectrumAnalyzerComponent.h"
 #include "Components/ConfigToolComponent.h"
 #include "Components/CalibrationComponent.h"
@@ -95,6 +96,8 @@ private:
     juce::Label editLabel;
     SpectrumAnalyzerComponent spectrum;
     FrameEditorComponent frameEditor;
+    OutputEditorComponent outputEditor;
+    bool editingOutput = false;     // which editor occupies the detail panel
     InfoButton infoButton;
 
     // Bounds captured in resized() so the info button can be repositioned when

@@ -36,6 +36,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
       matrix (p.configModel, p.engine),
       spectrum (p.engine),
       frameEditor (p.configModel),
+      outputEditor (p.configModel, p.engine),
       configTool (p.configModel),
       calibration (p),
       analysis (p)
@@ -126,7 +127,19 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addAndMakeVisible (matrix);
     matrix.onFrameSelected = [this] (int in, int out)
     {
+        editingOutput = false;
         frameEditor.setFrame (in, out, editConfig);
+        const bool show = currentView == View::matrix && ! collapsed;
+        frameEditor.setVisible (show);
+        outputEditor.setVisible (false);
+    };
+    matrix.onOutputSelected = [this] (int out)
+    {
+        editingOutput = true;
+        outputEditor.setOutput (out);
+        const bool show = currentView == View::matrix && ! collapsed;
+        outputEditor.setVisible (show);
+        frameEditor.setVisible (false);
     };
 
     editLabel.setText ("Edit:", juce::dontSendNotification);
@@ -172,6 +185,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     };
 
     addAndMakeVisible (frameEditor);
+    addChildComponent (outputEditor);   // shown when an output is selected
 
     // ── Other views (hidden until selected) ─────────────────────────────────
     addChildComponent (configTool);
@@ -250,7 +264,8 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     // strip; everything else goes away.
     matrix.setVisible (m || collapsed);
     spectrum.setVisible (m);
-    frameEditor.setVisible (m);
+    frameEditor.setVisible (m && ! editingOutput);
+    outputEditor.setVisible (m && editingOutput);
     editLabel.setVisible (m);
     insLabel.setVisible (m);
     insBox.setVisible (m);
@@ -298,16 +313,19 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
         case View::matrix:
             title = "Matrix \xe2\x80\x94 monitoring & routing";
             body  =
-                "The 16x16 matrix routes inputs (rows) to outputs (columns). Up to six "
+                "The matrix routes inputs (rows) to outputs (columns). Up to six "
                 "configurations A-F can be stored; engage them from the top bar. With "
                 "Exclusive only one is active at a time, otherwise the engaged matrices sum.\n\n"
+                "A frame (crosspoint) is a routing cell (gain + phase). The speaker "
+                "processing — trim, EQ, delay and FIR — lives on the output.\n\n"
                 "Frame (crosspoint):\n"
-                " - Click: select (opens the editor, bottom right)\n"
+                " - Click: select (opens the frame editor, bottom right)\n"
                 " - Double-click: activate / deactivate\n"
                 " - Vertical drag: gain\n"
                 " - Alt+click: show / hide its analyzer trace\n"
                 " - Right-click: context menu\n\n"
                 "Output strip (top row):\n"
+                " - Click: select (opens the output editor: trim, EQ, delay, FIR)\n"
                 " - Double-click: toggle the output FIR\n"
                 " - Vertical drag: output trim\n"
                 " - Alt+click: analyzer trace\n"
@@ -325,14 +343,25 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
             title = "Speaker configuration tool";
             body  =
                 "Fills one of the A-F configurations for a standard layout (2.0, 2.1, 4.0, "
-                "5.1, 7.1) in a few clicks.\n\n"
+                "4.1, 5.1, 7.1) or periphonic Ambisonics (orders 1-3) in a few clicks.\n\n"
+                "Channel layouts\n"
                 "1. Pick the Layout and the target (Write to config A-F).\n"
                 "2. For each speaker choose its input(s) and output, and a gain.\n"
                 "3. Bass management (optional): highpass the mains and send their lowpassed "
-                "sum to the subwoofer output at the chosen crossover.\n"
-                "4. Apply writes the frames into the configuration (overwriting it).\n\n"
-                "Refine the result per-frame in the Matrix view, and add per-output FIR "
-                "correction there.";
+                "sum to the subwoofer output at the chosen crossover.\n\n"
+                "Ambisonics (AmbiX: ACN order, SN3D)\n"
+                "- B-format is taken as inputs 1..(order+1)^2 (4 / 9 / 16 channels).\n"
+                "- Speakers: choose the count (default 8 / 12 / 16; other counts get a "
+                "near-uniform layout you then edit). Set each loudspeaker's "
+                "azimuth/elevation/radius and output; Apply builds the max-rE sampling "
+                "decoder. Bass management lowpasses W to the sub and highpasses the speakers.\n"
+                "- Radius compensation delays + attenuates closer speakers (referenced to "
+                "the farthest) so an irregular rig still sums at the centre.\n"
+                "- 'Write delay compensation' off keeps the outputs' existing delays, so you "
+                "can apply the decode AFTER aligning the speakers by hand. The matrix grows "
+                "to fit the channels.\n\n"
+                "Apply writes the frames into the configuration (overwriting it). Refine "
+                "per-frame in the Matrix view, and add per-output FIR correction there.";
             break;
 
         case View::calibration:
@@ -522,7 +551,9 @@ void SuperMoToAudioProcessorEditor::resized()
     matrix.setBounds (main);
     matrixArea = main;                  // matrix corner (info button: top-left)
 
-    frameEditor.setBounds (right.removeFromBottom (280));
+    const auto editorArea = right.removeFromBottom (280);
+    frameEditor.setBounds (editorArea);
+    outputEditor.setBounds (editorArea);
     right.removeFromBottom (8);
     spectrum.setBounds (right);
 

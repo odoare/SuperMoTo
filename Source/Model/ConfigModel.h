@@ -35,7 +35,8 @@
 namespace smt
 {
 
-constexpr int numChannels = 16;   // inputs and outputs
+constexpr int numChannels = 32;   // maximum inputs and outputs (matrix dimension)
+constexpr int defaultChannels = 8; // active in/out count on a fresh instance
 constexpr int numConfigs  = 6;    // A..F
 constexpr float maxDelayMs = 100.0f;
 constexpr int maxFrameTaps = 8;   // simultaneous frame traces on the analyzer
@@ -73,13 +74,33 @@ struct FrameBand
     bool operator!= (const FrameBand& o) const { return ! (*this == o); }
 };
 
+// A matrix frame is just a routing cell now: how much of the input reaches the
+// output, with an optional polarity flip and an analyzer tap. The speaker
+// processing (EQ, delay, FIR, trim) lives on the output.
 struct FrameSettings
 {
     bool  active      = false;
     float gainDb      = 0.0f;     // overall frame level
     bool  phaseInvert = false;
-    float delayMs     = 0.0f;
     bool  spectrum    = false;    // show this frame's signal on the analyzer
+
+    bool isDefault() const
+    {
+        const FrameSettings d;
+        return active == d.active && gainDb == d.gainDb && phaseInvert == d.phaseInvert
+            && spectrum == d.spectrum;
+    }
+};
+
+// One physical speaker output: trim, a 4-band EQ (e.g. the bass-management
+// crossover), a time-alignment delay, an FIR correction, and an analyzer tap.
+struct OutputSettings
+{
+    float        gainDb   = 0.0f;
+    float        delayMs  = 0.0f;  // time-alignment delay
+    bool         firOn    = false;
+    juce::String firPath;          // impulse response wav file
+    bool         spectrum = false; // show this output's sum on the analyzer
     std::array<FrameBand, (size_t) numFrameBands> bands {};
 
     bool anyBandOn() const
@@ -92,22 +113,9 @@ struct FrameSettings
 
     bool isDefault() const
     {
-        const FrameSettings d;
-        return active == d.active && gainDb == d.gainDb && phaseInvert == d.phaseInvert
-            && delayMs == d.delayMs && spectrum == d.spectrum && bands == d.bands;
-    }
-};
-
-struct OutputSettings
-{
-    float        gainDb   = 0.0f;
-    bool         firOn    = false;
-    juce::String firPath;         // impulse response wav file
-    bool         spectrum = false; // show this output's sum on the analyzer
-
-    bool isDefault() const
-    {
-        return gainDb == 0.0f && ! firOn && firPath.isEmpty() && ! spectrum;
+        const OutputSettings d;
+        return gainDb == 0.0f && delayMs == 0.0f && ! firOn && firPath.isEmpty()
+            && ! spectrum && bands == d.bands;
     }
 };
 
@@ -243,7 +251,7 @@ private:
     mutable juce::SpinLock lock;
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frames {};
     std::array<OutputSettings, numChannels> outputs {};
-    std::atomic<int> numIns { numChannels }, numOuts { numChannels };
+    std::atomic<int> numIns { defaultChannels }, numOuts { defaultChannels };
     std::atomic<int> version { 1 };
 
     juce::ListenerList<Listener> listeners;

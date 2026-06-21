@@ -34,8 +34,8 @@
 //==============================================================================
 SuperMoToAudioProcessor::SuperMoToAudioProcessor()
      : AudioProcessor (BusesProperties()
-                       .withInput  ("Input",  juce::AudioChannelSet::discreteChannels (smt::numChannels), true)
-                       .withOutput ("Output", juce::AudioChannelSet::discreteChannels (smt::numChannels), true))
+                       .withInput  ("Input",  juce::AudioChannelSet::discreteChannels (smt::defaultChannels), true)
+                       .withOutput ("Output", juce::AudioChannelSet::discreteChannels (smt::defaultChannels), true))
 {
     for (int c = 0; c < smt::numConfigs; ++c)
         apvts.addParameterListener (smt::configName (c), this);
@@ -104,8 +104,20 @@ void SuperMoToAudioProcessor::releaseResources()
 
 bool SuperMoToAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::discreteChannels (smt::numChannels)
-        && layouts.getMainInputChannelSet()  == juce::AudioChannelSet::discreteChannels (smt::numChannels);
+    // Discrete I/O in one of a few sizes, up to the matrix maximum. Input and
+    // output may differ (e.g. 16 B-format inputs decoded to 24 speaker outputs).
+    // Anything larger than the live bus is computed but not written; the matrix
+    // size selector in the editor chooses how many are actually used.
+    auto ok = [] (const juce::AudioChannelSet& set)
+    {
+        for (int n : { 8, 16, 24, 32 })
+            if (set == juce::AudioChannelSet::discreteChannels (n))
+                return true;
+        return false;
+    };
+
+    return ok (layouts.getMainOutputChannelSet())
+        && ok (layouts.getMainInputChannelSet());
 }
 
 void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
