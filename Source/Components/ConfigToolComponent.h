@@ -49,12 +49,20 @@ public:
         addAndMakeVisible (title);
 
         layoutBox.addItemList ({ "Stereo 2.0", "Stereo 2.1", "Quad 4.0", "Quad 4.1", "5.1", "7.1",
-                                 "Ambisonics 1st order", "Ambisonics 2nd order",
-                                 "Ambisonics 3rd order" }, 1);
+                                 "Ambisonics" }, 1);
         SuperMoToTheme::accentComboBox (layoutBox, SuperMoToTheme::master);
         layoutBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
         addAndMakeVisible (layoutBox);
         addLabel (layoutLabel, "Layout");
+
+        // Ambisonics order selector, shown next to the layout when "Ambisonics".
+        orderBox.addItemList ({ "1st order", "2nd order", "3rd order" }, 1);
+        SuperMoToTheme::accentComboBox (orderBox, SuperMoToTheme::master);
+        orderBox.setSelectedId (1, juce::dontSendNotification);
+        orderBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
+        addChildComponent (orderBox);
+        addLabel (orderLabel, "Order");
+        orderLabel.setVisible (false);
 
         targetBox.addItemList ({ "A", "B", "C", "D", "E", "F" }, 1);
         SuperMoToTheme::accentComboBox (targetBox, SuperMoToTheme::master);
@@ -62,7 +70,7 @@ public:
         addAndMakeVisible (targetBox);
         addLabel (targetLabel, "Write to config");
 
-        bassManagement.setButtonText ("Bass management (highpass the mains)");
+        bassManagement.setButtonText ("Bass management");
         SuperMoToTheme::accentToggleButton (bassManagement, SuperMoToTheme::fir);
         bassManagement.setToggleState (true, juce::dontSendNotification);
         addAndMakeVisible (bassManagement);
@@ -162,43 +170,59 @@ public:
 
         const bool ambi = isAmbisonics();
 
+        // Top row: layout selector, and (for Ambisonics) order + speaker count.
         auto top = area.removeFromTop (24);
         layoutLabel.setBounds (top.removeFromLeft (50));
         layoutBox.setBounds (top.removeFromLeft (160));
-        top.removeFromLeft (20);
-        targetLabel.setBounds (top.removeFromLeft (100));
-        targetBox.setBounds (top.removeFromLeft (60));
         if (ambi)
         {
-            top.removeFromLeft (24);
-            numSpkLabel.setBounds (top.removeFromLeft (60));
+            top.removeFromLeft (20);
+            orderLabel.setBounds (top.removeFromLeft (44));
+            orderBox.setBounds (top.removeFromLeft (110));
+            top.removeFromLeft (20);
+            numSpkLabel.setBounds (top.removeFromLeft (64));
             numSpkSlider.setBounds (top.removeFromLeft (150));
         }
 
-        // Ambisonics tools row: IEM import + radius-compensation toggles.
+        // Bottom: the configuration-writing controls, carved from the bottom up.
+        // Very bottom: a full-width status line.
+        status.setBounds (area.removeFromBottom (18));
+        area.removeFromBottom (4);
+
+        // Main controls row. Right-aligned: Apply, and (Ambisonics) the IEM
+        // import. Left-aligned: write target, bass management, crossover, then
+        // (Ambisonics) the radius-compensation toggles.
+        auto bottomRow = area.removeFromBottom (28);
         if (ambi)
         {
-            area.removeFromTop (8);
-            auto tools = area.removeFromTop (24);
-            loadIemButton.setBounds (tools.removeFromLeft (170));
-            tools.removeFromLeft (20);
-            writeGainToggle.setBounds (tools.removeFromLeft (170));
-            tools.removeFromLeft (16);
-            writeDelayToggle.setBounds (tools.removeFromLeft (170));
+            loadIemButton.setBounds (bottomRow.removeFromRight (150));
+            bottomRow.removeFromRight (10);
+        }
+        applyButton.setBounds (bottomRow.removeFromRight (160));
+        bottomRow.removeFromRight (16);
+
+        targetLabel.setBounds (bottomRow.removeFromLeft (92));
+        targetBox.setBounds (bottomRow.removeFromLeft (56));
+        bottomRow.removeFromLeft (14);
+        bassManagement.setBounds (bottomRow.removeFromLeft (140));
+        bottomRow.removeFromLeft (12);
+        crossoverLabel.setBounds (bottomRow.removeFromLeft (62));
+        crossover.setBounds (bottomRow.removeFromLeft (130));
+        if (ambi)
+        {
+            bottomRow.removeFromLeft (14);
+            writeGainToggle.setBounds (bottomRow.removeFromLeft (150));
+            bottomRow.removeFromLeft (8);
+            writeDelayToggle.setBounds (bottomRow.removeFromLeft (150));
         }
 
-        area.removeFromTop (8);
-        auto bm = area.removeFromTop (24);
-        bassManagement.setBounds (bm.removeFromLeft (300));
-        crossoverLabel.setBounds (bm.removeFromLeft (70));
-        crossover.setBounds (bm);
+        area.removeFromBottom (8);   // gap between the table and the bottom controls
 
-        rowsTop = area.getY() + 24;
-
-        // Shrink the row height when there are many speakers so they always fit
-        // above the Apply button (32 rows would otherwise overflow).
+        // Speaker table fills what remains. Shrink the row height when there are
+        // many speakers so they always fit (32 rows would otherwise overflow).
+        rowsTop = area.getY() + 24;       // +24 leaves room for the column header
         const int n = juce::jmax (1, (int) rows.size());
-        const int avail = getHeight() - 44 - rowsTop;     // 44 = Apply row + margin
+        const int avail = area.getBottom() - rowsTop;
         rowH = juce::jlimit (18, 28, avail / n);
 
         for (size_t i = 0; i < rows.size(); ++i)
@@ -223,11 +247,6 @@ public:
                 rows[i]->gain.setBounds (cols[3]);
             }
         }
-
-        auto bottom = getLocalBounds().reduced (14).removeFromBottom (30);
-        applyButton.setBounds (bottom.removeFromLeft (220));
-        bottom.removeFromLeft (12);
-        status.setBounds (bottom);
     }
 
 private:
@@ -252,8 +271,8 @@ private:
         addAndMakeVisible (l);
     }
 
-    bool isAmbisonics() const   { return layoutBox.getSelectedId() >= 7; }
-    int  ambiOrder() const      { return layoutBox.getSelectedId() - 6; }   // 1..3
+    bool isAmbisonics() const   { return layoutBox.getSelectedId() == 7; }
+    int  ambiOrder() const      { return juce::jlimit (1, 3, orderBox.getSelectedId()); }
 
     int defaultSpeakerCount (int order) const { return order == 1 ? 8 : order == 2 ? 12 : 16; }
     int currentSpeakerCount() const           { return juce::jmax (1, (int) numSpkSlider.getValue()); }
@@ -264,6 +283,8 @@ private:
     void syncAmbiControls()
     {
         const bool ambi = isAmbisonics();
+        orderBox.setVisible (ambi);
+        orderLabel.setVisible (ambi);
         numSpkSlider.setVisible (ambi);
         numSpkLabel.setVisible (ambi);
         writeGainToggle.setVisible (ambi);
@@ -773,8 +794,8 @@ private:
 
     smt::ConfigModel& model;
 
-    juce::Label title, layoutLabel, targetLabel, crossoverLabel, numSpkLabel, status;
-    juce::ComboBox layoutBox, targetBox;
+    juce::Label title, layoutLabel, targetLabel, crossoverLabel, numSpkLabel, orderLabel, status;
+    juce::ComboBox layoutBox, targetBox, orderBox;
     juce::ToggleButton bassManagement, writeGainToggle, writeDelayToggle;
     fxme::FxmeSlider crossover, numSpkSlider;
     juce::TextButton applyButton, loadIemButton;
