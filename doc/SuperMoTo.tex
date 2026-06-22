@@ -85,8 +85,8 @@ SuperMoTo is an FX-Mechanics audio plugin (VST3, AU and Standalone) for the
 \href{https://github.com/odoare/MoTo}{MoTo}. From a single instance it lets you:
 
 \begin{itemize}[nosep]
-  \item route up to \textbf{16 inputs to 16 outputs} through a full routing
-        matrix, with per-crosspoint gain, EQ, phase and delay;
+  \item route up to \textbf{32 inputs to 32 outputs} (8 by default) through a
+        full routing matrix, with per-crosspoint gain, EQ, phase and delay;
   \item apply \textbf{one FIR correction filter per output} (zero-latency WDL
         convolution) to flatten each loudspeaker;
   \item \textbf{measure} the loudspeakers in the room with built-in stimuli;
@@ -128,7 +128,8 @@ modes these are essentially \emph{wide-band} and tied to geometry.
 \subsection{Imperfect loudspeakers}
 Even in an anechoic chamber no speaker is perfectly flat: drivers have their
 own magnitude ripple and roll-offs, and the crossover between drivers adds
-\textbf{phase} shift, so the speaker is not minimum-phase everywhere. This part
+\textbf{phase} shift, so the speaker is not minimum-phase
+(Section~\ref{sec:minphasedef}) everywhere. This part
 of the error is a property of the box, is the \emph{same} at every listening
 position, and is the most cleanly correctable.
 
@@ -139,6 +140,60 @@ as \emph{complex} pressures: unless they are in phase through the crossover the
 sum shows a dip or, worse, a deep cancellation~\cite{Linkwitz1976}. Getting a
 smooth, coherent hand-off is as much a \textbf{phase / timing} problem as a
 level problem.
+
+\subsection{Minimum phase, excess phase and invertibility}\label{sec:minphasedef}
+Whether an error can be undone by a filter hinges on a single property of the
+response: whether it is \textbf{minimum-phase}.
+
+\paragraph{Physically.} A response is minimum-phase when, for its given
+magnitude, its energy arrives \emph{as early as possible} — it has the least
+phase lag and the least \emph{group delay} (the frequency-derivative of phase,
+i.e.\ the delay the response imposes near each frequency) consistent with that
+magnitude. Equivalently, both the response \emph{and its inverse} are causal and
+stable, which is exactly what makes it correctable: undoing it does not require
+predicting the future. A single loudspeaker resonance, a driver roll-off and an
+isolated low-frequency room mode are essentially minimum-phase — the magnitude
+bump or dip and the phase rotation around it are two views of the \emph{same}
+event. What is \emph{not} minimum-phase: a pure propagation delay, a discrete
+reflection arriving after the direct sound, and the deep cancellation notch
+where two out-of-phase sources sum. These carry \textbf{excess phase} — lag
+beyond the minimum — that no stable causal filter can remove.
+
+\paragraph{Mathematically.} For a discrete linear time-invariant system with
+rational transfer function $H(z)$, minimum-phase means every pole \emph{and}
+every zero lies strictly inside the unit circle. Poles inside make $H$ causal
+and stable; zeros inside make the inverse $1/H(z)$ — whose poles are $H$'s zeros
+— causal and stable too, so $H$ can be inverted by a realisable filter. Any
+stable response factors uniquely into a minimum-phase and an all-pass part,
+\begin{equation}
+  H(z) = H_{\min}(z)\,H_{\mathrm{ap}}(z),
+  \qquad \bigl|H_{\mathrm{ap}}(e^{j\omega})\bigr| = 1,
+  \label{eq:minap}
+\end{equation}
+where the all-pass factor $H_{\mathrm{ap}}$ (unit magnitude, so it changes only
+the phase) carries \emph{all} the excess phase — each zero $z_0$ outside the
+unit circle reflected to $1/\bar z_0$ inside. The minimum-phase factor alone
+sets the magnitude, $|H| = |H_{\min}|$, and for it — and only it — magnitude and
+phase are not independent but a \textbf{Hilbert-transform pair}:
+\begin{equation}
+  \arg H_{\min}(e^{j\omega})
+    = \mathcal{H}\bigl\{\log\bigl|H_{\min}(e^{j\omega})\bigr|\bigr\},
+  \label{eq:hilbert}
+\end{equation}
+so the phase is completely determined by the magnitude. SuperMoTo uses this
+identity both ways: to \emph{design} a flat-phase correction (it conjugates the
+measured minimum-phase phase), and to \emph{render} a low-latency filter from
+the magnitude alone (Section~\ref{sec:minphase}).
+
+The practical consequence sets up the next section: SuperMoTo can invert the
+magnitude exactly and flatten the minimum-phase phase; the all-pass / excess
+part and any pure delay it can only \emph{pre}-compensate with a
+\textbf{linear-phase} filter (acausal, hence latency-adding,
+Section~\ref{sec:render}); and a genuine non-minimum-phase cancellation — a zero
+on or outside the unit circle — has no stable inverse at all, so boosting into
+it merely wastes headroom. This one distinction is why the spatial average, the
+boost ceiling and the frequency-dependent smoothing exist: they keep the design
+on the minimum-phase part of the response that is actually invertible.
 
 \subsection{What SuperMoTo can and cannot do}
 Correction is a linear filter applied to the signal \emph{before} the speaker.
@@ -192,10 +247,12 @@ order.
 
 \section{Signal flow at a glance}
 Figure~\ref{fig:signalflow} shows the per-block processing performed by the
-matrix engine. Audio enters on 16 discrete input channels, is summed through
-the active matrix configuration(s), passes the per-output trim and FIR
-correction, is time-aligned across outputs, and finally the master section
-(Level / Mute / Dim / Mono) is applied before the 16 discrete outputs.
+matrix engine. Audio enters on the discrete input channels (8 by default, up to
+32), is summed through the active matrix configuration(s), passes the per-output
+trim and FIR correction, is time-aligned across outputs, and finally the master
+section (Level / Mute / Dim / Mono) is applied before the discrete outputs. The
+active matrix size is set with the Inputs/Outputs selectors; the plugin bus
+supports 8, 16, 24 or 32 discrete channels.
 
 \begin{figure}[ht]
 \centering
@@ -206,14 +263,14 @@ correction, is time-aligned across outputs, and finally the master section
    io/.style={draw, fill=smtblue!15, minimum height=9mm, minimum width=18mm,
               align=center, font=\small},
    >={Stealth[]}]
-  \node[io] (in) {16 discrete\\inputs};
+  \node[io] (in) {discrete\\inputs};
   \node[block, right=of in] (matrix) {Routing\\matrix\\(A..F)};
-  \node[block, right=of matrix] (frame) {Per-frame\\gain / EQ /\\phase / delay};
-  \node[block, right=of frame] (trim) {Per-output\\trim};
+  \node[block, right=of matrix] (frame) {Per-frame\\gain / phase};
+  \node[block, right=of frame] (trim) {Per-output\\trim / EQ /\\delay};
   \node[block, below=14mm of trim] (fir) {Per-output\\FIR\\correction};
   \node[block, left=of fir] (comp) {Inter-output\\latency\\compensation};
   \node[block, left=of comp] (master) {Master:\\Level / Mute\\Dim / Mono};
-  \node[io, left=of master] (out) {16 discrete\\outputs};
+  \node[io, left=of master] (out) {discrete\\outputs};
 
   \draw[->] (in) -- (matrix);
   \draw[->] (matrix) -- (frame);
@@ -253,7 +310,7 @@ usefully a DAW must satisfy two requirements:
 
 \begin{enumerate}[nosep]
   \item \textbf{Flexible channel routing} — the ability to feed the plugin's
-        16 discrete inputs from arbitrary sources and to send its 16 discrete
+        discrete inputs from arbitrary sources and to send its discrete
         outputs to arbitrary hardware outputs / busses.
   \item \textbf{A monitoring (control-room) insert point} — a place to put the
         plugin on the path between the mix and the physical speaker outputs,
@@ -286,8 +343,8 @@ Bitwig Studio & Possible &
   or on a hardware-output chain. No formal ``monitor section'', so the
   monitoring insert must be built manually and bypassed before export. \\
 Standalone (built in) & Always &
-  The Standalone build talks straight to the audio device (16 in / 16 out if
-  the interface provides them); useful for a dedicated monitor-controller
+  The Standalone build talks straight to the audio device (up to 32 in / 32 out
+  if the interface provides them); useful for a dedicated monitor-controller
   machine with no DAW. \\
 \bottomrule
 \end{tabularx}
@@ -300,7 +357,7 @@ tested.}
 \section{Hosts likely to be awkward}
 \begin{itemize}[nosep]
   \item \textbf{Pro Tools} — plugin channel formats are constrained to named
-        surround layouts; an arbitrary 16-channel discrete insert is not the
+        surround layouts; an arbitrary high-count discrete insert is not the
         native model.
   \item \textbf{Logic Pro} — surround formats are fixed and discrete
         16-channel routing through a monitor insert is not straightforward.
@@ -341,25 +398,37 @@ grid of frames each with its vu-meter; the per-output strip; the global
 spectrum analyzer; and the frame editor panel (bottom-right).}
 
 \section{Concepts}
-The matrix is a \textbf{16$\times$16 grid}. The cell at row \emph{in},
-column \emph{out} is a \textbf{frame} (crosspoint): it controls how much of
-input \emph{in} is sent to output \emph{out} and how it is processed on the
-way. Each output also has global \textbf{output settings} (trim + FIR) that
-describe the physical loudspeaker attached to it and are therefore shared by
-all configurations.
+The matrix is a grid of up to \textbf{32$\times$32}. The cell at row \emph{in},
+column \emph{out} is a \textbf{frame} (crosspoint): a pure \emph{routing} cell
+that controls how much of input \emph{in} is sent to output \emph{out}. All the
+loudspeaker processing — trim, EQ, delay and the FIR correction — lives on the
+\textbf{output}, since it describes the physical speaker; output settings are
+global and therefore shared by all configurations.
 
 \subsection{What a frame contains}
 \begin{itemize}[nosep]
   \item \textbf{Active} flag (is this crosspoint routed at all);
   \item \textbf{Gain} (overall frame level, dB);
-  \item a \textbf{4-band EQ} — each band can be lowpass, highpass, bandpass
-        or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded
-        in series;
-  \item \textbf{Phase invert};
-  \item \textbf{Delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second},
-        fractional (sub-sample);
+  \item \textbf{Phase invert} (a frequency-independent polarity flip, useful for
+        e.g.\ a differential decode coefficient);
   \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox to show the
         frame's signal on the spectrum analyzer.
+\end{itemize}
+
+\subsection{What an output (loudspeaker) contains}\label{sec:outputchain}
+Each output is the chain applied to the summed signal of all active frames
+feeding it. Click an output cell (top strip) to edit it:
+\begin{itemize}[nosep]
+  \item \textbf{Trim} (output level, dB);
+  \item a \textbf{4-band EQ} — each band can be lowpass, highpass, bandpass
+        or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in
+        series. This is where the \textbf{bass-management crossover} lives (a
+        highpass on a main, a lowpass on the sub);
+  \item a \textbf{delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second},
+        fractional (sub-sample), for \textbf{time-aligning} the speaker;
+  \item one \textbf{FIR correction} filter (Section~\ref{sec:render}), loaded
+        from a wav impulse response;
+  \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox.
 \end{itemize}
 
 \begin{figure}[ht]
@@ -369,24 +438,27 @@ all configurations.
                  align=center, font=\small},
    >={Stealth[]}, node distance=6mm]
   \node[block] (in) {input\\$in$};
-  \node[block, right=10mm of in] (gain) {gain};
-  \node[block, right=6mm of gain] (eq) {4-band\\EQ};
-  \node[block, right=6mm of eq] (phase) {phase\\invert};
-  \node[block, right=6mm of phase] (delay) {delay\\0--100\,ms};
-  \node[draw, circle, right=8mm of delay, fill=smtgold!40] (sum) {$\Sigma$};
-  \node[block, right=8mm of sum] (out) {output\\$out$ bus};
+  \node[block, right=8mm of in] (gain) {frame\\gain};
+  \node[block, right=6mm of gain] (phase) {phase\\invert};
+  \node[draw, circle, right=8mm of phase, fill=smtgold!40] (sum) {$\Sigma$};
+  \node[block, right=8mm of sum] (trim) {trim};
+  \node[block, right=5mm of trim] (eq) {4-band\\EQ};
+  \node[block, below=6mm of eq] (delay) {delay};
+  \node[block, left=5mm of delay] (fir) {FIR};
+  \node[block, left=5mm of fir] (out) {output\\$out$};
   \draw[->] (in) -- (gain);
-  \draw[->] (gain) -- (eq);
-  \draw[->] (eq) -- (phase);
-  \draw[->] (phase) -- (delay);
-  \draw[->] (delay) -- (sum);
-  \draw[->] (sum) -- (out);
-  \node[font=\footnotesize, above=4mm of sum, align=center]
+  \draw[->] (gain) -- (phase);
+  \draw[->] (phase) -- (sum);
+  \draw[->] (sum) -- (trim);
+  \draw[->] (trim) -- (eq);
+  \draw[->] (eq) -- (delay);
+  \draw[->] (delay) -- (fir);
+  \draw[->] (fir) -- (out);
+  \node[font=\footnotesize, above=3mm of sum, align=center]
     {sum of all active\\frames into $out$};
 \end{tikzpicture}
-\caption{Processing inside a single frame (crosspoint). Every active frame
-feeding a given output is summed into that output's bus before the output
-trim and FIR.}
+\caption{Routing frames (gain + phase) sum into each output, which then applies
+the per-speaker trim, EQ, delay and FIR correction.}
 \label{fig:frame}
 \end{figure}
 
@@ -417,6 +489,8 @@ Vertical drag        & Adjust the frame gain. \\
 Alt+click            & Toggle the frame's analyzer trace. \\
 Right-click          & Context menu for the frame. \\
 \midrule
+Click an output      & Select it (opens it in the output editor: trim, EQ,
+                       delay, FIR). \\
 Output: double-click & Toggle that output's FIR on/off. \\
 Output: vertical drag& Adjust the output trim. \\
 Output: alt+click    & Toggle the output-sum analyzer trace. \\
@@ -428,7 +502,7 @@ has an info button \textbf{(i)} summarising its controls and shortcuts.}
 \label{tab:gestures}
 \end{table}
 
-\section{Per-output FIR correction and latency compensation}
+\section{Per-output FIR correction and latency compensation}\label{sec:latencycomp}
 Each output can carry one \textbf{FIR filter} (loaded from a wav impulse
 response, convolved with the zero-latency WDL engine) to compensate the
 attached loudspeaker. Because correction IRs are rendered with their energy
@@ -461,11 +535,120 @@ driven by mouse interaction on the plot.
 
 \section{The Configuration tool}
 For standard layouts the Configuration tool writes a whole matrix for you.
-Choose a layout (\textbf{2.0, 2.1, 4.0, 5.1, 7.1}), assign the input and
+Choose a layout (\textbf{2.0, 2.1, 4.0, 4.1, 5.1, 7.1}), assign the input and
 output channel of each speaker, set the gains and the bass-management
 crossover frequency, then \textbf{Apply} to a configuration (A..F). The mains
 are high-passed and their sum is sent, low-passed, to the subwoofer output.
 The result is an ordinary configuration you can fine-tune by hand afterwards.
+
+\subsection{Ambisonics decoding}\label{sec:ambisonics}
+The tool also generates \textbf{periphonic (3D) Ambisonics} decoders for orders
+1--3 (Appendix~\ref{ch:ambiprimer} is a primer on the underlying theory). It
+follows the \textbf{AmbiX} convention --- channels in \textbf{ACN}
+order with \textbf{SN3D} normalisation --- and takes the B-format signal on the
+first $(\mathrm{order}+1)^2$ inputs (4, 9 or 16 channels). Instead of one input
+per speaker, each row sets a loudspeaker's \textbf{azimuth}, \textbf{elevation}
+and \textbf{radius} (distance from the centre) and its output channel. The
+\textbf{Speakers} control chooses the number of outputs: at the canonical count
+the tool ships a hand-tuned periphonic rig (an 8-speaker cube, a 12-speaker
+icosahedron, a 16-speaker dome); at any other count it lays the speakers out on a
+near-uniform spherical-Fibonacci lattice. Either way you then edit the angles and
+radii to match the real installation (the minimum is $(\mathrm{order}+1)^2$
+speakers, the number of harmonics).
+
+\textbf{Apply} builds a \textbf{max-rE sampling decoder}: for each speaker $s$ in
+direction $\Omega_s$ and each harmonic $j$ the decode gain is
+\begin{equation}
+  D[s][j] \;\propto\; a_{n(j)}\,Y_j^{\mathrm{SN3D}}(\Omega_s),
+\end{equation}
+where $Y_j^{\mathrm{SN3D}}$ is the real SN3D spherical harmonic of ACN index
+$j$, $a_n$ the per-order max-rE gains (from the largest root of the Legendre
+polynomial $P_{\mathrm{order}+1}$, improving localisation), and the matrix is
+scaled so an on-axis plane wave decodes to about unity. Each non-negligible
+$D[s][j]$ is written as a harmonic\,$\rightarrow$\,speaker frame, its sign
+becoming a polarity flip. With bass management enabled, the omnidirectional
+$W$ component (ACN~0) is low-passed to the subwoofer while the speaker feeds are
+high-passed --- which, summed at each output, is exactly the high-passed decoded
+speaker because the filters are linear. The matrix grows to expose the B-format
+inputs and the speaker (plus sub) outputs. Refine gains, delays and per-output
+FIR corrections in the matrix afterwards.
+
+\paragraph{Importing an IEM AllRADecoder.} As an alternative to the built-in
+sampling decoder, \textbf{Load IEM decoder\ldots} reads a \texttt{.json}
+configuration exported by the IEM \emph{AllRADecoder} (part of the IEM Plug-in
+Suite). AllRAD (all-round ambisonic decoding) handles irregular and
+hemispherical rigs better than a plain sampling decoder. The file's decode
+\texttt{Matrix} replaces the computed one; SuperMoTo converts it to its
+SN3D\,/\,ACN feed on the fly:
+\begin{itemize}[nosep]
+  \item if \texttt{ExpectedInputNormalization} is \texttt{n3d}, each coefficient
+        of ACN degree $n$ is multiplied by $\sqrt{2n+1}$ (N3D\,$\to$\,SN3D);
+  \item if \texttt{Weights} is \texttt{maxrE} and \texttt{WeightsAlreadyApplied}
+        is false, the per-degree max-rE gain is folded in;
+  \item \texttt{Routing} maps each matrix row to a hardware output channel;
+        \texttt{IsImaginary} loudspeakers (used only to regularise the decoder
+        design) carry no row and are skipped;
+  \item the loudspeaker layout supplies each speaker's azimuth / elevation, its
+        \textbf{Radius} (used by the radius compensation below) and its
+        per-speaker \textbf{Gain} (folded into the frame gain as a trim).
+\end{itemize}
+A gain matrix cannot encode time, so the imported decoder --- exactly like the
+built-in one --- carries \emph{no} delay: the radius delay below is the only
+time alignment, and it is optional.
+
+\paragraph{Radius compensation.} Ambisonic decoding assumes the speakers are
+equidistant from the centre. When they are not, the tool corrects for each
+\textbf{radius} $r_s$ relative to the \emph{farthest} speaker $r_{\max}$, writing
+a per-speaker output \textbf{delay} and \textbf{trim}:
+\begin{equation}
+  \Delta t_s = \frac{r_{\max}-r_s}{c}, \qquad
+  \Delta g_s = 20\log_{10}\frac{r_s}{r_{\max}} \;\;(\le 0),
+\end{equation}
+with $c=\SI{343}{\metre\per\second}$. Closer speakers are thus delayed (so all
+wavefronts reach the centre together) and attenuated (inverse-distance law); the
+reference being the farthest speaker, no channel is ever boosted or asked for a
+negative delay. Each part is independently optional --- \textbf{Write radius
+gain} and \textbf{Write radius delay} --- and both apply equally to the built-in
+and the imported (IEM) decoders; turning one off leaves that output property
+untouched, so an alignment or level already set (e.g.\ in the analysis pane)
+survives an Apply. The radius delay is independent of, and rides on top of, the
+inter-output FIR latency compensation (Section~\ref{sec:latencycomp}), which only
+equalises the FIR processing latency: the final arrival of a speaker is
+$\Delta t_s + l_{\max}$, so the radius alignment survives untouched.
+
+\paragraph{Measured vs.\ geometric alignment (do not double-count).} The
+geometric radius delay above and the \emph{measured} subwoofer time-alignment
+(Section~\ref{sec:timealign}) are \textbf{two routes to the same delay}, not two
+delays to add. When you run the per-output sub analysis for a main speaker $k$ at
+distance $d_k$ from the mic centroid, the main set has $d_k/c$ removed per file
+and the sub is anchored on that same delay, so the reported ``Mains delay'' is
+$\approx (d_{\mathrm{sub}}-d_k)/c$ plus the intrinsic group delay. Setting that
+on the output gives an acoustic-plus-electronic arrival of
+\begin{equation}
+  \underbrace{d_k/c}_{\text{acoustic}} + \underbrace{(d_{\mathrm{sub}}-d_k)/c}_{\text{electronic}}
+  = d_{\mathrm{sub}}/c,
+\end{equation}
+independent of $d_k$: every measured main lands at the same time as the sub
+\emph{and} as the other mains. So a per-speaker measured alignment already
+contains the path-length (radius) term --- and more accurately than an entered
+radius, since it uses the true acoustic path, references the same centroid as the
+average, and folds in the speakers' intrinsic group delay. Therefore:
+\begin{itemize}[nosep]
+  \item \textbf{Measured route} (best): run the sub analysis per main and set
+        each output delay to the reported value. To (re)build the decode without
+        clobbering those delays, turn \textbf{Write radius delay} off before
+        Apply --- the tool then writes the decode, the crossover and the radius
+        \emph{trim} (unless \textbf{Write radius gain} is also off) but leaves
+        each output's delay untouched. (Otherwise set the radii equal so the
+        geometric delay is zero.)
+  \item \textbf{Geometric route} (quick): enter the radii and let the tool write
+        the delay and trim; use this when there is no sub, or you have not
+        measured each speaker.
+\end{itemize}
+One thing the measured route does \emph{not} give you is level matching: the
+correction normalises each speaker to its own mid-band, so inter-speaker
+\textbf{amplitude} differences are not equalised. The radius \textbf{trim}
+$\Delta g_s$ (or a calibrated-SPL measurement) still handles that.
 
 % TODO(screenshot): the Configuration tool dialog with a 5.1 layout selected,
 % per-speaker input/output assignment, gains, and the crossover control.
@@ -475,7 +658,7 @@ crossover frequency, ready to Apply into one of the A--F configurations.}
 
 \section{Host-automatable parameters}
 The matrix settings themselves are deliberately \emph{not} exposed as host
-parameters: $6 \times 16 \times 16$ frames with $\sim$10 fields each would
+parameters: $6 \times 32 \times 32$ frames with $\sim$10 fields each would
 swamp any host. They are saved with the plugin state. Only the master
 controls are real host parameters:
 
@@ -816,7 +999,7 @@ corrected response, in magnitude and phase; with the nth-octave smoothing,
 correction-level, boost-ceiling and analysis-range controls, the subwoofer
 integration section (crossover, Invert, Mains delay), and the Export buttons.}
 
-\section{Transfer-function estimation (Welch method)}
+\section{Transfer-function estimation (Welch method)}\label{sec:welch}
 Load the set of measurement files of \emph{one} speaker, the microphone moved
 to several positions around the reference listening point. For each file the
 plugin estimates the loudspeaker--room transfer function
@@ -1166,6 +1349,16 @@ by moving the slider, and the on-screen message then states the exact delay
 (and which output) to dial in. Positive $t_a$ delays the main(s); negative
 delays the sub.
 
+\paragraph{Applying it with the FIR (\emph{Apply bulk delay}).} To avoid the
+manual matrix step, tick \textbf{Apply bulk delay}: \textbf{Export correction
+IR} then writes $t_a$ onto the assigned output's \textbf{delay} at the same time
+it loads the FIR, so the promised bulk delay and the residual-only correction
+land together. The value is clamped to the output's non-negative range, so a
+\emph{negative} $t_a$ (delay the sub instead) clamps to zero — in that case
+delay the subwoofer's output by $|t_a|$ by hand. This is the per-speaker measured
+route of Section~\ref{sec:ambisonics}: each main's exported delay equals its
+path-length term, so all mains (and the sub) arrive together at the centre.
+
 \subsection{The complete correction filter}\label{sec:fullfilter}
 Collecting the stages of Sections~\ref{sec:correction}--\ref{sec:fullfilter},
 the correction applied at each frequency bin is the single complex expression
@@ -1241,9 +1434,10 @@ absorbs automatically so all outputs stay time-aligned.
 \subsection{Minimum-phase rendering}\label{sec:minphase}
 When low latency matters more than phase accuracy — typically \textbf{monitoring
 while tracking} — the correction can instead be rendered as a
-\textbf{minimum-phase} filter built from its \emph{magnitude alone}. A
-minimum-phase response is the unique causal, stable response whose log-magnitude
-and phase form a Hilbert-transform pair, so it is fully determined by
+\textbf{minimum-phase} filter built from its \emph{magnitude alone}. As defined
+in Section~\ref{sec:minphasedef}, a minimum-phase response is the unique causal,
+stable response whose log-magnitude and phase form a Hilbert-transform pair
+(eq.~\eqref{eq:hilbert}), so it is fully determined by
 $|C(f)|$~\cite{OppenheimSchafer}. SuperMoTo computes it by the real-cepstrum
 method: with $c[n]=\mathcal{F}^{-1}\{\log|C|\}$ the real cepstrum, the
 minimum-phase log-spectrum is recovered by keeping its causal part,
@@ -1342,6 +1536,20 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
 \textbf{Exclusive} for A/B, non-exclusive to sum. Collapse
 (\textbf{$\blacktriangle$}) to a compact output-strip-only window.
 
+\section{E — Ambisonics monitoring}
+\begin{enumerate}[nosep]
+  \item Set the plugin bus large enough (e.g.\ 24 in/out for order 3: 16
+        B-format inputs, 16 speakers and a sub).
+  \item Config tool $\rightarrow$ \textbf{Ambisonics}, pick the \textbf{Order};
+        feed your B-format (AmbiX) onto inputs 1--$(\mathrm{order}+1)^2$.
+  \item Enter each loudspeaker's azimuth/elevation and output channel (start
+        from the default rig), keep bass management on, set the crossover, then
+        \textbf{Apply} (Section~\ref{sec:ambisonics}).
+  \item Measure and correct each speaker (workflow A) and phase-align the sub
+        (workflow B); the decode, corrections and latency compensation then run
+        together as one engine.
+\end{enumerate}
+
 %==============================================================================
 \chapter{Building from source}\label{ch:build}
 %==============================================================================
@@ -1360,13 +1568,254 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 \end{verbatim}
 
-Produced formats: VST3, AU, Standalone (16 discrete in / 16 discrete out).
+Produced formats: VST3, AU, Standalone (discrete in/out, selectable 8 / 16 /
+24 / 32, default 8).
 Continuous-integration builds for Linux, macOS (universal) and Windows are
 provided by the GitHub Actions workflow \texttt{.github/workflows/release.yml},
 triggered by pushing a version tag (\texttt{v\textit{X.Y.Z}}).
 
 \section{License}
 LGPL-3.0-or-later — \textcopyright{} 2023--2026 Olivier Doaré.
+
+%==============================================================================
+\appendix
+\chapter{Glossary}\label{ch:glossary}
+%==============================================================================
+
+Cross-references point to where each term is developed in the text.
+
+\begin{description}[style=nextline, leftmargin=0pt, font=\normalfont\bfseries]
+  \item[All-pass / excess phase] A factor with \emph{unit magnitude} that
+        changes only phase (eq.~\eqref{eq:minap}). It carries the
+        ``excess'' phase a response has beyond the minimum-phase minimum —
+        pure delay, reflections, out-of-phase summation. Not removable by a
+        stable causal filter; SuperMoTo deliberately \emph{adds} a short
+        all-pass to steer a main onto a subwoofer's phase
+        (Section~\ref{sec:timealign}).
+  \item[Cepstrum (real)] The inverse Fourier transform of the log-magnitude
+        spectrum, $c[n]=\mathcal{F}^{-1}\{\log|C|\}$. Keeping its causal part
+        reconstructs the minimum-phase response used for low-latency rendering
+        (Section~\ref{sec:minphase}).
+  \item[Coherence] The fraction of the measured output linearly explained by
+        the input at each frequency ($0$ to $1$); it quantifies how much a Welch
+        estimate can be trusted (Section~\ref{sec:welch}).
+  \item[Comb filtering] Regularly spaced peaks and notches produced when the
+        direct sound sums with a delayed copy (a reflection); wide-band and
+        tied to geometry (Section~\ref{ch:analysis}).
+  \item[Crossover] The frequency region where two drivers (e.g.\ main and
+        subwoofer) hand over. A flat sum there is a phase/timing problem as much
+        as a level one (Section~\ref{sec:timealign}).
+  \item[FIR (finite impulse response) filter] A filter that convolves the
+        signal with a finite list of coefficients (the impulse response). The
+        exported correction is an FIR loaded per output; length $N$ sets the
+        frequency resolution $f_s/N$ and, if linear-phase, the latency $N/2$.
+  \item[Group delay] $-\,\mathrm{d}(\arg H)/\mathrm{d}\omega$: the delay a
+        response imposes near each frequency. Used to auto-detect the main/sub
+        offset (Section~\ref{sec:timealign}).
+  \item[$H_1$ estimator] The cross-spectrum / input auto-spectrum ratio
+        $S_{xy}/S_{xx}$ averaged over Welch segments; the noise-robust transfer
+        function SuperMoTo measures (Section~\ref{sec:welch}).
+  \item[Hilbert transform] The operator linking log-magnitude and phase of a
+        minimum-phase response (eq.~\eqref{eq:hilbert}); lets phase be recovered
+        from magnitude (Section~\ref{sec:minphasedef}).
+  \item[Impulse response (IR)] A system's output to a unit impulse; the
+        time-domain twin of the transfer function. Exported as a wav for the
+        FIR engine and the measured-response file (Section~\ref{sec:render}).
+  \item[Inter-output latency compensation] Automatic per-output delay so every
+        engaged output stays time-aligned with the longest FIR's bulk latency
+        (Chapter~\ref{ch:matrix}); shown by a gold LED on the output.
+  \item[Linear-phase] A filter whose phase is exactly linear in frequency, i.e.\
+        a pure delay across the band; it can impose an arbitrary phase
+        correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
+  \item[Minimum-phase] A causal, stable response whose inverse is also causal
+        and stable (all poles and zeros inside the unit circle) — the only kind
+        that is fully invertible by a realisable filter. Defined physically and
+        mathematically in Section~\ref{sec:minphasedef}.
+  \item[Polarity (Invert)] A frequency-independent $180^\circ$ sign flip, as
+        opposed to a delay (which is frequency-dependent). \textbf{Invert} flips
+        a subwoofer wired out of polarity (Section~\ref{sec:timealign}).
+  \item[Regularization] Bounding the inverse where the measured magnitude is
+        tiny, so deep notches do not demand infinite boost; here a soft-knee
+        (\texttt{tanh}) ceiling on the correction gain (Section~\ref{sec:correction}).
+  \item[Room mode] A standing-wave resonance of the room producing large,
+        strongly position-dependent peaks and dips at low frequency, with
+        audible ringing (Section~\ref{ch:analysis}).
+  \item[SBIR] Speaker--boundary interference response: the cancellation dip in
+        the upper bass set by the speaker-to-wall distance
+        (Section~\ref{ch:analysis}).
+  \item[Smoothing (fractional-octave)] Averaging the complex response over a
+        proportional bandwidth (e.g.\ $1/6$ octave), finer in the bass and
+        coarser in the treble, so the correction follows trends rather than
+        single-seat interference (Chapter~\ref{ch:analysis}).
+  \item[Spatial averaging] Averaging the (delay-aligned) responses of several
+        microphone positions, so the correction targets what is consistent
+        across the listening area rather than one seat (Section~\ref{sec:spatialavg}).
+  \item[Transfer function] The complex ratio $H(f)=Y(f)/X(f)$ of output to input
+        spectrum — magnitude and phase together — that describes a linear system
+        (Section~\ref{sec:welch}).
+  \item[Welch method] Power/cross-spectra estimated by averaging windowed,
+        overlapping FFT segments; trades resolution for variance to give a
+        usable in-room transfer function (Section~\ref{sec:welch}).
+\end{description}
+
+%==============================================================================
+\chapter{Ambisonics primer}\label{ch:ambiprimer}
+%==============================================================================
+This appendix gives the background behind the Ambisonics decoders the
+configuration tool generates (Section~\ref{sec:ambisonics}): the spherical-harmonic
+representation, the orders, the AmbiX (ACN/SN3D) convention, how a decoder is
+computed, and the max-\(r_E\) weighting.
+
+\section{The idea: encode the field, decode to the rig}
+Ambisonics represents a \emph{sound field} around a central point as a set of
+\textbf{spherical-harmonic (SH) components}, independently of any loudspeaker
+layout~\cite{Gerzon1973,Daniel2000}. A unit-amplitude plane wave arriving from
+direction \(\Omega=(\theta,\varphi)\) (azimuth \(\theta\), elevation \(\varphi\))
+carrying signal \(s\) is \textbf{encoded} into channels
+\begin{equation}
+  B_j = Y_j(\Omega)\,s ,
+\end{equation}
+where the \(Y_j\) are the spherical harmonics; a whole field is the superposition
+over all incident directions. Because the encoding does not mention speakers, one
+B-format signal can be \textbf{decoded} to any rig. Reproduction truncates the
+expansion at a finite \textbf{order} \(N\), which sets the angular resolution and
+the size of the region around the centre where the field is faithfully
+reconstructed.
+
+\section{Spherical harmonics}
+The real spherical harmonics \(Y_n^m\) have a \textbf{degree} \(n\ge 0\) and an
+\textbf{order} \(m\in[-n,n]\); they form an orthogonal basis on the sphere, and
+degree \(n\) carries the angular detail of that order. Writing the unit direction
+as
+\begin{equation}
+  x=\cos\varphi\cos\theta,\quad y=\cos\varphi\sin\theta,\quad z=\sin\varphi,
+\end{equation}
+the SN3D-normalised real harmonics used by SuperMoTo are, up to third degree,
+\begin{align*}
+  n=0:\;& Y_0 = 1,\\
+  n=1:\;& Y_1 = y,\quad Y_2 = z,\quad Y_3 = x,\\
+  n=2:\;& Y_4=\sqrt{3}\,xy,\; Y_5=\sqrt{3}\,yz,\; Y_6=\tfrac12(3z^2-1),\;
+          Y_7=\sqrt{3}\,xz,\; Y_8=\tfrac{\sqrt3}{2}(x^2-y^2),\\
+  n=3:\;& Y_9=\sqrt{\tfrac58}\,y(3x^2-y^2),\; Y_{10}=\sqrt{15}\,xyz,\;
+          Y_{11}=\sqrt{\tfrac38}\,y(5z^2-1),\; Y_{12}=\tfrac12 z(5z^2-3),\\
+        & Y_{13}=\sqrt{\tfrac38}\,x(5z^2-1),\; Y_{14}=\tfrac{\sqrt{15}}{2}z(x^2-y^2),\;
+          Y_{15}=\sqrt{\tfrac58}\,x(x^2-3y^2).
+\end{align*}
+Each is scaled so its maximum magnitude over the sphere is \(1\) (the SN3D
+convention, below).
+
+\section{Ambisonic order}
+An order-\(N\) signal keeps every degree \(n\le N\). In 3D (\textbf{periphonic})
+that is
+\begin{equation}
+  K = (N+1)^2 \quad\text{channels},
+\end{equation}
+so orders 1/2/3 use 4/9/16 channels and need at least that many loudspeakers to
+decode. A horizontal-only (\textbf{pantophonic}) signal keeps just \(m=\pm n\),
+giving \(2N+1\) channels. Higher order narrows the directional ``beam'' of each
+harmonic, improving localisation and enlarging the usable listening area, at the
+cost of more channels and speakers (Table~\ref{tab:ambiorder}).
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccc}
+\toprule
+Order \(N\) & 3D channels \((N+1)^2\) & 2D channels \(2N+1\) & default rig in the tool\\
+\midrule
+1 & 4  & 3 & 8 (cube)\\
+2 & 9  & 5 & 12 (icosahedron)\\
+3 & 16 & 7 & 16 (dome)\\
+\bottomrule
+\end{tabular}
+\caption{Ambisonic order vs.\ channel count and the configuration tool's default
+periphonic rig.}
+\label{tab:ambiorder}
+\end{table}
+
+\section{The AmbiX convention: ACN and SN3D}
+Two choices must be fixed to exchange B-format: the channel \emph{ordering} and
+the \emph{normalisation}. The modern standard is \textbf{AmbiX}~\cite{NachbarAmbiX2011}:
+\begin{itemize}[nosep]
+  \item \textbf{ACN} (Ambisonic Channel Number) orders the channels by the single
+        index
+        \begin{equation}
+          j = n^2 + n + m ,
+        \end{equation}
+        so \(j=0,1,2,3,\dots\) are \(W,\,Y,\,Z,\,X,\dots\) — note \(Y\) (\(m=-1\))
+        before \(Z\) (\(m=0\)) before \(X\) (\(m=+1\)).
+  \item \textbf{SN3D} (Schmidt semi-normalisation) scales each harmonic so its
+        peak magnitude is \(1\); it relates to the fully orthonormal N3D form by
+        \(Y^{\mathrm{SN3D}}_n = Y^{\mathrm{N3D}}_n/\sqrt{2n+1}\).
+\end{itemize}
+This supersedes the legacy \textbf{FuMa} (Furse-Malham) ordering
+\(W,X,Y,Z,\dots\) with its \(1/\sqrt2\) weighting on \(W\), which was limited to
+third order. SuperMoTo expects AmbiX on the first \(K\) plugin inputs.
+
+\section{Decoding}
+A \textbf{decoder} maps the \(K\) B-format channels to \(L\) loudspeaker feeds.
+Collect the speaker directions in the \(K\times L\) \emph{re-encoding} matrix
+\(\mathbf{C}\) with \(C_{j,s}=Y_j(\Omega_s)\): driving the speakers with gains
+\(\mathbf g\) re-creates the components \(\mathbf{C}\,\mathbf g\). A good decode
+\(\mathbf D\) (\(\mathbf g = \mathbf D\,\mathbf b\)) makes that match the input
+\(\mathbf b\), i.e.\ \(\mathbf{C}\mathbf{D}\approx\mathbf I\). The general
+solution is the \textbf{mode-matching} pseudo-inverse \(\mathbf D=\mathbf C^{+}\).
+For a \emph{near-uniform} layout the harmonics stay orthogonal when sampled at the
+speakers, \(\mathbf{C}\mathbf{C}^{\mathsf T}\!\approx\!\tfrac{L}{K}\mathbf I\),
+and the pseudo-inverse collapses to the scaled transpose — the
+\textbf{sampling (projection) decoder}
+\begin{equation}
+  D_{s,j} \;=\; \frac{1}{L}\,Y_j(\Omega_s),
+  \label{eq:basicdecode}
+\end{equation}
+which is what the tool builds. It is exact for ideal layouts and degrades
+gracefully for mildly irregular ones; strongly irregular rigs are better served
+by an explicit pseudo-inverse or AllRAD decoder, which is why the tool also lets
+you trim each speaker's gain/angle/radius by hand.
+
+\section{The max-\texorpdfstring{\(r_E\)}{rE} weighting}
+At the centre, localisation is governed by two cues: the \textbf{velocity vector}
+\(\mathbf r_V\) (low frequency, from the summed particle velocity) and the
+\textbf{energy vector} \(\mathbf r_E\) (above \(\sim\!700\,\)Hz, from the summed
+energy)~\cite{Daniel2000,ZotterFrank2019}. The basic decoder of
+\eqref{eq:basicdecode} makes \(|\mathbf r_V|=1\) (correct low-frequency cue) but
+spreads energy, so \(|\mathbf r_E|<1\). The \textbf{max-\(r_E\)} decoder applies a
+per-degree gain \(a_n\) to maximise \(|\mathbf r_E|\),
+\begin{equation}
+  D_{s,j} \;=\; \frac{1}{L}\,a_{n(j)}\,Y_j(\Omega_s),
+\end{equation}
+where the optimal weights are samples of the Legendre polynomials,
+\begin{equation}
+  a_n = P_n\!\left(r_E^{\max}\right),
+\end{equation}
+with \(r_E^{\max}\) the largest root of \(P_{N+1}(x)\) (the order-\(N\) energy
+limit). Normalised to \(a_0=1\), the values used by SuperMoTo are listed in
+Table~\ref{tab:maxre}. Max-\(r_E\) slightly widens phantom sources but markedly
+improves directional stability and timbre across the listening area, so it is the
+default for monitoring.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccccc}
+\toprule
+Order \(N\) & \(r_E^{\max}\) & \(a_0\) & \(a_1\) & \(a_2\) & \(a_3\)\\
+\midrule
+1 & 0.5774 & 1 & 0.5774 & --     & --\\
+2 & 0.7746 & 1 & 0.7746 & 0.4000 & --\\
+3 & 0.8611 & 1 & 0.8611 & 0.6123 & 0.3047\\
+\bottomrule
+\end{tabular}
+\caption{max-\(r_E\) per-degree gains (normalised \(a_0=1\)), from the largest
+root of \(P_{N+1}\).}
+\label{tab:maxre}
+\end{table}
+
+In SuperMoTo the resulting matrix is finally scaled so an on-axis plane wave
+decodes to about unity at the nearest speaker, written as harmonic\,\(\rightarrow\)\,speaker
+frames, and combined with the radius compensation and bass management of
+Section~\ref{sec:ambisonics}. For deeper treatments see Zotter \&
+Frank~\cite{ZotterFrank2019} and Daniel~\cite{Daniel2000}.
 
 %==============================================================================
 \begin{thebibliography}{99}
@@ -1428,6 +1877,25 @@ S.~H. Linkwitz, ``Active crossover networks for noncoincident drivers,''
 \bibitem{Gardner1995}
 W.~G. Gardner, ``Efficient convolution without input-output delay,''
 \textit{J. Audio Eng. Soc.}, vol.~43, no.~3, pp.~127--136, 1995.
+
+\bibitem{Gerzon1973}
+M.~A. Gerzon, ``Periphony: With-height sound reproduction,''
+\textit{J. Audio Eng. Soc.}, vol.~21, no.~1, pp.~2--10, 1973.
+
+\bibitem{Daniel2000}
+J.~Daniel, \textit{Représentation de champs acoustiques, application à la
+transmission et à la reproduction de scènes sonores complexes dans un contexte
+multimédia}. PhD thesis, Université Paris~6, 2000. (Ambisonic encoding/decoding,
+$r_V$/$r_E$ and max-$r_E$.)
+
+\bibitem{NachbarAmbiX2011}
+C.~Nachbar, F.~Zotter, E.~Deleflie, and A.~Sontacchi, ``AmbiX --- a suggested
+ambisonics format,'' in \textit{Proc. 3rd Ambisonics Symposium}, Lexington, 2011.
+
+\bibitem{ZotterFrank2019}
+F.~Zotter and M.~Frank, \textit{Ambisonics: A Practical 3D Audio Theory for
+Recording, Studio Production, Sound Reinforcement, and Virtual Reality}. Cham:
+Springer, 2019 (open access).
 
 \end{thebibliography}
 

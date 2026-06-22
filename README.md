@@ -2,8 +2,8 @@
 
 SuperMoTo is an FX-Mechanics JUCE audio plugin for the monitoring section,
 the big brother of [MoTo](https://github.com/odoare/MoTo). It manages
-multiple loudspeaker systems and subwoofers through a full 16x16 routing
-matrix, and embeds the tools to measure the speakers, design FIR correction
+multiple loudspeaker systems and subwoofers through a routing matrix of up to
+32x32, and embeds the tools to measure the speakers, design FIR correction
 curves and integrate a subwoofer in phase with the mains.
 
 Every page has an **info button (i)** in its corner with a summary of the
@@ -11,14 +11,17 @@ controls and shortcuts.
 
 ## Part 1 — Monitoring matrix
 
-- Full **16x16 input/output matrix**. Each frame (crosspoint) has:
-  - gain, **IIR filter** (lowpass / highpass / bandpass, 2nd or 4th order,
-    frequency, Q), **phase inversion** and **delay** (0..100 ms, fractional),
-  - its own **vu-meter**, and a checkbox to show its signal on the analyzer.
-- **One FIR filter per output** (WDL convolution, zero latency) to
-  compensate the frequency response of the attached loudspeaker —
-  impulse responses are loaded from wav files (right-click an output cell).
-- Per-output trim and vu-meter.
+- **Input/output matrix up to 32x32** (default 8 in / 8 out; choose the active
+  size with the Inputs/Outputs selectors). Each frame (crosspoint) is a routing
+  cell: **gain**, **phase inversion**, its own **vu-meter** and a checkbox to
+  show its signal on the analyzer.
+- **Per-output (per-speaker) processing**, edited by clicking an output cell:
+  - **trim**, a **4-band EQ** (lowpass / highpass / bandpass for the
+    bass-management crossover, peaking for correction; 2nd or 4th order),
+  - a **time-alignment delay** (0..100 ms, fractional),
+  - **one FIR correction filter** (WDL convolution, zero latency) loaded from a
+    wav file (Load IR… in the editor, or right-click an output cell),
+  - an output **vu-meter** and analyzer checkbox.
 - **Automatic inter-output latency compensation**: when outputs that are fed
   by the engaged preset carry FIRs of different lengths, the shorter (or
   FIR-less) outputs are delayed so all stay time-aligned with the longest
@@ -32,11 +35,19 @@ controls and shortcuts.
   bar buttons in exclusive or non-exclusive mode (non-exclusive sums the
   active matrices). The edited configuration is selected with the
   "Edit: A..F" buttons above the analyzer.
-- **Configuration tool** for standard layouts (2.0, 2.1, 4.0, 5.1, 7.1):
-  choose the inputs/outputs of each speaker, gains and the bass-management
-  crossover; the mains are highpassed and their sum is sent lowpassed to
-  the subwoofer output. Apply writes the frames into a configuration,
-  which can then be fine-tuned in the matrix.
+- **Configuration tool** for standard layouts (2.0, 2.1, 4.0, 4.1, 5.1, 7.1)
+  and **periphonic Ambisonics** (orders 1-3): choose the inputs/outputs of each
+  speaker, gains and the bass-management crossover; the mains are highpassed and
+  their sum is sent lowpassed to the subwoofer output. For Ambisonics, set each
+  loudspeaker's azimuth/elevation/radius and Apply builds the AmbiX (ACN / SN3D)
+  max-rE sampling decoder (B-format on inputs 1..(order+1)^2; bass management
+  lowpasses W to the sub). The **Speakers** control sets the output count
+  (canonical 8/12/16, or any count laid out on a near-uniform sphere).
+  **Radius compensation** delays and attenuates closer speakers (referenced to
+  the farthest) so an irregular rig still sums correctly at the centre; turn off
+  **Write delay compensation** to apply the decode without overwriting delays you
+  already set by hand (e.g. after measured alignment). Apply writes the frames
+  into a configuration, which can then be fine-tuned in the matrix.
 
 Matrix interactions: click = select frame (editor panel at bottom right),
 double-click = activate, vertical drag = gain, alt+click = analyzer trace,
@@ -169,7 +180,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Formats: VST3, AU, Standalone (16 discrete in / 16 discrete out).
+Formats: VST3, AU, Standalone (discrete in/out, selectable 8 / 16 / 24 / 32,
+default 8).
 
 ## License
 
