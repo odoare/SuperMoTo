@@ -169,7 +169,7 @@ private:
     int  nAvg  = 4;                             // averaged over ~nAvg frames
 
     // dB-axis zoom/pan (drag) state.
-    static constexpr float dbFloor = -140.0f, dbCeil = 40.0f, dbMinSpan = 10.0f;
+    static constexpr float dbFloor = -200.0f, dbCeil = 200.0f, dbMinSpan = 10.0f;
     bool dragging = false;
     float dragStartY = 0.0f, dragStartMin = -100.0f, dragStartMax = 10.0f;
 

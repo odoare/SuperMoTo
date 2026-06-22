@@ -276,7 +276,7 @@ public:
     //==========================================================================
     // Mouse interaction over the magnitude panel zooms/pans the dB axis:
     // wheel = zoom around the cursor, drag = pan, double-click = reset.
-    static constexpr float dbFloor = -90.0f, dbCeil = 60.0f, dbMinSpan = 5.0f;
+    static constexpr float dbFloor = -200.0f, dbCeil = 200.0f, dbMinSpan = 5.0f;
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
     {
