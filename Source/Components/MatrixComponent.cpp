@@ -19,6 +19,7 @@ MatrixComponent::MatrixComponent (ConfigModel& m, MatrixEngine& e)
     model.addListener (this);
     startTimerHz (20);      // vu-meter refresh
     setOpaque (false);
+    setWantsKeyboardFocus (true);   // arrow-key navigation + single-key actions
 }
 
 MatrixComponent::~MatrixComponent()
@@ -351,6 +352,114 @@ void MatrixComponent::mouseDoubleClick (const juce::MouseEvent& e)
     selStrip = -1;
     if (onFrameSelected != nullptr)
         onFrameSelected (in, out);
+}
+
+void MatrixComponent::selectCell (int row, int col)
+{
+    col = juce::jlimit (0, model.getNumOuts() - 1, col);
+
+    if (row < 0)
+    {
+        selStrip = col;
+        selIn = selOut = -1;
+        if (onOutputSelected != nullptr)
+            onOutputSelected (col);
+    }
+    else
+    {
+        selIn = juce::jlimit (0, model.getNumIns() - 1, row);
+        selOut = col;
+        selStrip = -1;
+        if (onFrameSelected != nullptr)
+            onFrameSelected (selIn, selOut);
+    }
+    repaint();
+}
+
+bool MatrixComponent::keyPressed (const juce::KeyPress& key)
+{
+    const int numIns = model.getNumIns();
+    const int numOuts = model.getNumOuts();
+    if (numOuts <= 0)
+        return false;
+
+    // ── Navigation: arrows move the selection (output strip = row -1), wrapping.
+    const bool left  = key.isKeyCode (juce::KeyPress::leftKey);
+    const bool right = key.isKeyCode (juce::KeyPress::rightKey);
+    const bool up    = key.isKeyCode (juce::KeyPress::upKey);
+    const bool down  = key.isKeyCode (juce::KeyPress::downKey);
+
+    if (left || right || up || down)
+    {
+        // Current position. row -1 = output strip, 0..numIns-1 = input rows.
+        int row, col;
+        if      (selStrip >= 0) { row = -1;    col = selStrip; }
+        else if (selIn >= 0)    { row = selIn; col = selOut; }
+        else                    { row = -1;    col = 0; }       // nothing selected yet
+
+        if (left || right)
+        {
+            col = (col + (right ? 1 : -1) + numOuts) % numOuts;
+        }
+        else
+        {
+            // Vertical list folds the strip in as index 0, inputs as 1..numIns.
+            const int rows = numIns + 1;
+            int idx = (row + 1 + (down ? 1 : -1) + rows) % rows;
+            row = idx - 1;
+        }
+
+        selectCell (row, col);
+        return true;
+    }
+
+    // ── Single-key actions on the current selection ─────────────────────────
+    const juce_wchar ch = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
+    const bool plus  = ch == '+' || ch == '=' || key.isKeyCode (juce::KeyPress::numberPadAdd);
+    const bool minus = ch == '-' || ch == '_' || key.isKeyCode (juce::KeyPress::numberPadSubtract);
+
+    if (selIn >= 0 && selOut >= 0)          // a frame is selected
+    {
+        auto f = model.getFrame (editConfig, selIn, selOut);
+        bool handled = true;
+        if      (ch == 'a')  f.active      = ! f.active;
+        else if (ch == 'p')  f.phaseInvert = ! f.phaseInvert;
+        else if (ch == 'n')  f.spectrum    = ! f.spectrum;
+        else if (plus)       f.gainDb = juce::jlimit (-60.0f, 12.0f, f.gainDb + 0.1f);
+        else if (minus)      f.gainDb = juce::jlimit (-60.0f, 12.0f, f.gainDb - 0.1f);
+        else                 handled = false;
+
+        if (handled)
+        {
+            model.setFrame (editConfig, selIn, selOut, f);
+            return true;
+        }
+        return false;
+    }
+
+    if (selStrip >= 0)                       // an output (top strip) is selected
+    {
+        auto s = model.getOutput (selStrip);
+        bool handled = true, firChanged = false;
+        if      (ch == 'n')  s.spectrum = ! s.spectrum;
+        else if (ch == 'f') { s.firOn = ! s.firOn; firChanged = true; }
+        else if (plus)       s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb + 0.1f);
+        else if (minus)      s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb - 0.1f);
+        else if (ch >= '1' && ch < juce_wchar ('1' + smt::numFrameBands))
+            s.bands[(size_t) (ch - '1')].on = ! s.bands[(size_t) (ch - '1')].on;
+        else                 handled = false;
+
+        if (handled)
+        {
+            model.setOutput (selStrip, s);
+            if (firChanged)
+                engine.updateFirFiles();
+            return true;
+        }
+        return false;
+    }
+
+    return false;
 }
 
 void MatrixComponent::mouseMove (const juce::MouseEvent& e)

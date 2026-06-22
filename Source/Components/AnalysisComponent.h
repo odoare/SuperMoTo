@@ -84,9 +84,9 @@ public:
 
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        levelSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
         levelSlider.setRange (0.0, 1.0, 0.01);
         levelSlider.setValue (1.0, juce::dontSendNotification);
+        levelSlider.setDoubleClickReturnValue (true, 1.0);
         SuperMoToTheme::accentSlider (levelSlider, SuperMoToTheme::master);
         levelSlider.onValueChange = [this]
         {
@@ -97,9 +97,9 @@ public:
 
         addLabel (boostLabel, "Max boost");
         boostSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        boostSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
         boostSlider.setRange (0.0, 24.0, 0.5);
         boostSlider.setValue (12.0, juce::dontSendNotification);
+        boostSlider.setDoubleClickReturnValue (true, 12.0);
         boostSlider.setTextValueSuffix (" dB");
         SuperMoToTheme::accentSlider (boostSlider, SuperMoToTheme::master);
         boostSlider.onValueChange = [this]
@@ -215,10 +215,11 @@ public:
         // the mains; the correction is then designed for the residual only.
         addLabel (alignLabel, "Mains delay");
         alignSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        alignSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 18);
         alignSlider.setRange (-40.0, 40.0, 0.1);
         alignSlider.setValue (0.0, juce::dontSendNotification);
+        alignSlider.setDoubleClickReturnValue (true, 0.0);
         alignSlider.setTextValueSuffix (" ms");
+        alignSlider.getProperties().set ("drawFromCentre", true);   // bipolar: fill from 0
         SuperMoToTheme::accentSlider (alignSlider, SuperMoToTheme::mono);
         alignSlider.onValueChange = [this]
         {
@@ -932,7 +933,7 @@ private:
     juce::Label micCalInfo;
     juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel;
     juce::Label alignLabel, alignInfo;
-    juce::Slider boostSlider, alignSlider;
+    fxme::FxmeSlider boostSlider, alignSlider;
     float recommendedAlignMs = 0.0f;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
@@ -945,7 +946,7 @@ private:
     bool cursorInPlot = false;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ToggleButton subInvertToggle, applyDelayToggle;
-    juce::Slider levelSlider;
+    fxme::FxmeSlider levelSlider;
 
     juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;

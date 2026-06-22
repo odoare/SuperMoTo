@@ -51,6 +51,10 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
+    /** Arrow keys move the selection across the grid and the output strip
+        (with wrap-around); single keys act on the selected frame/output. */
+    bool keyPressed (const juce::KeyPress&) override;
+
     /** Tooltip for the cell currently under the mouse (e.g. latency comp). */
     juce::String getTooltip() override;
 
@@ -104,6 +108,11 @@ private:
     void showFrameMenu (int in, int out);
     void showOutputMenu (int out);
     void loadIrForOutput (int out);
+
+    // Select a cell for keyboard navigation. row < 0 = output strip (col is the
+    // output); otherwise the frame at (row = input, col = output). Fires the
+    // matching selection callback so the detail editor follows.
+    void selectCell (int row, int col);
 
     smt::ConfigModel& model;
     smt::MatrixEngine& engine;

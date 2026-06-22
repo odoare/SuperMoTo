@@ -336,6 +336,11 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "collapses to the output strip only.\n"
                 "Bottom bar: matrix size, Edit A-F (view/edit a config without engaging it), "
                 "and the page switch.\n\n"
+                "Keyboard (click a cell first to give the matrix focus):\n"
+                " - Arrow keys: move the selection across the grid and the output strip "
+                "(top row); left/right and up/down both wrap around\n"
+                " - On a frame: A active, P phase, N analyzer, +/- gain \xc2\xb1 0.1 dB\n"
+                " - On an output: F FIR, 1-4 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
                 "Analyzer: click the avg/peak badge (bottom-right) to switch aggregation.";
             break;
 
