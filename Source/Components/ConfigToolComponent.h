@@ -34,6 +34,8 @@
 #include <cmath>
 #include "../Model/ConfigModel.h"
 #include "../Dsp/AmbisonicsDecode.h"
+#include "../Dsp/IemDecoder.h"
+#include "../AppSettings.h"
 #include "../Theme.h"
 
 class ConfigToolComponent : public juce::Component
@@ -94,10 +96,26 @@ public:
         addLabel (numSpkLabel, "Speakers");
         numSpkLabel.setVisible (false);
 
-        writeDelayToggle.setButtonText ("Write delay compensation");
+        // Radius (distance) compensation toggles, applied to both the built-in
+        // decoder and the imported IEM one. Gain = inverse-distance trim, delay
+        // = time alignment to the farthest speaker. Either can be skipped to
+        // preserve alignment/level already set on the outputs (e.g. from the
+        // analysis pane).
+        writeGainToggle.setButtonText ("Write radius gain");
+        writeGainToggle.setToggleState (true, juce::dontSendNotification);
+        SuperMoToTheme::accentToggleButton (writeGainToggle, SuperMoToTheme::dim);
+        addChildComponent (writeGainToggle);
+
+        writeDelayToggle.setButtonText ("Write radius delay");
         writeDelayToggle.setToggleState (true, juce::dontSendNotification);
         SuperMoToTheme::accentToggleButton (writeDelayToggle, SuperMoToTheme::dim);
         addChildComponent (writeDelayToggle);
+
+        // Import an IEM AllRADecoder .json as the decode matrix (Ambisonics only).
+        loadIemButton.setButtonText ("Load IEM decoder...");
+        loadIemButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (0.8f));
+        loadIemButton.onClick = [this] { loadIemDecoder(); };
+        addChildComponent (loadIemButton);
 
         layoutBox.setSelectedId (2);    // default to 2.1 — builds the rows
     }
@@ -155,8 +173,18 @@ public:
             top.removeFromLeft (24);
             numSpkLabel.setBounds (top.removeFromLeft (60));
             numSpkSlider.setBounds (top.removeFromLeft (150));
-            top.removeFromLeft (16);
-            writeDelayToggle.setBounds (top.removeFromLeft (230));
+        }
+
+        // Ambisonics tools row: IEM import + radius-compensation toggles.
+        if (ambi)
+        {
+            area.removeFromTop (8);
+            auto tools = area.removeFromTop (24);
+            loadIemButton.setBounds (tools.removeFromLeft (170));
+            tools.removeFromLeft (20);
+            writeGainToggle.setBounds (tools.removeFromLeft (170));
+            tools.removeFromLeft (16);
+            writeDelayToggle.setBounds (tools.removeFromLeft (170));
         }
 
         area.removeFromTop (8);
@@ -238,7 +266,9 @@ private:
         const bool ambi = isAmbisonics();
         numSpkSlider.setVisible (ambi);
         numSpkLabel.setVisible (ambi);
+        writeGainToggle.setVisible (ambi);
         writeDelayToggle.setVisible (ambi);
+        loadIemButton.setVisible (ambi);
 
         if (ambi)
         {
@@ -446,15 +476,18 @@ private:
         model.setOutput (out, s);
     }
 
-    // Sets up a periphonic loudspeaker output: the radius compensation (trim,
-    // and the delay unless writeDelay is false) and the highpass crossover.
-    // Skipping the delay preserves any existing alignment already on the output.
-    void setSpeakerOutput (int out, float fc, bool bm, float gainDb, float delayMs, bool writeDelay)
+    // Sets up a periphonic loudspeaker output: the radius compensation (gain
+    // and/or delay, each optional) and the highpass crossover. Skipping gain or
+    // delay preserves whatever level/alignment is already on the output (e.g.
+    // set in the analysis pane).
+    void setSpeakerOutput (int out, float fc, bool bm, float gainDb, float delayMs,
+                           bool writeGain, bool writeDelay)
     {
         if (out < 0 || out >= smt::numChannels)
             return;
         auto s = model.getOutput (out);
-        s.gainDb  = gainDb;
+        if (writeGain)
+            s.gainDb = gainDb;
         if (writeDelay)
             s.delayMs = delayMs;
         auto& b = s.bands[0];
@@ -543,6 +576,7 @@ private:
         const int H = smt::ambisonics::numHarmonics (order);     // 4 / 9 / 16
         const float fc = (float) crossover.getValue();
         const bool bm = bassManagement.getToggleState();
+        const bool writeGain  = writeGainToggle.getToggleState();
         const bool writeDelay = writeDelayToggle.getToggleState();
 
         // Gather the loudspeaker directions, outputs, trims and radii.
@@ -596,7 +630,7 @@ private:
                                                       (float) (20.0 * std::log10 (r / rMax)));
             const float radiusDelayMs = juce::jlimit (0.0f, smt::maxDelayMs,
                                                       (float) ((rMax - r) / speedOfSound * 1000.0));
-            setSpeakerOutput (out, fc, bm, radiusGainDb, radiusDelayMs, writeDelay);   // crossover + radius comp
+            setSpeakerOutput (out, fc, bm, radiusGainDb, radiusDelayMs, writeGain, writeDelay);
         }
 
         int neededOuts = maxOut + 1;
@@ -624,7 +658,115 @@ private:
                         + juce::String ((int) dirs.size()) + " speakers ("
                         + juce::String (H) + " B-format inputs) " + emdash + " config "
                         + smt::configName (target)
-                        + (writeDelay ? ", radius delay+trim" : ", radius trim only (delays kept)")
+                        + ", " + radiusCompText (writeGain, writeDelay)
+                        + (bm ? ", sub = W lowpass." : ", no bass management."),
+                        juce::dontSendNotification);
+    }
+
+    // Describes which radius compensations were written (for the status line).
+    static juce::String radiusCompText (bool writeGain, bool writeDelay)
+    {
+        if (writeGain && writeDelay) return "radius gain+delay";
+        if (writeGain)               return "radius gain (delay kept)";
+        if (writeDelay)              return "radius delay (gain kept)";
+        return "radius comp off (gain/delay kept)";
+    }
+
+    void loadIemDecoder()
+    {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Load an IEM AllRADecoder configuration",
+            smt::getLastBrowseDir(), "*.json");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto f = fc.getResult();
+                if (f == juce::File())
+                    return;
+                smt::setLastBrowseDir (f);
+                const auto dec = smt::IemDecoder::fromFile (f);
+                if (! dec.isValid())
+                {
+                    status.setText ("IEM import failed: " + dec.error, juce::dontSendNotification);
+                    return;
+                }
+                applyIemDecoder (dec);
+            });
+    }
+
+    // Writes an imported IEM decoder into the target configuration: one frame
+    // per non-negligible matrix coefficient (input = harmonic, output =
+    // speaker), the per-speaker Gain folded into the frame gain, and the radius
+    // gain/delay compensation on each output (each optional). Mirrors
+    // applyAmbisonics but takes the matrix and layout from the file.
+    void applyIemDecoder (const smt::IemDecoder& dec)
+    {
+        const int target = targetBox.getSelectedId() - 1;
+        if (target < 0)
+            return;
+
+        model.clearConfig (target);
+
+        const float fc = (float) crossover.getValue();
+        const bool  bm = bassManagement.getToggleState();
+        const bool  writeGain  = writeGainToggle.getToggleState();
+        const bool  writeDelay = writeDelayToggle.getToggleState();
+        const int   H = dec.numHarmonics;
+
+        float rMax = 0.3f;
+        for (const auto& sp : dec.speakers)
+            rMax = std::max (rMax, sp.radius);
+
+        int maxOut = 0;
+        for (const auto& sp : dec.speakers)
+        {
+            const int out = sp.output;
+            if (out < 0 || out >= smt::numChannels)
+                continue;
+            maxOut = std::max (maxOut, out);
+
+            const float trimDb = sp.gainLinear > 0.0f ? (float) (20.0 * std::log10 (sp.gainLinear)) : 0.0f;
+            for (int j = 0; j < H; ++j)
+            {
+                const double coeff = sp.coeffs[(size_t) j];
+                if (std::abs (coeff) < 1.0e-4)
+                    continue;
+                smt::FrameSettings f;
+                f.active = true;
+                f.gainDb = (float) (20.0 * std::log10 (std::abs (coeff))) + trimDb;
+                f.phaseInvert = coeff < 0.0;
+                model.setFrame (target, j, out, f);
+            }
+
+            const float r = juce::jmax (0.3f, sp.radius);
+            const float radiusGainDb  = juce::jlimit (-24.0f, 0.0f, (float) (20.0 * std::log10 (r / rMax)));
+            const float radiusDelayMs = juce::jlimit (0.0f, smt::maxDelayMs,
+                                                      (float) ((rMax - r) / speedOfSound * 1000.0));
+            setSpeakerOutput (out, fc, bm, radiusGainDb, radiusDelayMs, writeGain, writeDelay);
+        }
+
+        int neededOuts = maxOut + 1;
+        if (bm)
+        {
+            const int subOut = juce::jmin (maxOut + 1, smt::numChannels - 1);
+            neededOuts = juce::jmax (neededOuts, subOut + 1);
+            smt::FrameSettings f;
+            f.active = true;
+            model.setFrame (target, 0, subOut, f);          // W (ACN 0) -> sub
+            setOutputCrossover (subOut, smt::FilterType::lowpass, fc, true);
+        }
+
+        model.setMatrixSize (juce::jmax (model.getNumIns(), H),
+                             juce::jmax (model.getNumOuts(), neededOuts));
+
+        const juce::String emdash = juce::String::fromUTF8 ("\xe2\x80\x94");
+        status.setText ("IEM decoder " + dec.name + " " + emdash + " order "
+                        + juce::String (dec.order) + ", "
+                        + juce::String ((int) dec.speakers.size()) + " speakers "
+                        + emdash + " config " + smt::configName (target) + ", "
+                        + radiusCompText (writeGain, writeDelay)
                         + (bm ? ", sub = W lowpass." : ", no bass management."),
                         juce::dontSendNotification);
     }
@@ -633,9 +775,10 @@ private:
 
     juce::Label title, layoutLabel, targetLabel, crossoverLabel, numSpkLabel, status;
     juce::ComboBox layoutBox, targetBox;
-    juce::ToggleButton bassManagement, writeDelayToggle;
+    juce::ToggleButton bassManagement, writeGainToggle, writeDelayToggle;
     fxme::FxmeSlider crossover, numSpkSlider;
-    juce::TextButton applyButton;
+    juce::TextButton applyButton, loadIemButton;
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     std::vector<std::unique_ptr<Row>> rows;
     int rowsTop = 120;

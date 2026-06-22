@@ -357,9 +357,14 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "decoder. Bass management lowpasses W to the sub and highpasses the speakers.\n"
                 "- Radius compensation delays + attenuates closer speakers (referenced to "
                 "the farthest) so an irregular rig still sums at the centre.\n"
-                "- 'Write delay compensation' off keeps the outputs' existing delays, so you "
-                "can apply the decode AFTER aligning the speakers by hand. The matrix grows "
-                "to fit the channels.\n\n"
+                "- 'Write radius gain' / 'Write radius delay' each optional: off keeps the "
+                "outputs' existing level/delay, so you can apply the decode AFTER aligning or "
+                "leveling the speakers by hand (or via the analysis pane). The matrix grows "
+                "to fit the channels.\n"
+                "- 'Load IEM decoder...' imports an IEM AllRADecoder .json as the decode "
+                "matrix instead (better for irregular rigs); SN3D/maxRE conversion, routing "
+                "and imaginary speakers are handled automatically. The same radius toggles "
+                "apply.\n\n"
                 "Apply writes the frames into the configuration (overwriting it). Refine "
                 "per-frame in the Matrix view, and add per-output FIR correction there.";
             break;
@@ -412,6 +417,10 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "then set the Crossover (and Invert if needed) to phase-align the main with "
                 "the sub through the crossover. The relative main/sub timing is taken from "
                 "the measurements; align the drivers physically with the output delays.\n\n"
+                " - Mains delay: the bulk time-alignment you intend to apply to the output; "
+                "the correction is then designed for the residual only.\n"
+                " - Apply bulk delay: on Export correction IR + assign, also write that Mains "
+                "delay onto the output (so the FIR and its delay land together).\n\n"
                 "Export IR saves the measured response; Export correction IR saves the "
                 "correction and can assign it directly to an output.";
             break;

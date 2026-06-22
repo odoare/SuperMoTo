@@ -232,6 +232,16 @@ public:
         alignInfo.setColour (juce::Label::textColourId, SuperMoToTheme::mono.brighter (0.3f));
         addAndMakeVisible (alignInfo);
 
+        // When set, assigning the exported correction to an output also writes
+        // the Mains-delay value above onto that output's bulk delay — the
+        // physical time-alignment the correction was designed around.
+        applyDelayToggle.setButtonText ("Apply bulk delay");
+        SuperMoToTheme::accentToggleButton (applyDelayToggle, SuperMoToTheme::mono);
+        applyDelayToggle.setTooltip ("On Export correction IR + assign, also set that output's "
+                                     "delay to the Mains-delay value (the bulk time-alignment "
+                                     "the correction was designed for). Negative values clamp to 0.");
+        addAndMakeVisible (applyDelayToggle);
+
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
@@ -420,6 +430,8 @@ public:
         auto r4 = area.removeFromTop (22);
         alignLabel.setBounds (r4.removeFromLeft (78));
         alignSlider.setBounds (r4.removeFromLeft (220));
+        r4.removeFromLeft (16);
+        applyDelayToggle.setBounds (r4.removeFromLeft (150));
         r4.removeFromLeft (16);
         alignInfo.setBounds (r4);
 
@@ -682,10 +694,20 @@ private:
                     auto s = processor.configModel.getOutput (assignOut);
                     s.firPath = file.getFullPathName();
                     s.firOn = true;
-                    processor.configModel.setOutput (assignOut, s);
-                    processor.engine.updateFirFiles();
                     msg << juce::String::fromUTF8 (" \xe2\x80\x94 assigned to output ")
                         << juce::String (assignOut + 1);
+
+                    // Optionally also write the bulk (mains) delay onto the output,
+                    // clamped to the output's non-negative delay range.
+                    if (applyDelayToggle.getToggleState())
+                    {
+                        s.delayMs = juce::jlimit (0.0f, (float) smt::maxDelayMs,
+                                                  (float) alignSlider.getValue());
+                        msg << " (delay " << juce::String (s.delayMs, 1) << " ms)";
+                    }
+
+                    processor.configModel.setOutput (assignOut, s);
+                    processor.engine.updateFirFiles();
                 }
 
                 status.setText (msg, juce::dontSendNotification);
@@ -922,7 +944,7 @@ private:
     juce::Point<float> cursorPos;
     bool cursorInPlot = false;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
-    juce::ToggleButton subInvertToggle;
+    juce::ToggleButton subInvertToggle, applyDelayToggle;
     juce::Slider levelSlider;
 
     juce::Array<juce::File> loadedFiles;
