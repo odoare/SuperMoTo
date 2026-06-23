@@ -97,4 +97,18 @@ namespace SuperMoToTheme
         c.setColour (juce::ComboBox::backgroundColourId, panel);
         c.setColour (juce::ComboBox::textColourId, text);
     }
+
+    // Palette handed to the reusable fxme::SpectrumDisplay so its grid/labels
+    // match the SuperMoTo theme (trace colours stay per-trace).
+    inline fxme::SpectrumDisplay::Colours spectrumColours()
+    {
+        fxme::SpectrumDisplay::Colours c;
+        c.plotBackground = plotBackground;
+        c.grid           = grid;
+        c.gridZero       = gridZero;
+        c.text           = text;
+        c.dimText        = dimText;
+        c.panelLine      = panelLine;
+        return c;
+    }
 }

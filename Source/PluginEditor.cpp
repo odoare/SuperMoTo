@@ -165,7 +165,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     // is enabled with the meter), so the EQ can be tuned against the measured
     // response right here in the matrix view.
     {
-        SpectrumDisplay::TraceConfig mic;
+        fxme::SpectrumDisplay::TraceConfig mic;
         mic.tap       = &audioProcessor.splMeter.getMicSpectrumTap();
         mic.colour    = SuperMoToTheme::spectrum;
         mic.thickness = 1.6f;

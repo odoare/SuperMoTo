@@ -25,7 +25,7 @@
 #include "FrameProcessor.h"
 #include "OutputProcessor.h"
 #include <FxmeTools/dsp/FirFilter.h>     // fxme::FirFilter (WDL-backed, not in module umbrella)
-#include "SpectrumTap.h"
+#include "SpectrumBus.h"     // smt::SpectrumBus over fxme::SpectrumTap
 
 namespace smt
 {

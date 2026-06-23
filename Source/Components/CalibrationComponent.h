@@ -30,7 +30,7 @@
 #include "../AppSettings.h"
 #include "../Theme.h"
 #include "SplMeterComponent.h"
-#include "SpectrumDisplay.h"
+// fxme::SpectrumDisplay comes via the FxmeTools module umbrella (JuceHeader.h)
 
 class CalibrationComponent : public juce::Component,
                              private juce::ChangeListener,
@@ -421,7 +421,8 @@ private:
 
         // Mic spectrum analyzer (same kind as the matrix view), fed by the SPL
         // engine's mic tap and labelled in dB SPL once calibrated.
-        SpectrumDisplay::TraceConfig micTrace;
+        spectrum.setColours (SuperMoToTheme::spectrumColours());
+        fxme::SpectrumDisplay::TraceConfig micTrace;
         micTrace.tap = &processor.splMeter.getMicSpectrumTap();
         micTrace.colour = SuperMoToTheme::spectrum;
         micTrace.thickness = 1.6f;
@@ -612,7 +613,7 @@ private:
     juce::ComboBox windowBox;
     juce::Slider sineAmp, sineFreq, noiseAmp, splRef;
     SplMeterComponent meter;
-    SpectrumDisplay spectrum;
+    fxme::SpectrumDisplay spectrum;
     float splOffset = 0.0f;
     bool  splCalibrated = false;
 

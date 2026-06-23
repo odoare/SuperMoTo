@@ -16,17 +16,17 @@
 
 #pragma once
 
-#include <JuceHeader.h>
-#include "SpectrumDisplay.h"
+#include <JuceHeader.h>     // fxme::SpectrumDisplay via the FxmeTools module umbrella
 #include "../Dsp/MatrixEngine.h"
 #include "../Theme.h"
 
-class SpectrumAnalyzerComponent : public SpectrumDisplay
+class SpectrumAnalyzerComponent : public fxme::SpectrumDisplay
 {
 public:
     explicit SpectrumAnalyzerComponent (smt::MatrixEngine& e)
     {
         setDbRange (-100.0f, 10.0f);
+        setColours (SuperMoToTheme::spectrumColours());
 
         auto& bus = e.getSpectrumBus();
         for (int t = 0; t < smt::numSpectrumTaps; ++t)

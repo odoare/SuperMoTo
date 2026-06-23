@@ -58,7 +58,7 @@ public:
     bool isGenerating() const noexcept     { return sineOn.load() || noiseOn.load(); }
 
     /** Tap feeding the calibration spectrum analyzer (enabled with the meter). */
-    SpectrumTap& getMicSpectrumTap() noexcept { return micTap; }
+    fxme::SpectrumTap& getMicSpectrumTap() noexcept { return micTap; }
 
     //==========================================================================
     /** Audio thread. Updates the mic RMS and, when a generator is engaged,
@@ -84,7 +84,7 @@ private:
 
     std::atomic<float> rmsDbFs { -120.0f };
 
-    SpectrumTap micTap;     // mic samples for the calibration spectrum analyzer
+    fxme::SpectrumTap micTap;     // mic samples for the calibration spectrum analyzer
     juce::AudioBuffer<float> inScratch;     // synthetic inputs (fullSystem mode)
 
     double sr = 44100.0;
