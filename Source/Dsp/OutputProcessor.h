@@ -16,8 +16,7 @@
 
 #pragma once
 
-#include <JuceHeader.h>
-#include "Biquad.h"
+#include <JuceHeader.h>     // fxme::Biquad comes via the FxmeTools module umbrella
 #include "../Model/ConfigModel.h"
 
 namespace smt
@@ -107,7 +106,7 @@ private:
 
             if (type == FilterType::peaking)
             {
-                biquads[(size_t) n++].c = BiquadCoeffs::peaking (sr, f, q, band.gainDb);
+                biquads[(size_t) n++].c = fxme::BiquadCoeffs::peaking (sr, f, q, band.gainDb);
             }
             else if (band.order >= 4)
             {
@@ -117,16 +116,16 @@ private:
                 switch (type)
                 {
                     case FilterType::lowpass:
-                        biquads[(size_t) n++].c = BiquadCoeffs::lowpass (sr, f, q1);
-                        biquads[(size_t) n++].c = BiquadCoeffs::lowpass (sr, f, q2);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass (sr, f, q1);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass (sr, f, q2);
                         break;
                     case FilterType::highpass:
-                        biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q1);
-                        biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q2);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q1);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q2);
                         break;
                     case FilterType::bandpass:
-                        biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q);
-                        biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q);
+                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q);
                         break;
                     default: break;
                 }
@@ -135,9 +134,9 @@ private:
             {
                 switch (type)
                 {
-                    case FilterType::lowpass:  biquads[(size_t) n++].c = BiquadCoeffs::lowpass  (sr, f, q); break;
-                    case FilterType::highpass: biquads[(size_t) n++].c = BiquadCoeffs::highpass (sr, f, q); break;
-                    case FilterType::bandpass: biquads[(size_t) n++].c = BiquadCoeffs::bandpass (sr, f, q); break;
+                    case FilterType::lowpass:  biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass  (sr, f, q); break;
+                    case FilterType::highpass: biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q); break;
+                    case FilterType::bandpass: biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q); break;
                     default: break;
                 }
             }
@@ -152,7 +151,7 @@ private:
     OutputSettings settings;
 
     static constexpr int maxBiquads = numFrameBands * 2;
-    Biquad biquads[maxBiquads];
+    fxme::Biquad biquads[maxBiquads];
     int activeBiquads = 0;
 
     std::vector<float> delayLine;

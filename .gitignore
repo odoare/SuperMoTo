@@ -1,2 +1,8 @@
 build/
 .claude/
+doc/*.aux
+doc/*.log
+doc/*.toc
+doc/*.out
+doc/*.fdb_latexmk
+

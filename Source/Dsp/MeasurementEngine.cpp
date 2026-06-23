@@ -55,8 +55,8 @@ bool MeasurementEngine::start (const Settings& s)
     sweepK = 2.0 * juce::MathConstants<double>::pi * f1 * sweepL;
 
     // Band-limit the white noise to 10 Hz .. 20 kHz.
-    noiseHp.c = BiquadCoeffs::highpass (sr, 10.0f, 0.707f);
-    noiseLp.c = BiquadCoeffs::lowpass (sr, juce::jmin (20000.0f, (float) (0.45 * sr)), 0.707f);
+    noiseHp.c = fxme::BiquadCoeffs::highpass (sr, 10.0f, 0.707f);
+    noiseLp.c = fxme::BiquadCoeffs::lowpass (sr, juce::jmin (20000.0f, (float) (0.45 * sr)), 0.707f);
 
     currentChannel = 0;
     startCurrentOutput();

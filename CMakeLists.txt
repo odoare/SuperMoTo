@@ -16,12 +16,13 @@ if(APPLE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures")
 endif()
 
-# JUCE and the FxmeJuceTools user-module are expected as siblings of this repo,
-# mirroring the MechanOdd layout:
-#   ../JUCE/                              (juce-framework/JUCE checkout)
-#   ../JUCE/usermodules/FxmeJuceTools/    (symlink to FxmeJuceTools/module/FxmeJuceTools)
+# JUCE is expected as a sibling of this repo (../JUCE, a juce-framework/JUCE
+# checkout). Shared FX-Mechanics code — GUI controls, look-and-feel, VU meters
+# and DSP (Biquad) plus the WDL-backed FirFilter — now comes from the FxmeTools
+# submodule under lib/. The helper registers the `FxmeTools` JUCE module and
+# defines fxmetools_attach(<target>).
 add_subdirectory(../JUCE JUCE)
-juce_add_module(../JUCE/usermodules/FxmeJuceTools)
+include(${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools/cmake/FxmeTools.cmake)
 
 juce_add_plugin(SuperMoTo
     COMPANY_NAME                "FX-Mechanics"
@@ -60,14 +61,11 @@ file(GLOB SUPERMOTO_INCLUDE_DIRS LIST_DIRECTORIES true
 list(FILTER SUPERMOTO_INCLUDE_DIRS EXCLUDE REGEX "\\.(c|cc|cpp|cxx|h|hpp|hxx|mm)$")
 target_include_directories(SuperMoTo PRIVATE ${SUPERMOTO_INCLUDE_DIRS})
 
-# ── WDL convolution engine (used by the per-output FIR correction filters) ────
-set(_wdldir ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeFX/WDL/WDL)
-target_sources(SuperMoTo PRIVATE
-    ${_wdldir}/convoengine.cpp
-    ${_wdldir}/fft.c
-    ${_wdldir}/resample.cpp
-)
-target_include_directories(SuperMoTo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeFX/WDL)
+# ── FxmeTools: shared JUCE module + WDL convolution engine (per-output FIR) ───
+# Links the FxmeTools module (auto-included into JuceHeader.h, exposing the
+# fxme:: GUI controls and Biquad) and compiles the WDL sources used by
+# <FxmeTools/dsp/FirFilter.h>. Also defines NOMINMAX on MSVC.
+fxmetools_attach(SuperMoTo)
 
 # Image assets
 file(GLOB SUPERMOTO_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/Source/Assets/*.png
@@ -90,9 +88,7 @@ target_compile_definitions(SuperMoTo
         JUCE_USE_CURL=0
         JUCE_DISPLAY_SPLASH_SCREEN=0
         JUCE_MODAL_LOOPS_PERMITTED=1
-        # WDL's convoengine.h pulls in <windows.h>; without NOMINMAX its min/max
-        # macros clobber std::min/std::max in headers like FirFilter.h (MSVC C2589).
-        $<$<CXX_COMPILER_ID:MSVC>:NOMINMAX>
+        # NOMINMAX (needed by WDL on MSVC) is added by fxmetools_attach().
 )
 
 # ── Offline test of the analysis part (build & run manually) ─────────────────
@@ -103,6 +99,9 @@ target_sources(SuperMoToTests PRIVATE
     Source/Dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToTests)
+# Reach <FxmeTools/dsp/Biquad.h> (header-only, no link needed) without pulling
+# in the whole module.
+target_include_directories(SuperMoToTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
 target_compile_definitions(SuperMoToTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -138,7 +137,6 @@ add_test(NAME miccal COMMAND SuperMoToMicCalTests)
 
 target_link_libraries(SuperMoTo
     PRIVATE
-        FxmeJuceTools
         juce::juce_audio_basics
         juce::juce_audio_devices
         juce::juce_audio_formats

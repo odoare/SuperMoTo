@@ -25,7 +25,7 @@ void MatrixEngine::prepare (double sampleRate, int maxBlockSize)
     for (int o = 0; o < numChannels; ++o)
     {
         if (firs[(size_t) o] == nullptr)
-            firs[(size_t) o] = std::make_unique<FirFilter>();
+            firs[(size_t) o] = std::make_unique<fxme::FirFilter>();
         firs[(size_t) o]->prepare (sampleRate, maxBlockSize);
 
         outputProc[(size_t) o].prepare (sampleRate, maxBlockSize);

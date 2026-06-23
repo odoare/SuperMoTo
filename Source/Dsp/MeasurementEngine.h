@@ -30,8 +30,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "Biquad.h"
-#include "MatrixEngine.h"
+#include "MatrixEngine.h"     // pulls fxme::FirFilter; fxme::Biquad via module umbrella
 
 namespace smt
 {
@@ -100,7 +99,7 @@ private:
 
     // Generators
     juce::Random random;
-    Biquad noiseHp, noiseLp;
+    fxme::Biquad noiseHp, noiseLp;
     double sweepK = 0.0, sweepL = 0.0;
     int genPos = 0;
     float levelGain = 1.0f;

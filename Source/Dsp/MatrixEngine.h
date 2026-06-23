@@ -24,7 +24,7 @@
 #include "../Model/ConfigModel.h"
 #include "FrameProcessor.h"
 #include "OutputProcessor.h"
-#include "FirFilter.h"
+#include <FxmeTools/dsp/FirFilter.h>     // fxme::FirFilter (WDL-backed, not in module umbrella)
 #include "SpectrumTap.h"
 
 namespace smt
@@ -64,7 +64,7 @@ public:
     }
 
     SpectrumBus& getSpectrumBus()           { return spectrumBus; }
-    FirFilter& getFir (int out)             { return *firs[(size_t) out]; }
+    fxme::FirFilter& getFir (int out)       { return *firs[(size_t) out]; }
 
     /** Extra delay (samples / ms) the engine added to this output to align it
         with the longest output FIR's latency. 0 = no compensation. */
@@ -86,7 +86,7 @@ private:
     ConfigModel& model;
 
     std::array<std::array<std::array<FrameProcessor, numChannels>, numChannels>, numConfigs> frames;
-    std::array<std::unique_ptr<FirFilter>, numChannels> firs;
+    std::array<std::unique_ptr<fxme::FirFilter>, numChannels> firs;
     std::array<OutputProcessor, numChannels> outputProc;   // per-output EQ + delay
     std::array<juce::LinearSmoothedValue<float>, numChannels> outputGains;
     std::array<std::atomic<float>, numChannels> outputLevels {};

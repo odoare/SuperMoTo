@@ -212,8 +212,11 @@ public:
         addAndMakeVisible (subInvertToggle);
 
         // Time-alignment: the slider is the bulk delay you apply physically to
-        // the mains; the correction is then designed for the residual only.
+        // the mains; the correction is then designed for the residual only. The
+        // right-justified info text (ending in a left arrow) replaces a separate
+        // label on this row.
         addLabel (alignLabel, "Mains delay");
+        alignLabel.setVisible (false);
         alignSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         alignSlider.setRange (-40.0, 40.0, 0.1);
         alignSlider.setValue (0.0, juce::dontSendNotification);
@@ -230,6 +233,7 @@ public:
         addAndMakeVisible (alignSlider);
 
         alignInfo.setFont (juce::Font (12.0f));
+        alignInfo.setJustificationType (juce::Justification::centredRight);
         alignInfo.setColour (juce::Label::textColourId, SuperMoToTheme::mono.brighter (0.3f));
         addAndMakeVisible (alignInfo);
 
@@ -261,15 +265,18 @@ public:
         }
 
         const float v = (float) alignSlider.getValue();
-        juce::String msg = juce::String::fromUTF8 ("\xe2\x86\x92 ~")
-            + juce::String (recommendedAlignMs, 0) + " ms main/sub offset detected.  ";
+        juce::String msg = "~" + juce::String (recommendedAlignMs, 0)
+            + " ms main/sub offset detected.  ";
 
         if (std::abs (v) < 0.05f)
-            msg += "Set 'Mains delay' to time-align (correction designed for the residual).";
+            msg += "Set the Mains delay to time-align (correction designed for the residual).";
         else
             msg += "Add " + juce::String (std::abs (v), 1) + " ms delay to the "
                  + juce::String (v >= 0.0f ? "main output(s)" : "subwoofer output")
-                 + " (Matrix view) to match.";
+                 + " (or tick Apply bulk delay).";
+
+        // Ends with a left arrow, just left of the Mains-delay slider.
+        msg += juce::String::fromUTF8 ("  \xe2\x86\x90");
 
         alignInfo.setText (msg, juce::dontSendNotification);
     }
@@ -426,14 +433,15 @@ public:
         r3.removeFromRight (16);
         firInfo.setBounds (r3);
 
-        // Row 4: time-alignment (mains delay) + the recommendation/instruction.
+        // Row 4, right-aligned: the delay-correction info text (right-justified,
+        // ending in a left arrow), then the Mains-delay slider, then the
+        // Apply-bulk-delay toggle.
         area.removeFromTop (6);
         auto r4 = area.removeFromTop (22);
-        alignLabel.setBounds (r4.removeFromLeft (78));
-        alignSlider.setBounds (r4.removeFromLeft (220));
-        r4.removeFromLeft (16);
-        applyDelayToggle.setBounds (r4.removeFromLeft (150));
-        r4.removeFromLeft (16);
+        applyDelayToggle.setBounds (r4.removeFromRight (150));
+        r4.removeFromRight (16);
+        alignSlider.setBounds (r4.removeFromRight (220));
+        r4.removeFromRight (16);
         alignInfo.setBounds (r4);
 
         area.removeFromTop (4);

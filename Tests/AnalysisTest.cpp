@@ -16,7 +16,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/Dsp/AnalysisEngine.h"
-#include "../Source/Dsp/Biquad.h"
+#include <FxmeTools/dsp/Biquad.h>
 
 static bool approx (float a, float b, float tol, const char* what)
 {
@@ -59,8 +59,8 @@ int main()
 
         // "Recorded" = stimulus through known LP + delay (+ tiny noise),
         // with a slightly different delay per file (different mic position).
-        smt::Biquad lp;
-        lp.c = smt::BiquadCoeffs::lowpass (sr, lpFreq, 0.707f);
+        fxme::Biquad lp;
+        lp.c = fxme::BiquadCoeffs::lowpass (sr, lpFreq, 0.707f);
         const int d = delaySamples + 7 * fileIdx;
         for (int i = n - 1; i >= 0; --i)
             y[i] = i - d >= 0 ? x[i - d] : 0.0f;
