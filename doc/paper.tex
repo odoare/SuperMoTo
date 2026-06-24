@@ -1,0 +1,266 @@
+%==============================================================================
+%  SuperMoTo — JOSS-style software paper
+%
+%  Build: pdflatex paper.tex  (run twice for references)
+%  Target journal: Journal of Open Source Software (JOSS)
+%
+%  (c) 2026 Olivier Doaré — LGPL-3.0-or-later
+%==============================================================================
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{parskip}
+
+\title{\textbf{SuperMoTo: an integrated monitoring matrix, room correction
+       and Ambisonics decoding plugin for audio production and immersive
+       listening rooms}}
+
+\author{Olivier Doaré\\
+  \small ENSTA Paris, Institut Polytechnique de Paris\\
+  \small \texttt{olivier.doare@ensta.fr}
+}
+
+\date{}
+
+\begin{document}
+\maketitle
+
+%----------------------------------------------------------------------
+\section*{Summary}
+%----------------------------------------------------------------------
+
+SuperMoTo is an open-source audio plugin (VST3, AU, Standalone) that
+brings the full monitoring signal chain of a professional studio into a
+single, self-contained plugin instance. From one instance it can route
+up to 32 inputs to 32 outputs through a configurable gain-and-EQ
+matrix, apply per-loudspeaker FIR correction filters derived from
+in-room acoustic measurements, phase-align a subwoofer to the corrected
+main speakers, and generate periphonic Ambisonics decoders up to third
+order for immersive listening rooms. The plugin includes built-in
+acoustic measurement tools and a transfer-function analysis and
+correction design engine, making the calibration workflow entirely
+self-contained. It is implemented in C++ using the JUCE framework and is
+licensed under the LGPL~3.0.
+
+%----------------------------------------------------------------------
+\section*{Statement of need}
+%----------------------------------------------------------------------
+
+Loudspeaker monitoring is the foundation of audio production: decisions
+about balance, timbre, and spatial imagery are all made at the listening
+position, and systematic errors in what the engineer hears accumulate
+through every mix decision. In a real room, what the engineer hears is
+never the loudspeaker alone but the combined response of the
+loudspeaker, the room, and any bass-management or routing in the signal
+path. Three independent classes of error contribute to this: room modes
+below the Schroeder frequency produce large, position-dependent peaks
+and dips with audible ringing; speaker-boundary interference and early
+reflections add comb-filtering through the midrange; and the
+loudspeaker's own magnitude and phase response is rarely flat
+\cite{Toole}. Electronic correction cannot cure all of these (room
+cancellation notches and late reflections are not minimum-phase and
+cannot be inverted by any causal filter~\cite{NeelyAllen}), but the
+broad, reproducible, minimum-phase portion of the combined
+loudspeaker-room response can be usefully attenuated with a
+well-designed FIR filter, reducing coloration and improving translation
+to other playback systems.
+
+No single open-source tool covers this workflow end to end. The
+widely-used Room EQ Wizard (REW) provides acoustic measurement and
+filter design as a standalone desktop application but not as a DAW
+plugin, requiring the resulting correction impulse responses to be
+loaded into a separate convolution plugin and routing to be managed
+outside the tool. Commercial room correction products such as Sonarworks
+SoundID Reference and IK Multimedia ARC focus exclusively on correction
+and do not integrate routing, bass management, or immersive audio
+decoding. High-channel routing tools and Ambisonics decoders exist as
+separate plugins but are not combined with a calibration workflow.
+SuperMoTo addresses this gap by unifying the monitoring matrix, the
+measurement engine, the correction design, the FIR convolution, and the
+Ambisonics decoder generation into one plugin instance. The combination
+is particularly useful in VR and immersive audio production
+environments, where loudspeaker arrays must be routed, time-aligned,
+individually corrected, and driven by a decoded Ambisonics signal
+simultaneously.
+
+%----------------------------------------------------------------------
+\section*{Functionality}
+%----------------------------------------------------------------------
+
+\subsection*{Monitoring matrix}
+
+The routing matrix connects up to 32 inputs to 32 outputs through a
+grid of crosspoint \emph{frames}, each carrying an independent gain and
+polarity setting. Six independent configurations (A--F) are stored per
+preset and can be engaged in exclusive mode (instant A/B switching
+between monitoring rigs) or summed. Each output carries a trim,
+a four-band EQ (lowpass, highpass, bandpass or peaking), a fractional
+sub-sample delay for physical speaker time-alignment, and an optional
+FIR correction filter applied by a zero-latency uniformly-partitioned
+convolution engine \cite{Gardner1995}. When filters of different lengths
+are loaded on different outputs, automatic inter-output latency
+compensation delays the shorter outputs so all speakers remain
+time-aligned at the listening position.
+
+A configuration tool generates standard stereo and surround layouts
+(2.0 through 7.1) with bass management and writes a complete matrix
+configuration ready for refinement.
+
+\subsection*{Ambisonics decoding}
+
+The configuration tool also generates periphonic (3D) Ambisonics
+sampling decoders for orders 1 through 3, following the AmbiX convention
+(ACN channel order, SN3D normalisation) \cite{NachbarAmbiX2011}. For
+each loudspeaker at azimuth $\theta$, elevation $\varphi$ and radius
+$r$, the decode gain is
+\begin{equation}
+  D[s][j] \;\propto\; a_{n(j)}\,Y_j^{\mathrm{SN3D}}(\Omega_s),
+\end{equation}
+where $a_n$ are the max-$r_E$ per-degree weights derived from the
+largest root of the Legendre polynomial $P_{N+1}$ \cite{ZotterFrank2019},
+improving high-frequency localisation stability. Non-equidistant
+speaker rigs are compensated by per-speaker delay and trim derived from
+the inverse-square law. Bass management low-passes the omnidirectional
+$W$ component to a subwoofer and high-passes the speaker feeds.
+
+\subsection*{Acoustic measurement}
+
+The measurement view drives the plugin outputs with a band-limited
+stimulus (logarithmic sweep or white noise, 5--30\,s duration) and
+records the microphone response on one of the plugin's input channels.
+Each captured stereo file stores the raw stimulus on channel 1 and the
+microphone on channel 2, so the transfer function estimate at analysis
+time is always the ratio of the captured microphone signal to the sent
+stimulus. Three modes are provided: \emph{Dry} (bare loudspeaker and
+room, correction bypass), \emph{FIR} (single output with its correction
+in circuit, for before/after verification), and \emph{System} (complete
+engine including routing and all FIR filters, for end-to-end
+validation). Microphone frequency-response calibration files in the
+REW/miniDSP plain-text format are supported and are applied at analysis
+time rather than baked into the recordings, so the calibration can be
+updated without re-measuring.
+
+\subsection*{Transfer-function estimation and correction design}
+
+For each set of measurements (one speaker, multiple microphone
+positions), the plugin estimates the loudspeaker-room transfer function
+using the Welch $H_1$ estimator \cite{Welch1967}
+\begin{equation}
+  \hat H(f) = \frac{\hat P_{xy}(f)}{\hat P_{xx}(f)},
+\end{equation}
+with Hann-windowed 50\,\%-overlapped segments and a user-selectable
+window length of 4096 to 262\,144 samples. Before averaging across
+positions, the bulk propagation delay of each measurement is estimated
+from the impulse response peak and removed, so position-dependent phase
+ramps do not cancel in the spatial average. The resulting complex spatial
+average follows the practice of correcting the broad trend common to the
+listening area rather than a single-seat interference pattern \cite{Toole,
+Mourjopoulos1994}.
+
+The correction filter is the regularised complex inverse of the
+frequency-dependent-smoothed average. A variable fractional-octave
+smoothing is applied, where the octave fraction interpolates
+log-linearly from an independent low-frequency setting to a
+high-frequency setting, allowing the correction to track room modes
+finely at low frequencies while responding only to broad trends above
+a few kilohertz \cite{Hatziantoniou2000}. Boosts are limited by a
+smooth $\tanh$ soft-knee ceiling to avoid ringing and headroom loss
+at room cancellation notches \cite{Kirkeby1999}.
+
+For subwoofer-equipped systems, a second set of measurements (the
+sub at the same microphone positions) is loaded and delay-anchored
+on the corresponding main measurements to preserve the relative
+main-subwoofer arrival-time difference. An all-pass factor derived
+from the subwoofer's phase steers the correction filter's phase onto
+the subwoofer's through the crossover region, and a user-controlled
+bulk delay (applied to the main outputs in the matrix) removes most of
+the offset before it reaches the all-pass, keeping the FIR short.
+
+The final correction spectrum is exported as a mono 32-bit float
+impulse-response wav file in either \emph{linear-phase} (energy centred
+at $N/2$, enabling full phase and subwoofer alignment at the cost of
+$N/2$ samples of latency) or \emph{minimum-phase} (real-cepstrum
+method, magnitude-only correction with essentially zero bulk latency,
+suited to tracking sessions) form \cite{OppenheimSchafer}.
+
+%----------------------------------------------------------------------
+\section*{Implementation}
+%----------------------------------------------------------------------
+
+SuperMoTo is written in C++ and built with CMake against the JUCE
+framework. Per-output FIR convolution uses the WDL
+uniformly-partitioned convolution engine. Continuous-integration builds
+for Linux, macOS (Apple Silicon universal binary) and Windows are
+provided by a GitHub Actions workflow triggered by version tags. The
+plugin is available in VST3, AU, and Standalone formats with a
+configurable channel count of 8, 16, 24, or 32 discrete channels.
+
+%----------------------------------------------------------------------
+\section*{Acknowledgements}
+%----------------------------------------------------------------------
+
+...
+
+%----------------------------------------------------------------------
+\begin{thebibliography}{99}
+%----------------------------------------------------------------------
+
+\bibitem{Welch1967}
+P.~D. Welch, ``The use of fast Fourier transform for the estimation of
+power spectra: a method based on time averaging over short, modified
+periodograms,'' \textit{IEEE Trans.\ Audio Electroacoust.},
+vol.~15, no.~2, pp.~70--73, 1967.
+
+\bibitem{Mourjopoulos1994}
+J.~N. Mourjopoulos, ``Digital equalization of room acoustics,''
+\textit{J.\ Audio Eng.\ Soc.}, vol.~42, no.~11, pp.~884--900, 1994.
+
+\bibitem{NeelyAllen}
+S.~T. Neely and J.~B. Allen, ``Invertibility of a room impulse
+response,'' \textit{J.\ Acoust.\ Soc.\ Am.}, vol.~66, no.~1,
+pp.~165--169, 1979.
+
+\bibitem{Hatziantoniou2000}
+P.~D. Hatziantoniou and J.~N. Mourjopoulos, ``Generalized
+fractional-octave smoothing of audio and acoustic responses,''
+\textit{J.\ Audio Eng.\ Soc.}, vol.~48, no.~4, pp.~259--280, 2000.
+
+\bibitem{Kirkeby1999}
+O.~Kirkeby and P.~A. Nelson, ``Digital filter design for inversion
+problems in sound reproduction,'' \textit{J.\ Audio Eng.\ Soc.},
+vol.~47, no.~7/8, pp.~583--595, 1999.
+
+\bibitem{Toole}
+F.~E. Toole, \textit{Sound Reproduction: The Acoustics and
+Psychoacoustics of Loudspeakers and Rooms}, 3rd ed.\ New York:
+Routledge, 2017.
+
+\bibitem{Gardner1995}
+W.~G. Gardner, ``Efficient convolution without input-output delay,''
+\textit{J.\ Audio Eng.\ Soc.}, vol.~43, no.~3, pp.~127--136, 1995.
+
+\bibitem{OppenheimSchafer}
+A.~V. Oppenheim and R.~W. Schafer, \textit{Discrete-Time Signal
+Processing}, 3rd ed.\ Upper Saddle River, NJ: Prentice Hall, 2010.
+
+\bibitem{NachbarAmbiX2011}
+C.~Nachbar, F.~Zotter, E.~Deleflie, and A.~Sontacchi, ``AmbiX --- a
+suggested ambisonics format,'' in \textit{Proc.\ 3rd Ambisonics
+Symposium}, Lexington, 2011.
+
+\bibitem{ZotterFrank2019}
+F.~Zotter and M.~Frank, \textit{Ambisonics: A Practical 3D Audio Theory
+for Recording, Studio Production, Sound Reinforcement, and Virtual
+Reality}. Cham: Springer, 2019 (open access).
+
+\end{thebibliography}
+
+\end{document}

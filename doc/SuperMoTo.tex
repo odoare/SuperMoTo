@@ -1489,6 +1489,10 @@ but carries its minimum-phase companion instead.
 \chapter{Workflows}\label{ch:workflows}
 %==============================================================================
 
+These are the short recipes; Appendix~\ref{ch:examples} works three complete
+multi-configuration setups (a studio with two pairs and a sub, a switchable
+5.1, and an Ambisonic rig) end to end.
+
 \section{A — Stereo monitoring with corrected speakers}
 \begin{enumerate}[nosep]
   \item Matrix view (or Config tool $\rightarrow$ Stereo 2.0 $\rightarrow$
@@ -1579,84 +1583,163 @@ LGPL-3.0-or-later — \textcopyright{} 2023--2026 Olivier Doaré.
 
 %==============================================================================
 \appendix
-\chapter{Glossary}\label{ch:glossary}
+\chapter{Use case examples}\label{ch:examples}
 %==============================================================================
 
-Cross-references point to where each term is developed in the text.
+This appendix works three realistic setups end to end, extending the short
+recipes of Chapter~\ref{ch:workflows}. The recurring idea is the split between
+\emph{per-output} and \emph{per-configuration} processing:
 
-\begin{description}[style=nextline, leftmargin=0pt, font=\normalfont\bfseries]
-  \item[All-pass / excess phase] A factor with \emph{unit magnitude} that
-        changes only phase (eq.~\eqref{eq:minap}). It carries the
-        ``excess'' phase a response has beyond the minimum-phase minimum —
-        pure delay, reflections, out-of-phase summation. Not removable by a
-        stable causal filter; SuperMoTo deliberately \emph{adds} a short
-        all-pass to steer a main onto a subwoofer's phase
-        (Section~\ref{sec:timealign}).
-  \item[Cepstrum (real)] The inverse Fourier transform of the log-magnitude
-        spectrum, $c[n]=\mathcal{F}^{-1}\{\log|C|\}$. Keeping its causal part
-        reconstructs the minimum-phase response used for low-latency rendering
-        (Section~\ref{sec:minphase}).
-  \item[Coherence] The fraction of the measured output linearly explained by
-        the input at each frequency ($0$ to $1$); it quantifies how much a Welch
-        estimate can be trusted (Section~\ref{sec:welch}).
-  \item[Comb filtering] Regularly spaced peaks and notches produced when the
-        direct sound sums with a delayed copy (a reflection); wide-band and
-        tied to geometry (Section~\ref{ch:analysis}).
-  \item[Crossover] The frequency region where two drivers (e.g.\ main and
-        subwoofer) hand over. A flat sum there is a phase/timing problem as much
-        as a level one (Section~\ref{sec:timealign}).
-  \item[FIR (finite impulse response) filter] A filter that convolves the
-        signal with a finite list of coefficients (the impulse response). The
-        exported correction is an FIR loaded per output; length $N$ sets the
-        frequency resolution $f_s/N$ and, if linear-phase, the latency $N/2$.
-  \item[Group delay] $-\,\mathrm{d}(\arg H)/\mathrm{d}\omega$: the delay a
-        response imposes near each frequency. Used to auto-detect the main/sub
-        offset (Section~\ref{sec:timealign}).
-  \item[$H_1$ estimator] The cross-spectrum / input auto-spectrum ratio
-        $S_{xy}/S_{xx}$ averaged over Welch segments; the noise-robust transfer
-        function SuperMoTo measures (Section~\ref{sec:welch}).
-  \item[Hilbert transform] The operator linking log-magnitude and phase of a
-        minimum-phase response (eq.~\eqref{eq:hilbert}); lets phase be recovered
-        from magnitude (Section~\ref{sec:minphasedef}).
-  \item[Impulse response (IR)] A system's output to a unit impulse; the
-        time-domain twin of the transfer function. Exported as a wav for the
-        FIR engine and the measured-response file (Section~\ref{sec:render}).
-  \item[Inter-output latency compensation] Automatic per-output delay so every
-        engaged output stays time-aligned with the longest FIR's bulk latency
-        (Chapter~\ref{ch:matrix}); shown by a gold LED on the output.
-  \item[Linear-phase] A filter whose phase is exactly linear in frequency, i.e.\
-        a pure delay across the band; it can impose an arbitrary phase
-        correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
-  \item[Minimum-phase] A causal, stable response whose inverse is also causal
-        and stable (all poles and zeros inside the unit circle) — the only kind
-        that is fully invertible by a realisable filter. Defined physically and
-        mathematically in Section~\ref{sec:minphasedef}.
-  \item[Polarity (Invert)] A frequency-independent $180^\circ$ sign flip, as
-        opposed to a delay (which is frequency-dependent). \textbf{Invert} flips
-        a subwoofer wired out of polarity (Section~\ref{sec:timealign}).
-  \item[Regularization] Bounding the inverse where the measured magnitude is
-        tiny, so deep notches do not demand infinite boost; here a soft-knee
-        (\texttt{tanh}) ceiling on the correction gain (Section~\ref{sec:correction}).
-  \item[Room mode] A standing-wave resonance of the room producing large,
-        strongly position-dependent peaks and dips at low frequency, with
-        audible ringing (Section~\ref{ch:analysis}).
-  \item[SBIR] Speaker--boundary interference response: the cancellation dip in
-        the upper bass set by the speaker-to-wall distance
-        (Section~\ref{ch:analysis}).
-  \item[Smoothing (fractional-octave)] Averaging the complex response over a
-        proportional bandwidth (e.g.\ $1/6$ octave), finer in the bass and
-        coarser in the treble, so the correction follows trends rather than
-        single-seat interference (Chapter~\ref{ch:analysis}).
-  \item[Spatial averaging] Averaging the (delay-aligned) responses of several
-        microphone positions, so the correction targets what is consistent
-        across the listening area rather than one seat (Section~\ref{sec:spatialavg}).
-  \item[Transfer function] The complex ratio $H(f)=Y(f)/X(f)$ of output to input
-        spectrum — magnitude and phase together — that describes a linear system
-        (Section~\ref{sec:welch}).
-  \item[Welch method] Power/cross-spectra estimated by averaging windowed,
-        overlapping FFT segments; trades resolution for variance to give a
-        usable in-room transfer function (Section~\ref{sec:welch}).
-\end{description}
+\begin{itemize}[nosep]
+  \item A \textbf{configuration} (A--F) stores only the \emph{routing}: which
+        inputs feed which outputs, with a gain, a phase flip and an active state
+        per frame (Chapter~\ref{ch:matrix}).
+  \item Everything that characterises a physical loudspeaker --- trim, EQ,
+        time-alignment \textbf{delay} and \textbf{FIR} correction --- lives on
+        the \textbf{output}, and is therefore \emph{shared by every
+        configuration that uses that output} (Section~\ref{sec:outputchain}).
+\end{itemize}
+
+That split is what makes multi-configuration monitoring cheap: correct and
+align each speaker \emph{once}, then describe each way of listening as a
+different routing over the same corrected outputs. Engage one configuration at
+a time with \textbf{Exclusive}, or sum several with it off.
+
+%------------------------------------------------------------------------------
+\section{Two monitor pairs, a subwoofer and headphones}\label{sec:ex-studio}
+%------------------------------------------------------------------------------
+
+A typical control room: two stereo pairs (mains on outputs 1--2, nearfields on
+3--4), a subwoofer on output~5, and a headphone output on 7--8. The source is
+stereo on inputs 1--2. Each speaker is corrected once (workflow~A) and the
+subwoofer is phase-aligned to each pair (workflow~B); those FIRs and delays then
+stay on outputs 1--5. Five configurations describe the ways to listen:
+
+\begin{table}[h]\centering
+\begin{tabular}{lll}
+\toprule
+Config & Listen on & Routing \\
+\midrule
+A & Mains + sub      & in1$\rightarrow$1,\; in2$\rightarrow$2,\; (in1+in2)$\rightarrow$5 \\
+B & Nearfields + sub & in1$\rightarrow$3,\; in2$\rightarrow$4,\; (in1+in2)$\rightarrow$5 \\
+C & Mains alone      & in1$\rightarrow$1,\; in2$\rightarrow$2 \\
+D & Nearfields alone & in1$\rightarrow$3,\; in2$\rightarrow$4 \\
+E & Headphones       & in1$\rightarrow$7,\; in2$\rightarrow$8 \\
+\bottomrule
+\end{tabular}
+\caption{Five configurations over the same corrected outputs.}
+\end{table}
+
+\begin{enumerate}[nosep]
+  \item Raise the matrix size (bottom bar \textbf{Inputs}/\textbf{Outputs}) and
+        the host bus to at least 8 in/out. Wire mains to 1--2, nearfields to
+        3--4, sub to 5, headphones to 7--8.
+  \item Correct each of outputs 1--4 (workflow~A). Measure the sub and align it
+        to each pair (workflow~B); the main/sub delay sits on the per-output
+        delays, the FIRs on the per-output correction slots.
+  \item \textbf{Config A}: the quickest start is Config tool $\rightarrow$
+        Stereo~2.1 $\rightarrow$ Apply to~A, then check in the Matrix that
+        in1/in2 reach outputs 1/2 and the sub.
+  \item \textbf{Config B}: same as A but route the pair to outputs 3/4 (edit the
+        two frames in the Matrix view; the sub frame is unchanged).
+  \item \textbf{Configs C and D}: copy A/B but deactivate the sub frame
+        (double-click it) --- the mains play on their own.
+  \item \textbf{Config E}: route in1/in2 to outputs 7/8.
+  \item Engage \textbf{Exclusive} and switch sets from the top bar; collapse
+        ($\blacktriangle$) to a compact output-strip window for daily use.
+\end{enumerate}
+
+\paragraph{Full range vs.\ bass management.} The highpass that bass management
+puts on the mains is an \emph{output} filter, so it is shared by every
+configuration that drives those outputs --- there is no separate
+``highpassed'' and ``full-range'' version of output~1. For a room that really
+switches between with-sub and without-sub on the \emph{same} speakers, run the
+mains full range and let the subwoofer \emph{augment} below the crossover (a
+lowpass on the sub output only, which never touches the mains); configs C/D are
+then genuinely full-range. Reserve the highpass form of bass management for
+small satellites that must never see deep bass --- in which case ``mains alone''
+simply loses the bottom octave and is rarely engaged.
+
+%------------------------------------------------------------------------------
+\section{An aligned 5.1 system, switchable to 2.1 / 5.0 / 2.0}\label{sec:ex-surround}
+%------------------------------------------------------------------------------
+
+A 5.1 rig with L, R, C, L\textsubscript{s}, R\textsubscript{s} on outputs 1--5
+and the subwoofer on output~6. The 5.1 feed is on inputs 1--6 (L, R, C,
+L\textsubscript{s}, R\textsubscript{s}, LFE). Correct outputs 1--5 once and
+align the sub (workflows~A/B); four configurations then cover the common
+downmixes:
+
+\begin{table}[h]\centering
+\begin{tabular}{lll}
+\toprule
+Config & Mode & Routing \\
+\midrule
+A & 5.1 & in1$\rightarrow$1 \dots in5$\rightarrow$5,\; (in6 + sat.\ bass)$\rightarrow$6 \\
+B & 2.1 & in1$\rightarrow$1,\; in2$\rightarrow$2,\; (in6+in1+in2)$\rightarrow$6 \\
+C & 5.0 & in1$\rightarrow$1 \dots in5$\rightarrow$5 \\
+D & 2.0 & in1$\rightarrow$1,\; in2$\rightarrow$2 \\
+\bottomrule
+\end{tabular}
+\caption{One corrected 5.1 rig, four listening modes.}
+\end{table}
+
+\begin{enumerate}[nosep]
+  \item Set the bus to at least 6 in/out and wire the channels as above.
+  \item Config tool $\rightarrow$ \textbf{5.1} $\rightarrow$ set the crossover
+        $\rightarrow$ Apply to~A. This routes the six inputs and sends the LFE
+        (and, with bass management, the satellites' low end) to the sub.
+  \item Correct each satellite (workflow~A) and phase-align the sub to the front
+        pair (workflow~B).
+  \item \textbf{Config B (2.1)}: route only in1/in2 to outputs 1/2; keep the sub
+        frame (fold the LFE and, if wanted, the L/R bass into output~6).
+  \item \textbf{Configs C/D}: copy A/B and deactivate the sub frame.
+  \item Switch modes from the top bar (Exclusive on).
+\end{enumerate}
+
+The full-range-vs.-bass-management note of Section~\ref{sec:ex-studio} applies
+unchanged: if the satellites are full-range and you want true 5.0/2.0, run them
+full range and let the sub augment; if they are small, keep them highpassed and
+treat 5.0/2.0 as reduced-bass fallbacks.
+
+%------------------------------------------------------------------------------
+\section{An aligned Ambisonic rig: 8 monitors and a subwoofer}\label{sec:ex-ambi}
+%------------------------------------------------------------------------------
+
+Eight monitors arranged around the listener (e.g.\ a cube: four at ear height,
+four above) plus a subwoofer. Eight speakers decode first order robustly (which
+needs at least four); second order needs nine, so stay at order~1 here unless
+you add speakers. The B-format (AmbiX) feed is on inputs 1--4, the speakers on
+outputs 1--8 and the sub on output~9.
+
+\begin{enumerate}[nosep]
+  \item Raise the matrix size and the host bus to at least 4 in / 9 out (16/16
+        is convenient). Wire the eight monitors to outputs 1--8 and the sub to
+        output~9; feed your AmbiX B-format onto inputs 1--4.
+  \item Config tool $\rightarrow$ \textbf{Ambisonics}, \textbf{Order}~1,
+        \textbf{Speakers}~8. Enter each loudspeaker's azimuth, elevation and
+        radius and its output channel (start from the default rig and edit), set
+        the sub output and the crossover, keep \textbf{Bass management} on, then
+        \textbf{Apply} to~A (Section~\ref{sec:ambisonics}).
+        The tool writes the harmonic\,$\rightarrow$\,speaker decode frames,
+        lowpasses W to the sub, highpasses the eight speakers, and applies the
+        radius compensation (closer speakers delayed and attenuated) on the
+        outputs.
+  \item Measure and correct each of the eight monitors (workflow~A) and
+        phase-align the sub (workflow~B). Because the decode, the per-output
+        corrections, the radius delays and the latency compensation all run in
+        the same engine, no double-counting occurs --- the per-output measured
+        alignment already carries each speaker's path-length delay.
+  \item For an irregular rig (uneven radii or angles), prefer
+        \textbf{Load IEM decoder\dots} to import an AllRAD matrix instead of the
+        built-in sampling decoder; the radius toggles still apply.
+  \item Optionally keep a second configuration (B) that routes only W and the
+        front pair to two monitors for a quick non-periphonic check, switched
+        from the top bar.
+\end{enumerate}
+
+The background behind the decoder --- spherical harmonics, orders, the AmbiX
+convention and the max-\(r_E\) weighting --- is in Appendix~\ref{ch:ambiprimer}.
 
 %==============================================================================
 \chapter{Ambisonics primer}\label{ch:ambiprimer}
@@ -1816,6 +1899,86 @@ decodes to about unity at the nearest speaker, written as harmonic\,\(\rightarro
 frames, and combined with the radius compensation and bass management of
 Section~\ref{sec:ambisonics}. For deeper treatments see Zotter \&
 Frank~\cite{ZotterFrank2019} and Daniel~\cite{Daniel2000}.
+
+%==============================================================================
+\chapter{Glossary}\label{ch:glossary}
+%==============================================================================
+
+Cross-references point to where each term is developed in the text.
+
+\begin{description}[style=nextline, leftmargin=0pt, font=\normalfont\bfseries]
+  \item[All-pass / excess phase] A factor with \emph{unit magnitude} that
+        changes only phase (eq.~\eqref{eq:minap}). It carries the
+        ``excess'' phase a response has beyond the minimum-phase minimum —
+        pure delay, reflections, out-of-phase summation. Not removable by a
+        stable causal filter; SuperMoTo deliberately \emph{adds} a short
+        all-pass to steer a main onto a subwoofer's phase
+        (Section~\ref{sec:timealign}).
+  \item[Cepstrum (real)] The inverse Fourier transform of the log-magnitude
+        spectrum, $c[n]=\mathcal{F}^{-1}\{\log|C|\}$. Keeping its causal part
+        reconstructs the minimum-phase response used for low-latency rendering
+        (Section~\ref{sec:minphase}).
+  \item[Coherence] The fraction of the measured output linearly explained by
+        the input at each frequency ($0$ to $1$); it quantifies how much a Welch
+        estimate can be trusted (Section~\ref{sec:welch}).
+  \item[Comb filtering] Regularly spaced peaks and notches produced when the
+        direct sound sums with a delayed copy (a reflection); wide-band and
+        tied to geometry (Section~\ref{ch:analysis}).
+  \item[Crossover] The frequency region where two drivers (e.g.\ main and
+        subwoofer) hand over. A flat sum there is a phase/timing problem as much
+        as a level one (Section~\ref{sec:timealign}).
+  \item[FIR (finite impulse response) filter] A filter that convolves the
+        signal with a finite list of coefficients (the impulse response). The
+        exported correction is an FIR loaded per output; length $N$ sets the
+        frequency resolution $f_s/N$ and, if linear-phase, the latency $N/2$.
+  \item[Group delay] $-\,\mathrm{d}(\arg H)/\mathrm{d}\omega$: the delay a
+        response imposes near each frequency. Used to auto-detect the main/sub
+        offset (Section~\ref{sec:timealign}).
+  \item[$H_1$ estimator] The cross-spectrum / input auto-spectrum ratio
+        $S_{xy}/S_{xx}$ averaged over Welch segments; the noise-robust transfer
+        function SuperMoTo measures (Section~\ref{sec:welch}).
+  \item[Hilbert transform] The operator linking log-magnitude and phase of a
+        minimum-phase response (eq.~\eqref{eq:hilbert}); lets phase be recovered
+        from magnitude (Section~\ref{sec:minphasedef}).
+  \item[Impulse response (IR)] A system's output to a unit impulse; the
+        time-domain twin of the transfer function. Exported as a wav for the
+        FIR engine and the measured-response file (Section~\ref{sec:render}).
+  \item[Inter-output latency compensation] Automatic per-output delay so every
+        engaged output stays time-aligned with the longest FIR's bulk latency
+        (Chapter~\ref{ch:matrix}); shown by a gold LED on the output.
+  \item[Linear-phase] A filter whose phase is exactly linear in frequency, i.e.\
+        a pure delay across the band; it can impose an arbitrary phase
+        correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
+  \item[Minimum-phase] A causal, stable response whose inverse is also causal
+        and stable (all poles and zeros inside the unit circle) — the only kind
+        that is fully invertible by a realisable filter. Defined physically and
+        mathematically in Section~\ref{sec:minphasedef}.
+  \item[Polarity (Invert)] A frequency-independent $180^\circ$ sign flip, as
+        opposed to a delay (which is frequency-dependent). \textbf{Invert} flips
+        a subwoofer wired out of polarity (Section~\ref{sec:timealign}).
+  \item[Regularization] Bounding the inverse where the measured magnitude is
+        tiny, so deep notches do not demand infinite boost; here a soft-knee
+        (\texttt{tanh}) ceiling on the correction gain (Section~\ref{sec:correction}).
+  \item[Room mode] A standing-wave resonance of the room producing large,
+        strongly position-dependent peaks and dips at low frequency, with
+        audible ringing (Section~\ref{ch:analysis}).
+  \item[SBIR] Speaker--boundary interference response: the cancellation dip in
+        the upper bass set by the speaker-to-wall distance
+        (Section~\ref{ch:analysis}).
+  \item[Smoothing (fractional-octave)] Averaging the complex response over a
+        proportional bandwidth (e.g.\ $1/6$ octave), finer in the bass and
+        coarser in the treble, so the correction follows trends rather than
+        single-seat interference (Chapter~\ref{ch:analysis}).
+  \item[Spatial averaging] Averaging the (delay-aligned) responses of several
+        microphone positions, so the correction targets what is consistent
+        across the listening area rather than one seat (Section~\ref{sec:spatialavg}).
+  \item[Transfer function] The complex ratio $H(f)=Y(f)/X(f)$ of output to input
+        spectrum — magnitude and phase together — that describes a linear system
+        (Section~\ref{sec:welch}).
+  \item[Welch method] Power/cross-spectra estimated by averaging windowed,
+        overlapping FFT segments; trades resolution for variance to give a
+        usable in-room transfer function (Section~\ref{sec:welch}).
+\end{description}
 
 %==============================================================================
 \begin{thebibliography}{99}
