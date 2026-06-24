@@ -34,7 +34,7 @@
 #include "PluginProcessor.h"
 #include "Theme.h"
 #include "Components/MatrixComponent.h"
-#include "Components/InfoButton.h"
+// fxme::InfoButton comes via the FxmeTools module umbrella (JuceHeader.h)
 #include "Components/FrameEditorComponent.h"
 #include "Components/OutputEditorComponent.h"
 #include "Components/SpectrumAnalyzerComponent.h"
@@ -98,7 +98,7 @@ private:
     FrameEditorComponent frameEditor;
     OutputEditorComponent outputEditor;
     bool editingOutput = false;     // which editor occupies the detail panel
-    InfoButton infoButton;
+    fxme::InfoButton infoButton;
 
     // Bounds captured in resized() so the info button can be repositioned when
     // the view changes (matrix corner vs panel top-right).

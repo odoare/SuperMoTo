@@ -125,4 +125,15 @@ namespace SuperMoToTheme
         c.readout    = text;
         return c;
     }
+
+    // Palette handed to the reusable fxme::InfoButton help button + callout.
+    inline fxme::InfoButton::Colours infoButtonColours()
+    {
+        fxme::InfoButton::Colours c;
+        c.accent    = measure;
+        c.text      = text;
+        c.panel     = panel;
+        c.panelLine = panelLine;
+        return c;
+    }
 }

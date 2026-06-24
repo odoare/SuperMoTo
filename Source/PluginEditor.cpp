@@ -193,6 +193,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addChildComponent (analysis);
 
     // Per-page help, repositioned per view (kept on top of everything).
+    infoButton.setColours (SuperMoToTheme::infoButtonColours());
     addAndMakeVisible (infoButton);
 
     // Follow the engaged configuration in the matrix view.
