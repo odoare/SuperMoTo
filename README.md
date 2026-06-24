@@ -171,11 +171,14 @@ CMake based, mirroring MechanOdd. Expected sibling layout:
 
 ```
 ../JUCE/                              juce-framework/JUCE checkout
-../JUCE/usermodules/FxmeJuceTools/    symlink to FxmeJuceTools/module/FxmeJuceTools
 ```
 
+Shared FX-Mechanics code — GUI controls, look-and-feel, DSP and the WDL
+convolution engine — is provided by the FxmeTools submodule under `lib/`
+(no FxmeJuceTools symlink needed).
+
 ```
-git submodule update --init --recursive   # FxmeFX + WDL
+git submodule update --init --recursive   # FxmeTools + WDL
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
