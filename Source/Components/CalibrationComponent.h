@@ -29,8 +29,8 @@
 #include "../PluginProcessor.h"
 #include "../AppSettings.h"
 #include "../Theme.h"
-#include "SplMeterComponent.h"
-// fxme::SpectrumDisplay comes via the FxmeTools module umbrella (JuceHeader.h)
+// fxme::SplMeterComponent and fxme::SpectrumDisplay come via the FxmeTools
+// module umbrella (JuceHeader.h)
 
 class CalibrationComponent : public juce::Component,
                              private juce::ChangeListener,
@@ -417,6 +417,7 @@ private:
         addAndMakeVisible (splInfo);
         updateSplInfo();
 
+        meter.setColours (SuperMoToTheme::splMeterColours());
         addAndMakeVisible (meter);
 
         // Mic spectrum analyzer (same kind as the matrix view), fed by the SPL
@@ -612,7 +613,7 @@ private:
     juce::ToggleButton meterOnButton, sineButton, noiseButton;
     juce::ComboBox windowBox;
     juce::Slider sineAmp, sineFreq, noiseAmp, splRef;
-    SplMeterComponent meter;
+    fxme::SplMeterComponent meter;
     fxme::SpectrumDisplay spectrum;
     float splOffset = 0.0f;
     bool  splCalibrated = false;

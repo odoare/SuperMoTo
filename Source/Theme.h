@@ -111,4 +111,18 @@ namespace SuperMoToTheme
         c.panelLine      = panelLine;
         return c;
     }
+
+    // Palette handed to the reusable fxme::SplMeterComponent bar.
+    inline fxme::SplMeterComponent::Colours splMeterColours()
+    {
+        fxme::SplMeterComponent::Colours c;
+        c.background = plotBackground;
+        c.outline    = panelLine;
+        c.low        = spectrum;
+        c.mid        = dim;
+        c.high       = mute;
+        c.label      = dimText;
+        c.readout    = text;
+        return c;
+    }
 }
