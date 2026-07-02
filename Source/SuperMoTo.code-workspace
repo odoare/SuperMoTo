@@ -4,15 +4,8 @@
 			"path": ".."
 		},
 		{
-			"path": "../../Mechanodd"
-		},
-		{
 			"name": "FxmeTools",
 			"path": "../lib/FxmeTools"
-		},
-		{
-			"name": "MoTo",
-			"path": "../../MoTo"
 		}
 	],
 	"settings": {}
