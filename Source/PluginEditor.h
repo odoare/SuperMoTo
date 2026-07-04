@@ -56,7 +56,7 @@ public:
     void resized() override;
 
 private:
-    enum class View { matrix, configTool, calibration, analysis };
+    enum class View { matrix, configTool, calibration, analysis, presets };
     void setView (View v);
     void setEditConfig (int c);
     void layoutInfoButton();
@@ -86,7 +86,8 @@ private:
     juce::TextButton collapseButton;
 
     // ── Bottom control bar ───────────────────────────────────────────────────
-    juce::TextButton matrixViewButton, configToolButton, calibrationButton, analysisButton;
+    juce::TextButton matrixViewButton, configToolButton, calibrationButton, analysisButton,
+                     presetsViewButton;
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;
@@ -108,6 +109,10 @@ private:
     ConfigToolComponent configTool;
     CalibrationComponent calibration;
     AnalysisComponent analysis;
+
+    // ── Presets ──────────────────────────────────────────────────────────────
+    fxme::PresetComponent presetPane;    // full browser (Presets page)
+    fxme::PresetBarComponent presetBar;  // compact selector, top-right (expanded only)
 
     View currentView = View::matrix;
     int editConfig = 0;

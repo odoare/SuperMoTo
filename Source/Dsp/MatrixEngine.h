@@ -74,9 +74,17 @@ public:
         return (float) (1000.0 * (double) compDelay[(size_t) out].load() / (sr > 0.0 ? sr : 48000.0));
     }
 
-    /** Message thread: (re)load FIR impulse files whose path changed in the
-        model, and enable/disable output spectrum taps. */
-    void updateFirFiles();
+    /** Message thread: (re)load FIR impulses whose path changed in the model.
+        With force, every output reloads regardless (used after a preset /
+        session restore, where the embedded audio may differ under an
+        unchanged path). */
+    void updateFirFiles (bool force = false);
+
+    /** Optional source of state-embedded IRs (fxme::EmbeddedAudio), set by the
+        processor. When it yields a reader for an output, that impulse is used
+        instead of the model's firPath, so presets/sessions stay portable even
+        when the original wav files are gone. Message thread. */
+    std::function<std::unique_ptr<juce::AudioFormatReader> (int out)> embeddedIrProvider;
 
 private:
     void pullModelIfChanged();

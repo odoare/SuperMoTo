@@ -280,20 +280,32 @@ void MatrixEngine::processOutputChainOnly (juce::AudioBuffer<float>& buffer, int
         firs[(size_t) channel]->process (data, n);
 }
 
-void MatrixEngine::updateFirFiles()
+void MatrixEngine::updateFirFiles (bool force)
 {
     for (int o = 0; o < numChannels; ++o)
     {
         const auto s = model.getOutput (o);
-        if (s.firPath == loadedFirPaths[(size_t) o])
+        if (! force && s.firPath == loadedFirPaths[(size_t) o])
             continue;
 
         loadedFirPaths[(size_t) o] = s.firPath;
 
         if (s.firPath.isEmpty())
+        {
             firs[(size_t) o]->clearImpulse();
-        else
-            firs[(size_t) o]->loadFile (juce::File (s.firPath));
+            continue;
+        }
+
+        // The state's embedded copy of the impulse wins over the file: it is
+        // what was chosen even if the preset/session comes from a machine
+        // where the path is stale. The file is the pre-embedding fallback.
+        bool loaded = false;
+        if (embeddedIrProvider != nullptr)
+            if (auto reader = embeddedIrProvider (o))
+                loaded = firs[(size_t) o]->loadFromReader (*reader);
+
+        if (! loaded && ! firs[(size_t) o]->loadFile (juce::File (s.firPath)))
+            firs[(size_t) o]->clearImpulse();
     }
 
     recomputeLatencyComp();     // loaded IRs changed the latencies

@@ -39,7 +39,9 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
       outputEditor (p.configModel, p.engine),
       configTool (p.configModel),
       calibration (p),
-      analysis (p)
+      analysis (p),
+      presetPane (p.getPresetManager()),
+      presetBar (p.getPresetManager())
 {
     setLookAndFeel (&fxmeLookAndFeel);
 
@@ -98,6 +100,11 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     initViewButton (configToolButton, "Config tool", View::configTool);
     initViewButton (calibrationButton, "Calibration", View::calibration);
     initViewButton (analysisButton, "Analysis", View::analysis);
+    initViewButton (presetsViewButton, "Presets", View::presets);
+
+    // Compact preset selector: top-right corner, expanded mode only.
+    presetBar.setAccentColour (SuperMoToTheme::master);
+    addAndMakeVisible (presetBar);
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     // Matrix size selectors (rows = inputs, columns = outputs).
@@ -191,6 +198,8 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addChildComponent (configTool);
     addChildComponent (calibration);
     addChildComponent (analysis);
+    presetPane.setAccentColour (SuperMoToTheme::master);
+    addChildComponent (presetPane);
 
     // Per-page help, repositioned per view (kept on top of everything).
     infoButton.setColours (SuperMoToTheme::infoButtonColours());
@@ -209,7 +218,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     setEditConfig (initial);
 
     // Restore the interface mode left last time (which panel, compact or not).
-    setView (static_cast<View> (juce::jlimit (0, 3, smt::getUiView())));
+    setView (static_cast<View> (juce::jlimit (0, 4, smt::getUiView())));
 
     setResizable (true, true);
     setResizeLimits (1100, 720, 2400, 1600);
@@ -275,17 +284,21 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     for (auto* b : editConfigButtons)
         b->setVisible (m);
 
-    for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton })
+    for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton,
+                     &presetsViewButton })
         b->setVisible (! collapsed);
 
     configTool.setVisible (v == View::configTool && ! collapsed);
     calibration.setVisible (v == View::calibration && ! collapsed);
     analysis.setVisible (v == View::analysis && ! collapsed);
+    presetPane.setVisible (v == View::presets && ! collapsed);
+    presetBar.setVisible (! collapsed);
 
     matrixViewButton.setToggleState (v == View::matrix, juce::dontSendNotification);
     configToolButton.setToggleState (v == View::configTool, juce::dontSendNotification);
     calibrationButton.setToggleState (v == View::calibration, juce::dontSendNotification);
     analysisButton.setToggleState (v == View::analysis, juce::dontSendNotification);
+    presetsViewButton.setToggleState (v == View::presets, juce::dontSendNotification);
 
     juce::String t, body;
     infoTextFor (v, t, body);
@@ -430,6 +443,26 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "Export IR saves the measured response; Export correction IR saves the "
                 "correction and can assign it directly to an output.";
             break;
+
+        case View::presets:
+            title = "Presets";
+            body  =
+                "Save and recall complete SuperMoTo setups: the six matrix "
+                "configurations, the matrix size, the output processing (trim, EQ, "
+                "delay, FIR correction) and the top-bar parameters.\n\n"
+                "Factory presets ship with the plugin; user presets are XML files in "
+                "the folder shown at the bottom, so they can be backed up or shared. "
+                "Click a preset to load it. Save overwrites the current user preset "
+                "(or asks for a name), Save As always creates a new one; Rename and "
+                "Delete act on the selected user preset.\n\n"
+                "A * after the name means the state changed since the preset was "
+                "loaded or saved.\n\n"
+                "FIR correction impulses are embedded in the preset itself "
+                "(FLAC-compressed), so a preset keeps working even if the original "
+                "wav files are moved or the preset travels to another machine.\n\n"
+                "The compact selector at the top right steps through the same presets "
+                "from any page.";
+            break;
     }
 }
 
@@ -524,6 +557,17 @@ void SuperMoToAudioProcessorEditor::resized()
     dimButton->setBounds (top.removeFromLeft (sw (toggleW)));
     monoButton->setBounds (top.removeFromLeft (sw (toggleW)));
 
+    // Compact preset selector: the top-right corner, right of the Mono button
+    // in the space left free by the matrix-width-clipped control bar
+    // (expanded mode only; setView hides it when collapsed).
+    if (! collapsed)
+    {
+        auto barArea = getLocalBounds().removeFromTop (60).reduced (6);
+        barArea.removeFromLeft (barRight + 8);
+        presetBar.setBounds (barArea.removeFromRight (juce::jmin (280, barArea.getWidth()))
+                                    .reduced (0, 13));
+    }
+
     // ── Collapsed: only the output strip below the top bar ───────────────────
     if (collapsed)
     {
@@ -545,7 +589,8 @@ void SuperMoToAudioProcessorEditor::resized()
     for (auto* b : editConfigButtons)
         b->setBounds (bottom.removeFromLeft (40).reduced (2, 1));
 
-    const int vw = juce::jmin (110, bottom.getWidth() / 4);
+    const int vw = juce::jmin (110, bottom.getWidth() / 5);
+    presetsViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     analysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     calibrationButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     configToolButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
@@ -559,6 +604,7 @@ void SuperMoToAudioProcessorEditor::resized()
     configTool.setBounds (main);
     calibration.setBounds (main);
     analysis.setBounds (main);
+    presetPane.setBounds (main);
 
     // Matrix view: matrix left, analyzer + frame editor right
     auto right = main.removeFromRight (juce::jmax (340, main.getWidth() / 4 + 60));

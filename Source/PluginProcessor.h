@@ -39,7 +39,9 @@
 
 //==============================================================================
 class SuperMoToAudioProcessor  : public juce::AudioProcessor,
-                                 private juce::AudioProcessorValueTreeState::Listener
+                                 private juce::AudioProcessorValueTreeState::Listener,
+                                 private juce::ValueTree::Listener,
+                                 private smt::ConfigModel::Listener
 {
 public:
     //==============================================================================
@@ -96,9 +98,35 @@ public:
     // the calibration GUI before starting a run.
     std::atomic<int> measurementMicChannel { 0 };
 
+    // Factory (BinaryData XML) + user preset banks over the APVTS state.
+    fxme::PresetManager& getPresetManager() noexcept    { return *presetManager; }
+
 private:
     // Exclusive mode: engaging one of A..F releases the others.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
+
+    //==========================================================================
+    // Presets / self-contained state. PresetManager round-trips only
+    // apvts.state, so the ConfigModel tree ("Configurations" child) and the
+    // per-output FIR impulses (fxme::EmbeddedAudio, FLAC+Base64) are mirrored
+    // into it on every model change; a preset or session then carries the
+    // whole plugin. Message thread throughout.
+    static juce::String firSlot (int out)   { return "outFir" + juce::String (out + 1); }
+
+    void syncConfigToState();       // model -> "Configurations" child
+    void embedChangedFirFiles();    // firPath changes -> embedded audio slots
+    void restoreFromApvtsState();   // state -> model + FIR engines
+
+    // ConfigModel::Listener — mirrors every model edit into apvts.state.
+    void modelChanged() override;
+
+    // ValueTree::Listener on apvts.state — replaceState() (preset load, host
+    // session restore) redirects the tree; restore the model from it.
+    void valueTreeRedirected (juce::ValueTree&) override;
+
+    std::unique_ptr<fxme::PresetManager> presetManager;
+    std::array<juce::String, smt::numChannels> lastFirPaths;   // embed diffing
+    bool restoringState = false;    // silences modelChanged during a restore
 
     juce::AudioBuffer<float> inputCopy;
 

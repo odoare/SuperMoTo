@@ -39,10 +39,30 @@ SuperMoToAudioProcessor::SuperMoToAudioProcessor()
 {
     for (int c = 0; c < smt::numConfigs; ++c)
         apvts.addParameterListener (smt::configName (c), this);
+
+    // Presets: mirror the model into apvts.state before the PresetManager
+    // attaches its dirty-tracking listener, so a fresh instance starts clean.
+    syncConfigToState();
+    configModel.addListener (this);
+    apvts.state.addListener (this);
+
+    engine.embeddedIrProvider = [this] (int out)
+    {
+        return fxme::EmbeddedAudio::createReader (apvts.state, firSlot (out));
+    };
+
+    presetManager = std::make_unique<fxme::PresetManager> (
+        apvts,
+        fxme::PresetManager::getDefaultUserPresetDirectory ("FXMechanics", "SuperMoTo"),
+        BinaryData::namedResourceList,
+        BinaryData::namedResourceListSize,
+        BinaryData::getNamedResource);
 }
 
 SuperMoToAudioProcessor::~SuperMoToAudioProcessor()
 {
+    apvts.state.removeListener (this);
+    configModel.removeListener (this);
     for (int c = 0; c < smt::numConfigs; ++c)
         apvts.removeParameterListener (smt::configName (c), this);
 }
@@ -190,11 +210,79 @@ juce::AudioProcessorEditor* SuperMoToAudioProcessor::createEditor()
 }
 
 //==============================================================================
+// apvts.state carries the "Configurations" tree and the embedded FIR audio as
+// children (kept in sync by modelChanged), so the parameter tree alone is the
+// whole plugin state — and so are the presets PresetManager writes from it.
+
+void SuperMoToAudioProcessor::syncConfigToState()
+{
+    auto tree = configModel.toValueTree();
+    auto existing = apvts.state.getChildWithName (tree.getType());
+    if (existing.isValid())
+    {
+        if (existing.isEquivalentTo (tree))
+            return;
+        apvts.state.removeChild (existing, nullptr);
+    }
+    apvts.state.appendChild (tree, nullptr);
+}
+
+void SuperMoToAudioProcessor::embedChangedFirFiles()
+{
+    for (int o = 0; o < smt::numChannels; ++o)
+    {
+        const auto path = configModel.getOutput (o).firPath;
+        if (path == lastFirPaths[(size_t) o])
+            continue;
+        lastFirPaths[(size_t) o] = path;
+
+        if (path.isEmpty())
+            fxme::EmbeddedAudio::removeEmbedded (apvts.state, firSlot (o));
+        else if (juce::File (path).existsAsFile())
+            fxme::EmbeddedAudio::embedFile (apvts.state, firSlot (o), juce::File (path));
+        // A path whose file is gone keeps the previous embedded impulse: it
+        // may be the only remaining copy (state restored on another machine).
+    }
+}
+
+void SuperMoToAudioProcessor::modelChanged()
+{
+    if (restoringState)
+        return;
+    embedChangedFirFiles();
+    syncConfigToState();
+}
+
+void SuperMoToAudioProcessor::valueTreeRedirected (juce::ValueTree&)
+{
+    restoreFromApvtsState();
+}
+
+void SuperMoToAudioProcessor::restoreFromApvtsState()
+{
+    {
+        const juce::ScopedValueSetter<bool> svs (restoringState, true);
+
+        auto configs = apvts.state.getChildWithName ("Configurations");
+        if (configs.isValid())
+            configModel.restoreFromValueTree (configs);
+    }
+
+    for (int o = 0; o < smt::numChannels; ++o)
+        lastFirPaths[(size_t) o] = configModel.getOutput (o).firPath;
+
+    // Forced: a preset can carry a different embedded impulse under an
+    // unchanged firPath.
+    engine.updateFirFiles (true);
+}
+
+//==============================================================================
 void SuperMoToAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // The wrapper root is kept for compatibility with pre-preset-system
+    // states, which stored "Configurations" as a second child.
     juce::ValueTree root ("SuperMoToState");
     root.addChild (apvts.copyState(), -1, nullptr);
-    root.addChild (configModel.toValueTree(), -1, nullptr);
 
     juce::MemoryOutputStream mos (destData, true);
     root.writeToStream (mos);
@@ -208,8 +296,11 @@ void SuperMoToAudioProcessor::setStateInformation (const void* data, int sizeInB
 
     auto params = root.getChildWithName (apvts.state.getType());
     if (params.isValid())
-        apvts.replaceState (params);
+        apvts.replaceState (params);    // valueTreeRedirected restores the
+                                        // model + FIRs from the new tree
 
+    // Old-format state: "Configurations" next to the parameters instead of
+    // inside them. Restoring it re-mirrors (and re-embeds) via modelChanged.
     auto configs = root.getChildWithName ("Configurations");
     if (configs.isValid())
         configModel.restoreFromValueTree (configs);
