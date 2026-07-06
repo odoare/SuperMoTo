@@ -124,16 +124,14 @@ void SuperMoToAudioProcessor::releaseResources()
 
 bool SuperMoToAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    // Discrete I/O in one of a few sizes, up to the matrix maximum. Input and
-    // output may differ (e.g. 16 B-format inputs decoded to 24 speaker outputs).
+    // Discrete I/O of any size up to the matrix maximum. Input and output may
+    // differ (e.g. 16 B-format inputs decoded to 24 speaker outputs).
     // Anything larger than the live bus is computed but not written; the matrix
     // size selector in the editor chooses how many are actually used.
     auto ok = [] (const juce::AudioChannelSet& set)
     {
-        for (int n : { 8, 16, 24, 32 })
-            if (set == juce::AudioChannelSet::discreteChannels (n))
-                return true;
-        return false;
+        const int n = set.size();
+        return n >= 1 && n <= smt::numChannels && set == juce::AudioChannelSet::discreteChannels (n);
     };
 
     return ok (layouts.getMainOutputChannelSet())
