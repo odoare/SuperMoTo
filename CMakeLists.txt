@@ -32,7 +32,7 @@ juce_add_plugin(SuperMoTo
     FORMATS                     AU VST3 Standalone
     COPY_PLUGIN_AFTER_BUILD     TRUE
     PRODUCT_NAME                "SuperMoTo"
-    DESCRIPTION                 "FX-Mechanics 16x16 monitoring matrix with speaker calibration"
+    DESCRIPTION                 "FX-Mechanics 32x32 monitoring matrix with speaker calibration"
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           FALSE

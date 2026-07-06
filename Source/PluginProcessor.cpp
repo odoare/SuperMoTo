@@ -138,6 +138,19 @@ bool SuperMoToAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts
         && ok (layouts.getMainInputChannelSet());
 }
 
+void SuperMoToAudioProcessor::processorLayoutsChanged()
+{
+    // The host may negotiate a wider bus than the matrix is currently using
+    // (e.g. raising the track to 16 channels). Grow the active matrix size to
+    // match so the extra channels are actually routed, without ever shrinking
+    // a size the user picked deliberately in the editor.
+    const int liveIns  = getMainBusNumInputChannels();
+    const int liveOuts = getMainBusNumOutputChannels();
+
+    configModel.setMatrixSize (juce::jmax (configModel.getNumIns(),  liveIns),
+                               juce::jmax (configModel.getNumOuts(), liveOuts));
+}
+
 void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
