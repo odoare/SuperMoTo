@@ -124,28 +124,62 @@ void MatrixEngine::computeFedMask()
     fedOutputsMask.store (mask);
 }
 
-// Delay every fed output so they share the longest fed output FIR's bulk
-// latency. The output owning that FIR gets 0; the rest get the difference. An
-// unfed output, or one whose FIR is not engaged by the current preset, is left
-// alone — so a sub gets aligned to a main's linear-phase correction only when
-// the engaged preset actually routes to both.
+// Keeps every fed output time-aligned despite differing FIR latencies, while
+// minimizing how much delay actually needs to be added anywhere.
+//
+// Each fed output o has a user-set manual delay (userDelay[o], the Delay
+// control) and a FIR latency (firLat[o] = firOn ? the loaded IR's peak
+// position : 0). Simply adding (lmax - firLat[o]) after the FIR — the
+// previous approach — preserves alignment but ignores that an output with
+// its OWN manual delay already budgeted can "self-fund" its own FIR's
+// latency: up to min(userDelay[o], firLat[o]) samples of that manual delay
+// are spent paying for the FIR's own bulk latency instead of being applied
+// as an actual delay line (OutputProcessor::setFirLatencySamples), so the
+// FIR's latency arrives "for free" as part of what the user already dialled
+// in. Only the *unabsorbed* remainder (firLat[o] - userDelay[o], if positive)
+// still needs compensating by delaying every fed output uniformly by that
+// worst-case remainder k — exactly today's mechanism, just usually smaller
+// (often zero). This never changes the RELATIVE alignment between outputs
+// (still exactly userDelay[o] - userDelay[o'] apart), only the absolute
+// latency needed to achieve it. An unfed output, or one whose FIR is not
+// engaged by the current preset, is left alone.
 void MatrixEngine::recomputeLatencyComp()
 {
     const juce::uint32 fed = fedOutputsMask.load();
     auto isFed = [fed] (int o) { return (fed & (1u << o)) != 0; };
-    auto latOf = [this] (int o)
+    auto firLatOf = [this] (int o)
     {
         return outputSettings[(size_t) o].firOn ? firs[(size_t) o]->getLatencySamples() : 0;
     };
+    auto userDelayOf = [this] (int o)
+    {
+        return juce::roundToInt (outputSettings[(size_t) o].delayMs * 0.001 * sr);
+    };
 
-    int lmax = 0;
+    int k = 0;
     for (int o = 0; o < numChannels; ++o)
         if (isFed (o))
-            lmax = juce::jmax (lmax, latOf (o));
+            k = juce::jmax (k, firLatOf (o) - userDelayOf (o));
 
     for (int o = 0; o < numChannels; ++o)
-        compDelay[(size_t) o].store (isFed (o)
-            ? juce::jlimit (0, compCap - 1, lmax - latOf (o)) : 0);
+    {
+        if (! isFed (o))
+        {
+            compDelay[(size_t) o].store (0);
+            selfAbsorbDelay[(size_t) o].store (0);
+            outputProc[(size_t) o].setFirLatencySamples (0);
+            continue;
+        }
+
+        const int firLat = firLatOf (o);
+        const int userDelay = userDelayOf (o);
+        const int absorbed = juce::jmin (userDelay, firLat);
+        const int baseline = juce::jmax (userDelay, firLat);
+
+        outputProc[(size_t) o].setFirLatencySamples (firLat);
+        selfAbsorbDelay[(size_t) o].store (absorbed);
+        compDelay[(size_t) o].store (juce::jlimit (0, compCap - 1, userDelay + k - baseline));
+    }
 }
 
 void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>& output,
@@ -161,9 +195,20 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
     activeConfigs = configActive;
 
     pullModelIfChanged();
+
+    // Always consumed, even when configsChanged already forces a recompute
+    // below, so a dirty flag never lingers for an extra, redundant block.
+    const bool firLatencyDirty = latencyCompDirty.exchange (false);
     if (configsChanged)
     {
         computeFedMask();
+        recomputeLatencyComp();
+    }
+    else if (firLatencyDirty)
+    {
+        // A message-thread updateFirFiles() flagged a possible FIR-latency
+        // change; recomputeLatencyComp() mutates OutputProcessor, so it must
+        // run here on the audio thread, not from the message thread directly.
         recomputeLatencyComp();
     }
 
@@ -308,7 +353,10 @@ void MatrixEngine::updateFirFiles (bool force)
             firs[(size_t) o]->clearImpulse();
     }
 
-    recomputeLatencyComp();     // loaded IRs changed the latencies
+    // Loaded IRs may have changed the latencies, but recomputeLatencyComp()
+    // mutates OutputProcessor (audio-thread-owned state) and this method runs
+    // on the message thread — flag it instead and let process() pick it up.
+    latencyCompDirty.store (true);
 }
 
 } // namespace smt

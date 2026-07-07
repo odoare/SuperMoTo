@@ -152,8 +152,11 @@ void MatrixComponent::paint (juce::Graphics& g)
         }
 
         // Latency-compensation LED (top-right): lit when the engine delayed this
-        // output to align it with the longest output FIR. Hover for the amount.
-        if (engine.getOutputLatencyCompSamples (o) > 0)
+        // output to align it with the longest output FIR, OR when this output's
+        // own manual delay is self-absorbing its own FIR's latency. Hover for
+        // the amount (and which one it is).
+        if (engine.getOutputLatencyCompSamples (o) > 0
+            || engine.getOutputSelfAbsorbedSamples (o) > 0)
         {
             const juce::Rectangle<float> led (r.getRight() - 7.0f, r.getY() + 2.0f, 5.0f, 5.0f);
             g.setColour (SuperMoToTheme::dim);
@@ -480,14 +483,33 @@ juce::String MatrixComponent::getTooltip()
     if (hoverOut < 0 || hoverOut >= model.getNumOuts())
         return {};
 
-    const int comp = engine.getOutputLatencyCompSamples (hoverOut);
-    if (comp <= 0)
+    const int comp     = engine.getOutputLatencyCompSamples (hoverOut);
+    const int absorbed = engine.getOutputSelfAbsorbedSamples (hoverOut);
+    if (comp <= 0 && absorbed <= 0)
         return {};
 
-    return "Output " + juce::String (hoverOut + 1) + ": +"
-         + juce::String (engine.getOutputLatencyCompMs (hoverOut), 2) + " ms ("
-         + juce::String (comp) + " samples) latency compensation\n"
-         + "added to align this output with the longest output FIR.";
+    juce::String text = "Output " + juce::String (hoverOut + 1) + ":";
+
+    // This output's own manual delay is paying for part (or all) of its own
+    // FIR's latency, so less (or no) delay had to be added elsewhere to keep
+    // everything aligned — see the Delay control: only the reduced amount
+    // shown here is actually applied, the rest is "free" from the FIR itself.
+    if (absorbed > 0)
+    {
+        const float absorbedMs = engine.getOutputSelfAbsorbedMs (hoverOut);
+        const float shownMs = model.getOutput (hoverOut).delayMs;
+        const float appliedMs = juce::jmax (0.0f, shownMs - absorbedMs);
+        text << "\nThis output's own FIR latency absorbs " + juce::String (absorbedMs, 2)
+             + " ms from its Delay control (" + juce::String (appliedMs, 2)
+             + " ms actually applied of the " + juce::String (shownMs, 2)
+             + " ms shown), reducing overall system latency.";
+    }
+
+    if (comp > 0)
+        text << "\n+" + juce::String (engine.getOutputLatencyCompMs (hoverOut), 2) + " ms ("
+             + juce::String (comp) + " samples) added to stay aligned with the longest output FIR.";
+
+    return text;
 }
 
 //==============================================================================

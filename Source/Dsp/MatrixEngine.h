@@ -74,10 +74,22 @@ public:
         return (float) (1000.0 * (double) compDelay[(size_t) out].load() / (sr > 0.0 ? sr : 48000.0));
     }
 
+    /** How many samples/ms of THIS output's own manual delay were "spent"
+        absorbing its own FIR's latency instead of being applied as an actual
+        delay — see MatrixEngine.cpp's recomputeLatencyComp() doc comment.
+        0 = the FIR is off, unfed, or the manual delay had no slack to give. */
+    int getOutputSelfAbsorbedSamples (int out) const { return selfAbsorbDelay[(size_t) out].load(); }
+    float getOutputSelfAbsorbedMs (int out) const
+    {
+        return (float) (1000.0 * (double) selfAbsorbDelay[(size_t) out].load() / (sr > 0.0 ? sr : 48000.0));
+    }
+
     /** Message thread: (re)load FIR impulses whose path changed in the model.
         With force, every output reloads regardless (used after a preset /
         session restore, where the embedded audio may differ under an
-        unchanged path). */
+        unchanged path). Latency compensation is *not* recomputed synchronously
+        here (that touches OutputProcessor state, which must stay audio-thread
+        only) — it's flagged dirty and picked up by the next process() block. */
     void updateFirFiles (bool force = false);
 
     /** Optional source of state-embedded IRs (fxme::EmbeddedAudio), set by the
@@ -104,12 +116,20 @@ private:
     // actually feed is delayed so those outputs share the longest fed output
     // FIR's bulk latency (keeps multi-way / sub setups time-aligned). Outputs no
     // active frame routes to are ignored. Power-of-two ring, integer-sample delay.
+    // Before adding this post-FIR delay, each output's own manual delay first
+    // self-absorbs as much of its own FIR's latency as it has slack for (see
+    // recomputeLatencyComp()); selfAbsorbDelay records how much for the UI.
     static constexpr int compCap = 1 << 16;     // max compensable latency
     std::array<std::vector<float>, numChannels> compBuf;
     std::array<int, numChannels> compWrite {};
     std::array<std::atomic<int>, numChannels> compDelay {};
+    std::array<std::atomic<int>, numChannels> selfAbsorbDelay {};
     std::array<bool, numConfigs> activeConfigs {};   // last engaged presets
     std::atomic<juce::uint32> fedOutputsMask { 0 };  // outputs fed by them
+    // Set by updateFirFiles() (message thread) when a FIR's latency may have
+    // changed; consumed by process() (audio thread), which is the only thread
+    // allowed to call recomputeLatencyComp() since it mutates OutputProcessor.
+    std::atomic<bool> latencyCompDirty { false };
 
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frameSettings {};
     std::array<OutputSettings, numChannels> outputSettings {};

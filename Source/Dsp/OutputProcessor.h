@@ -9,6 +9,15 @@
     output buffer; no allocation on the audio thread. The coefficient math is
     shared with FrameProcessor's own 2-band EQ via BandFilter.h.
 
+    The delay line self-absorbs this output's own FIR latency (see
+    setFirLatencySamples(), pushed by MatrixEngine::recomputeLatencyComp()):
+    if the manual delay already has slack, up to that many samples of it are
+    "spent" paying for the FIR's own bulk latency instead of being applied as
+    an actual delay, so the overall system doesn't need as much (or any)
+    compensation delay added elsewhere to stay aligned. Audio-thread only —
+    see MatrixEngine.cpp's comment on why this can't be touched from the
+    message thread.
+
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
     SPDX-License-Identifier: LGPL-3.0-or-later
@@ -52,8 +61,17 @@ public:
         if (filterChanged)
             updateFilters();
 
-        delaySamples = juce::jlimit (0.0f, (float) delayLine.size() - 2.0f,
-                                     (float) (settings.delayMs * 0.001 * sr));
+        updateDelaySamples();
+    }
+
+    /** Called by MatrixEngine (audio thread only) whenever this output's own
+        FIR latency changes, so up to that many samples of the manual delay
+        are self-absorbed instead of MatrixEngine compensating elsewhere —
+        see MatrixEngine::recomputeLatencyComp(). */
+    void setFirLatencySamples (int samples) noexcept
+    {
+        firLatencySamples = samples;
+        updateDelaySamples();
     }
 
     /** EQ (and optionally the delay) in place. */
@@ -98,6 +116,13 @@ private:
                                             sr, biquads, maxBiquads);
     }
 
+    void updateDelaySamples()
+    {
+        const float raw = (float) (settings.delayMs * 0.001 * sr);
+        const float effective = juce::jmax (0.0f, raw - (float) firLatencySamples);
+        delaySamples = juce::jlimit (0.0f, (float) delayLine.size() - 2.0f, effective);
+    }
+
     double sr = 44100.0;
     OutputSettings settings;
 
@@ -108,6 +133,7 @@ private:
     std::vector<float> delayLine;
     int writePos = 0;
     float delaySamples = 0.0f;
+    int firLatencySamples = 0;
 };
 
 } // namespace smt

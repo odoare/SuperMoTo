@@ -27,8 +27,15 @@ controls and shortcuts.
 - **Automatic inter-output latency compensation**: when outputs that are fed
   by the engaged preset carry FIRs of different lengths, the shorter (or
   FIR-less) outputs are delayed so all stay time-aligned with the longest
-  output FIR. A **gold LED** on an output cell shows it received compensation
-  (hover for the amount). This is what keeps a subwoofer aligned with a
+  output FIR. Before that, an output's own manual **Delay** first
+  self-absorbs as much of its own FIR's latency as it has slack for (e.g. a
+  main already delayed 25 ms to align with a farther sub, corrected with a
+  1024-sample linear-phase FIR ≈ 11.6 ms of latency, needs *no* extra
+  compensation on the sub at all — the main's own Delay control absorbs it),
+  so only the unabsorbed remainder is ever added elsewhere; the relative
+  alignment is identical either way, only the overall system latency is
+  lower. A **gold LED** on an output cell shows its alignment is automatic
+  (hover for the details). This is what keeps a subwoofer aligned with a
   linear-phase-corrected main.
 - **Global spectrum analyzer** showing any set of matrix frames and/or
   output sums (checkbox in each frame / output strip), with a clickable

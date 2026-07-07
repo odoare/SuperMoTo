@@ -539,14 +539,32 @@ SuperMoTo applies \textbf{automatic inter-output latency compensation}: among
 the outputs fed by the engaged configuration, the ones with shorter (or no)
 FIR are delayed so that \emph{all outputs stay time-aligned with the longest
 output FIR}. This is what keeps a subwoofer aligned with a linear-phase-
-corrected main. A \textbf{gold LED} on an output cell indicates it received
-compensation; hover to read the amount.
+corrected main. A \textbf{gold LED} on an output cell indicates its alignment
+is automatic; hover to read the details.
+
+\paragraph{Self-absorption.} Before adding that compensation delay, an output
+that already carries its own manual \textbf{Delay} first ``spends'' up to
+$L/2$ samples of it paying for its own FIR's latency, instead of that latency
+being added as \emph{extra} delay somewhere else. Only the \emph{unabsorbed}
+remainder, if any, still needs compensating on the other outputs — so a main
+that already has slack in its Delay control needs little or no compensation
+added to the sub at all. For example: a main delayed \SI{25}{\milli\second}
+to align with a farther sub, corrected with a 1024-sample linear-phase FIR
+($L/2 \approx \SI{11.6}{ms}$ at \SI{44.1}{\kilo\hertz}) — since $25 >
+11.6\,\text{ms}$, the main's Delay control fully absorbs the FIR's latency
+(only $25-11.6\approx\SI{13.4}{ms}$ of it is actually applied as a real
+delay) and the sub needs \emph{no} extra compensation at all, instead of the
+$\approx\SI{11.6}{ms}$ it would have received otherwise. The relative
+alignment between main and sub is identical either way — self-absorption only
+lowers the overall system latency, never changes what you hear. The
+\textbf{Delay} control itself always keeps showing the value you set; only how
+much of it becomes an actual delay line changes.
 
 % TODO(screenshot): close-up of the output strip showing a gold LED on the
 % subwoofer output and the hover tooltip with the compensation amount.
 \screenshot{latency-led.png}{Output strip close-up: the gold LED marks an output
-that received automatic latency compensation; the tooltip shows how many
-samples / milliseconds were added to keep it aligned with the longest FIR.}
+whose alignment is automatic (compensation added, self-absorption, or both);
+the tooltip shows the amounts in samples / milliseconds.}
 
 \section{The global spectrum analyzer}
 The analyzer can display any combination of:
@@ -2174,7 +2192,10 @@ Cross-references point to where each term is developed in the text.
         FIR engine and the measured-response file (Section~\ref{sec:render}).
   \item[Inter-output latency compensation] Automatic per-output delay so every
         engaged output stays time-aligned with the longest FIR's bulk latency
-        (Chapter~\ref{ch:matrix}); shown by a gold LED on the output.
+        (Chapter~\ref{ch:matrix}); an output's own manual Delay first
+        self-absorbs its own FIR's latency where it has slack to, so only the
+        unabsorbed remainder is added elsewhere. Shown by a gold LED on the
+        output.
   \item[Linear-phase] A filter whose phase is exactly linear in frequency, i.e.\
         a pure delay across the band; it can impose an arbitrary phase
         correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
