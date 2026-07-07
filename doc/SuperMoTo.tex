@@ -86,19 +86,22 @@ SuperMoTo is an FX-Mechanics audio plugin (VST3, AU and Standalone) for the
 
 \begin{itemize}[nosep]
   \item route up to \textbf{32 inputs to 32 outputs} (8 by default) through a
-        full routing matrix, with per-crosspoint gain, EQ, phase and delay;
+        full routing matrix, with per-crosspoint gain, a 2-band EQ and phase;
   \item apply \textbf{one FIR correction filter per output} (zero-latency WDL
         convolution) to flatten each loudspeaker;
   \item \textbf{measure} the loudspeakers in the room with built-in stimuli;
   \item \textbf{analyse} those measurements and \textbf{design} the FIR
         correction curves (magnitude and phase), including phase-coherent
-        \textbf{subwoofer integration}.
+        \textbf{subwoofer integration};
+  \item \textbf{align and correct a whole rig at once} — several speakers
+        plus a shared subwoofer — in the \textbf{Group analysis} mode.
 \end{itemize}
 
-The plugin is organised in three functional parts that share one engine:
+The plugin is organised in four functional parts that share one engine:
 the \textbf{Monitoring matrix} (Chapter~\ref{ch:matrix}), the
-\textbf{Measurement / Calibration} view (Chapter~\ref{ch:measure}) and the
-\textbf{Analysis \& correction design} view (Chapter~\ref{ch:analysis}).
+\textbf{Measurement / Calibration} view (Chapter~\ref{ch:measure}), the
+\textbf{Analysis \& correction design} view (Chapter~\ref{ch:analysis}) and
+the \textbf{Group analysis} view (Chapter~\ref{ch:groupanalysis}).
 
 \section{Why calibrate a monitoring system?}\label{sec:why}
 What you hear at the listening position is never the loudspeaker alone: it is
@@ -247,12 +250,14 @@ order.
 
 \section{Signal flow at a glance}
 Figure~\ref{fig:signalflow} shows the per-block processing performed by the
-matrix engine. Audio enters on the discrete input channels (8 by default, up to
-32), is summed through the active matrix configuration(s), passes the per-output
-trim and FIR correction, is time-aligned across outputs, and finally the master
-section (Level / Mute / Dim / Mono) is applied before the discrete outputs. The
-active matrix size is set with the Inputs/Outputs selectors; the plugin bus
-supports 8, 16, 24 or 32 discrete channels.
+matrix engine. Audio enters on the discrete input channels, is summed through
+the active matrix configuration(s), passes the per-output trim and FIR
+correction, is time-aligned across outputs, and finally the master section
+(Level / Mute / Dim / Mono) is applied before the discrete outputs. The
+plugin's bus is a \textbf{fixed 32-in/32-out} discrete layout (no host
+negotiation involved); the \emph{active} matrix size — 8 by default, up to
+32 — is a separate, independent setting made with the Inputs/Outputs
+selectors, and channels beyond it are simply left unrouted.
 
 \begin{figure}[ht]
 \centering
@@ -265,7 +270,7 @@ supports 8, 16, 24 or 32 discrete channels.
    >={Stealth[]}]
   \node[io] (in) {discrete\\inputs};
   \node[block, right=of in] (matrix) {Routing\\matrix\\(A..F)};
-  \node[block, right=of matrix] (frame) {Per-frame\\gain / phase};
+  \node[block, right=of matrix] (frame) {Per-frame\\gain / EQ /\\phase};
   \node[block, right=of frame] (trim) {Per-output\\trim / EQ /\\delay};
   \node[block, below=14mm of trim] (fir) {Per-output\\FIR\\correction};
   \node[block, left=of fir] (comp) {Inter-output\\latency\\compensation};
@@ -281,25 +286,34 @@ supports 8, 16, 24 or 32 discrete channels.
   \draw[->] (master) -- (out);
 \end{tikzpicture}
 \caption{Per-block signal flow of the matrix engine. Each crosspoint
-(``frame'') of the matrix has its own gain, 4-band EQ, phase inversion and
-fractional delay; each output has a trim and an optional FIR correction
-filter. Outputs are then re-aligned so loudspeakers with different FIR
-lengths stay time-coherent.}
+(``frame'') of the matrix has its own gain, phase inversion and a small
+2-band EQ; each output then has its own trim, a further 2-band EQ, a
+time-alignment delay and an optional FIR correction filter. Outputs are then
+re-aligned so loudspeakers with different FIR lengths stay time-coherent.}
 \label{fig:signalflow}
 \end{figure}
 
-\section{Plugin format and channel layout}
+\section{Plugin format and channel layout}\label{sec:channellayout}
 \begin{itemize}[nosep]
   \item Formats: \textbf{VST3}, \textbf{AU}, \textbf{Standalone}.
   \item Bus layout: one input bus and one output bus, each
-        \textbf{16 discrete channels}
-        (\texttt{AudioChannelSet::discreteChannels(16)}). The plugin only
-        reports support for the exact 16-in / 16-out layout.
+        \textbf{32 discrete channels}
+        (\texttt{AudioChannelSet::discreteChannels(32)}). The plugin only
+        reports support for the exact 32-in / 32-out layout — no other
+        channel count is negotiated.
   \item Plugin type: audio effect (not a synth, no MIDI).
 \end{itemize}
 
-This fixed 16$\times$16 discrete layout is the key constraint for host
-compatibility — see Chapter~\ref{ch:daw}.
+The bus is fixed rather than negotiated on purpose: JUCE's per-host discrete
+channel-count discovery is inconsistent (the AU wrapper only probes up to 16
+channels; VST3's channel-set/\texttt{SpeakerArrangement} mapping has no
+defined bit for more than one unnamed discrete channel), which left some
+hosts stuck offering only 8 channels when the layout was negotiable. A single
+fixed 32-channel bus sidesteps that entirely — unused channels are simply
+left disconnected in the host, and the \emph{active} matrix size (independent
+of the bus, Section~\ref{sec:outputchain}) is what actually limits how many
+are routed. This fixed 32$\times$32 discrete layout is the key constraint for
+host compatibility — see Chapter~\ref{ch:daw}.
 
 %==============================================================================
 \chapter{Host (DAW) compatibility}\label{ch:daw}
@@ -337,7 +351,7 @@ Ardour & Strong &
 Steinberg Nuendo / Cubase & Strong &
   The \emph{Control Room} provides a monitor insert chain with flexible
   downmix and multi-channel busses — ideal for a post-production monitoring
-  matrix. Confirm the Control Room insert accepts a 16-channel plugin layout. \\
+  matrix. Confirm the Control Room insert accepts a 32-channel plugin layout. \\
 Bitwig Studio & Possible &
   Very flexible routing and per-device chains; place the plugin on the master
   or on a hardware-output chain. No formal ``monitor section'', so the
@@ -360,7 +374,7 @@ tested.}
         surround layouts; an arbitrary high-count discrete insert is not the
         native model.
   \item \textbf{Logic Pro} — surround formats are fixed and discrete
-        16-channel routing through a monitor insert is not straightforward.
+        32-channel routing through a monitor insert is not straightforward.
   \item \textbf{Studio One / FL Studio / Live} — usable as generic effect
         hosts, but they lack a true control-room monitor insert, so the
         plugin would have to live on the master bus and be manually bypassed
@@ -380,9 +394,9 @@ tested.}
 \end{enumerate}
 
 % TODO(screenshot): REAPER Monitoring FX window with SuperMoTo inserted and
-% the 16x16 pin connector visible.
+% the 32x32 pin connector visible.
 \screenshot{reaper-monitoring-fx.png}{REAPER ``Monitoring FX'' window with
-SuperMoTo inserted, showing the 16-in/16-out pin/channel mapping to the
+SuperMoTo inserted, showing the fixed 32-in/32-out pin/channel mapping to the
 hardware outputs.}
 
 %==============================================================================
@@ -390,20 +404,24 @@ hardware outputs.}
 %==============================================================================
 
 % TODO(screenshot): full plugin window in Matrix view: top bar (A..F, Exclusive,
-% Level, Mute/Dim/Mono, collapse), the 16x16 grid of frames with vu-meters,
-% the output strip along one edge, the analyzer, and the frame editor panel.
+% Level, Mute/Dim/Mono, collapse), the grid of frames with vu-meters (default
+% 8x8, resizable up to 32x32), the output strip along one edge, the analyzer,
+% and the frame editor panel.
 \screenshot{SuperMoTo_matrix_view.png}{The Matrix view: top bar with configuration
-buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the 16$\times$16
-grid of frames each with its vu-meter; the per-output strip; the global
-spectrum analyzer; and the frame editor panel (bottom-right).}
+buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the matrix
+grid of frames (here at its default 8$\times$8, resizable up to 32$\times$32)
+each with its vu-meter; the per-output strip; the global spectrum analyzer;
+and the frame editor panel (bottom-right).}
 
 \section{Concepts}
 The matrix is a grid of up to \textbf{32$\times$32}. The cell at row \emph{in},
-column \emph{out} is a \textbf{frame} (crosspoint): a pure \emph{routing} cell
-that controls how much of input \emph{in} is sent to output \emph{out}. All the
-loudspeaker processing — trim, EQ, delay and the FIR correction — lives on the
-\textbf{output}, since it describes the physical speaker; output settings are
-global and therefore shared by all configurations.
+column \emph{out} is a \textbf{frame} (crosspoint): mainly a \emph{routing}
+cell (how much of input \emph{in} is sent to output \emph{out}), but it also
+carries a small EQ of its own for a config-specific tonal tweak on just that
+one route. Everything that describes the \emph{physical speaker} — trim, its
+own EQ, delay and the FIR correction — lives on the \textbf{output} instead,
+since output settings are global and therefore shared by all configurations
+that route into it.
 
 \subsection{What a frame contains}
 \begin{itemize}[nosep]
@@ -411,6 +429,10 @@ global and therefore shared by all configurations.
   \item \textbf{Gain} (overall frame level, dB);
   \item \textbf{Phase invert} (a frequency-independent polarity flip, useful for
         e.g.\ a differential decode coefficient);
+  \item a \textbf{2-band EQ} — same band types and controls as the output's EQ
+        below, applied only to this one route (before it sums into the
+        output); useful for a config-specific voicing tweak without touching
+        the shared output settings;
   \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox to show the
         frame's signal on the spectrum analyzer.
 \end{itemize}
@@ -420,7 +442,7 @@ Each output is the chain applied to the summed signal of all active frames
 feeding it. Click an output cell (top strip) to edit it:
 \begin{itemize}[nosep]
   \item \textbf{Trim} (output level, dB);
-  \item a \textbf{4-band EQ} — each band can be lowpass, highpass, bandpass
+  \item a \textbf{2-band EQ} — each band can be lowpass, highpass, bandpass
         or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in
         series. This is where the \textbf{bass-management crossover} lives (a
         highpass on a main, a lowpass on the sub);
@@ -440,15 +462,17 @@ feeding it. Click an output cell (top strip) to edit it:
   \node[block] (in) {input\\$in$};
   \node[block, right=8mm of in] (gain) {frame\\gain};
   \node[block, right=6mm of gain] (phase) {phase\\invert};
-  \node[draw, circle, right=8mm of phase, fill=smtgold!40] (sum) {$\Sigma$};
+  \node[block, right=6mm of phase] (frameeq) {frame\\2-band EQ};
+  \node[draw, circle, right=8mm of frameeq, fill=smtgold!40] (sum) {$\Sigma$};
   \node[block, right=8mm of sum] (trim) {trim};
-  \node[block, right=5mm of trim] (eq) {4-band\\EQ};
+  \node[block, right=5mm of trim] (eq) {2-band\\EQ};
   \node[block, below=6mm of eq] (delay) {delay};
   \node[block, left=5mm of delay] (fir) {FIR};
   \node[block, left=5mm of fir] (out) {output\\$out$};
   \draw[->] (in) -- (gain);
   \draw[->] (gain) -- (phase);
-  \draw[->] (phase) -- (sum);
+  \draw[->] (phase) -- (frameeq);
+  \draw[->] (frameeq) -- (sum);
   \draw[->] (sum) -- (trim);
   \draw[->] (trim) -- (eq);
   \draw[->] (eq) -- (delay);
@@ -457,14 +481,16 @@ feeding it. Click an output cell (top strip) to edit it:
   \node[font=\footnotesize, above=3mm of sum, align=center]
     {sum of all active\\frames into $out$};
 \end{tikzpicture}
-\caption{Routing frames (gain + phase) sum into each output, which then applies
-the per-speaker trim, EQ, delay and FIR correction.}
+\caption{Routing frames (gain + phase + their own 2-band EQ) sum into each
+output, which then applies the per-speaker trim, its own 2-band EQ, delay and
+FIR correction.}
 \label{fig:frame}
 \end{figure}
 
 \subsection{Configurations A--F}
-There are \textbf{6 configurations} (A..F), each a complete 16$\times$16
-matrix, stored per preset. They are engaged from the top-bar buttons:
+There are \textbf{6 configurations} (A..F), each a complete matrix at the
+active size (up to 32$\times$32), stored per preset. They are engaged from
+the top-bar buttons:
 \begin{itemize}[nosep]
   \item \textbf{Exclusive} mode (default): engaging one releases the others —
         an instant A/B between rigs.
@@ -691,23 +717,62 @@ controller once the routing is set.
 %==============================================================================
 
 % TODO(screenshot): the Calibration view: microphone input selector, measurement
-% type, channel selection, stimulus type, duration/level/base-path controls, the
-% Run button, and the SPL meter section on the right with its dual dBFS/dB SPL bar.
+% type, channel selection, stimulus type, duration/level controls, the Sub
+% switch and sub-channel combo, the measurement-folder chooser, the Run button,
+% and the SPL meter section on the right with its dual dBFS/dB SPL bar.
 \screenshot{calibration-view.png}{The Calibration view: microphone input,
 measurement type, channel selection, stimulus (noise / sweep), duration,
-level and base path, the Run control, and the right-hand SPL-meter section
+level, the \textbf{Sub} switch and sub-channel combo, the measurement
+\textbf{folder}, the Run control, and the right-hand SPL-meter section
 with its dual dBFS / dB\,SPL bar and test-signal generators.}
 
 \section{Running a measurement}
 Select the \textbf{microphone input}, the \textbf{measurement type}, the
 \textbf{channels} to measure, the \textbf{stimulus} (band-limited white noise
 or a logarithmic sweep, \SIrange{10}{20000}{\hertz}), the \textbf{duration}
-(\SIrange{5}{30}{\second}), the \textbf{level} and the \textbf{base
-pathname}. \textbf{Run} measures each selected channel in turn and writes a
+(\SIrange{5}{30}{\second}), the \textbf{level} and the \textbf{measurement
+folder}. \textbf{Run} measures each selected channel in turn and writes a
 stereo wav file per channel:
 \begin{itemize}[nosep]
   \item channel 1 = the \textbf{sent} signal (the raw stimulus),
   \item channel 2 = the \textbf{recorded} microphone signal.
+\end{itemize}
+
+\subsection{Measurement folders, positions and the subwoofer channel}\label{sec:measfolder}
+Rather than one file per channel, \textbf{Run} organises an entire measurement
+campaign into a single folder that Group analysis (Chapter~\ref{ch:groupanalysis})
+can later load in one step:
+
+\begin{itemize}[nosep]
+  \item Files are named automatically:
+        \begin{itemize}[nosep]
+          \item \texttt{ch<channel>\_pos<N>.wav} — Dry / FIR modes;
+          \item \texttt{in<channel>\_pos<N>.wav} — System mode;
+          \item \texttt{sub\_pos<N>.wav} — whichever channel is flagged as the
+                subwoofer (see the \textbf{Sub} switch below), in any mode
+                where it applies.
+        \end{itemize}
+        The position number \texttt{<N>} is found automatically for each
+        channel by scanning the folder for that channel's existing files and
+        incrementing — so moving the microphone and running the same channel
+        selection again adds the next position without any manual renaming,
+        and channels measured together in one run stay in step across runs.
+  \item After every run, SuperMoTo (re)writes a \texttt{readme\_measurement.md}
+        in the folder: which channels have been measured, which one is the
+        subwoofer, how many positions exist so far, and a log entry per run
+        (mode, stimulus, duration, level, mic input, files written). This is
+        what Group analysis's \textbf{Load measurement folder\ldots} button
+        reads (Section~\ref{sec:grouploadfolder}) — it is regenerated from the
+        folder's actual contents each time, so it stays correct even if files
+        are added or removed by hand.
+  \item The \textbf{Sub} switch turns subwoofer handling on for this
+        measurement run; the \textbf{Sub channel} combo next to it then picks
+        \emph{which} of the measured channels is the subwoofer. Both are
+        disabled in System mode, where the toggled channels are plugin
+        \emph{inputs} rather than physical outputs and ``which one is the
+        sub'' is not a meaningful question. Leaving the switch off (the
+        default) measures every channel as an ordinary loudspeaker, exactly as
+        before this folder scheme existed.
 \end{itemize}
 
 \section{The measurement microphone}\label{sec:micchoice}
@@ -876,17 +941,17 @@ the injection point of each.
 \textbf{Dry} &
   Stimulus written straight onto the measured \emph{output} — no trim, no FIR.
   The raw loudspeaker, as wired. The first step before designing a FIR. &
-  \texttt{<base>\_<output>.wav} \\
+  \texttt{ch<output>\_pos<N>.wav} (or \texttt{sub\_pos<N>.wav}) \\
 \textbf{FIR} &
   Stimulus to the measured \emph{output} through its trim and FIR chain only,
   to verify a correction by re-measuring. &
-  \texttt{<base>\_<output>.wav} \\
+  \texttt{ch<output>\_pos<N>.wav} (or \texttt{sub\_pos<N>.wav}) \\
 \textbf{System} &
   Stimulus injected into a plugin \emph{input} and run through the whole engine
   (matrix routing, frame EQ / crossover, output FIRs, inter-output latency
   compensation) — the complete system as heard. Channel selection means
-  \emph{inputs} in this mode. &
-  \texttt{<base>\_in<input>.wav} \\
+  \emph{inputs} in this mode; the \textbf{Sub} switch does not apply. &
+  \texttt{in<input>\_pos<N>.wav} \\
 \bottomrule
 \end{tabularx}
 \caption{Measurement modes. ``Dry'' characterises a bare speaker, ``FIR''
@@ -950,10 +1015,10 @@ frame EQ and bass-management crossover, the output FIRs and the inter-output
 latency compensation — exactly what you hear. The master gain is bypassed
 (unity) during the run, so the capture level is set by the stimulus alone.
 Because the source is an input, \textbf{the channel selection chooses inputs}
-and the files are tagged \texttt{\_in} so a System set never collides with a
-Dry/FIR (output) set. This is the end-to-end validation: for a bass-managed
-rig it shows whether mains and subwoofer sum smoothly through the crossover at
-the listening position.
+and the files are tagged \texttt{in<N>} so a System set never collides with a
+Dry/FIR (output) set in the same folder. This is the end-to-end validation:
+for a bass-managed rig it shows whether mains and subwoofer sum smoothly
+through the crossover at the listening position.
 
 \subsection{The ``sent'' channel convention}
 In \emph{every} mode the captured stereo file stores the \textbf{raw stimulus}
@@ -1486,6 +1551,138 @@ but carries its minimum-phase companion instead.
 \end{itemize}
 
 %==============================================================================
+\chapter{Group analysis: multi-speaker alignment}\label{ch:groupanalysis}
+%==============================================================================
+
+\section{Overview}
+Chapter~\ref{ch:analysis} designs one speaker's correction at a time. Once a
+rig has more than a couple of drivers, two things become impractical to do
+by hand: comparing every speaker's measured arrival time to work out the
+delays that time-align them all, and repeating the whole load/tune/export
+cycle once per speaker with the same settings. \textbf{Group analysis}
+addresses both: it holds one \emph{group} of speaker analyses (plus one
+shared subwoofer) side by side, shares the correction-design settings across
+all of them, computes the relative delays that align the whole group, and
+exports every speaker's correction filter in one step.
+
+Everything the single-speaker Analysis pane can do to \emph{one} measurement
+set — Welch estimation (Section~\ref{sec:welch}), fractional-octave
+smoothing (Section~\ref{sec:varsmooth}), correction design
+(Section~\ref{sec:correction}) and FIR rendering (Section~\ref{sec:render})
+— is exactly what Group analysis runs once per speaker; nothing about the
+underlying DSP differs. What Group analysis adds is the delay computation
+across the whole group and the batch apply/export step.
+
+\screenshot{group-analysis-view.png}{The Group analysis view: speaker count
+and Compute alignment / Apply \& export controls; the shared correction-design
+row; the per-speaker rows (Load..., measured delay, output assignment) and
+the dedicated Sub row; the Preview selector and the shared transfer-function
+plot.}
+
+\section{Loading measurements}
+\begin{itemize}[nosep]
+  \item \textbf{Speakers} sets how many drivers to align (1 to 16). Each gets
+        its own row: a \textbf{Load...} button (the same multi-position,
+        stereo sent/recorded measurement convention as
+        Section~\ref{sec:spatialavg} — one file per microphone position, at
+        the \emph{same} positions across every speaker), a file-count /
+        measured-delay read-out, and an \textbf{output} assignment combo.
+  \item A \textbf{Sub} switch (top row, next to \textbf{Speakers}) turns
+        subwoofer handling on or off for the whole group; when off, the Sub
+        row is disabled and the subwoofer is left out of alignment and export
+        entirely (Section~\ref{sec:groupsub}). One dedicated \textbf{Sub} row
+        takes the shared subwoofer measurement set, at the same microphone
+        positions as the speakers.
+  \item Past six speakers the rows lay out in two columns instead of one long
+        scrolling list, so a large rig stays legible.
+\end{itemize}
+
+\section{Loading a whole measurement folder in one step}\label{sec:grouploadfolder}
+Loading every speaker (and the sub) by hand with individual \textbf{Load...}
+clicks works, but is tedious for a large rig and depends on picking files in
+the right order in each dialog. \textbf{Load measurement folder\ldots} does
+the whole thing in one step: point it at a folder written by the Calibration
+view's folder-based capture (Section~\ref{sec:measfolder}), and it reads that
+folder's \texttt{readme\_measurement.md} to find which channels were
+measured and which one is the subwoofer, sets \textbf{Speakers} to match, and
+loads every speaker's (and the sub's) files — sorted by position, not by file-
+dialog order, so the main/sub pairing is always correct. Each channel's
+\textbf{output} assignment is set automatically to that same channel number.
+The \textbf{Sub} switch is set to match the folder: on if it contains a
+subwoofer measurement, off otherwise.
+
+\section{One set of correction settings for the whole group}
+The Welch window, the low/high-frequency smoothing, the correction level, the
+max boost, the FIR length, the phase type, the analysis range, the crossover
+and the sub polarity are \textbf{shared}: one ``tone'' applied to every
+speaker in the group (and, analysis range aside, to the sub — see below), the
+same controls described in Sections~\ref{sec:welch}--\ref{sec:render}. A
+\textbf{Preview} selector picks which speaker's (or the sub's) curves the
+single plot at the bottom shows while these are tuned; switching it never
+changes what is computed, only what is displayed.
+
+\section{Computing the alignment}\label{sec:groupalign}
+\textbf{Compute alignment} reads every loaded speaker's (and the sub's)
+propagation delay — the same impulse-response-peak estimate
+Section~\ref{sec:welch} uses for a single speaker — and proposes the delay
+that time-aligns the whole group: the most-distant driver is left at
+\SI{0}{ms}, and every other driver is pushed back by the difference, so every
+proposed delay is non-negative and everyone arrives together at the
+reference position. The result is shown next to each row and is what
+\textbf{Apply \& export} later writes onto the corresponding output.
+
+For any speaker that also has a subwoofer measurement loaded (i.e.\ whose own
+row was analyzed together with the Sub row's files), the newly computed delay
+is fed back into that speaker's own subwoofer phase alignment
+(Section~\ref{sec:timealign}) so the correction's crossover all-pass is
+designed for the delay that will actually be applied, not the raw, unaligned
+one.
+
+\section{The subwoofer is delay-only}\label{sec:groupsub}
+Group analysis \textbf{never designs a correction FIR for the subwoofer}.
+Above a subwoofer's real passband, a broadband measurement (sent full-band,
+recorded through a driver that reproduces only the low end) is just noise:
+the cross-spectrum $\hat P_{xy}$ (Section~\ref{sec:welch}) has no coherent
+content there, so the ``correction'' the same math would propose above a few
+hundred hertz would be an inverse filter fitted to noise — pointless at best,
+and a soft-knee boost (Section~\ref{sec:correction}) applied to noise at
+worst. The sub's own analysis range is therefore automatically capped at
+\SI{300}{Hz} regardless of the shared \textbf{Range} control, so even its
+diagnostic-only, never-exported preview curve stays meaningful. Only the
+sub's computed time-alignment delay (Section~\ref{sec:groupalign}) is ever
+written to its assigned output.
+
+Not every rig has a subwoofer, so handling it at all is optional: the
+\textbf{Sub} switch (Section~\ref{sec:grouploadfolder}) leaves any already-
+loaded sub measurement in place but excludes it from \textbf{Compute
+alignment} and \textbf{Apply \& export} while off, so turning it back on
+later resumes using whatever was loaded before.
+
+\section{Applying and exporting}
+\textbf{Apply \& export...} asks for a destination folder, then for every
+speaker assigned to an output: renders and writes its correction IR
+(Section~\ref{sec:render}) into that folder, and writes the computed delay
+together with the FIR path onto that output's settings — global, exactly
+like the single-speaker Analysis pane (an output's processing is shared by
+every configuration A--F, not per configuration,
+Section~\ref{sec:outputchain}). The sub, if assigned to an output, gets only
+its delay written (Section~\ref{sec:groupsub}).
+
+A \texttt{report.md} is written alongside the exported impulse responses,
+recording the group's shared settings and, per speaker (and the sub): the
+full path of every measurement file used, the measured and applied delay,
+which output it was assigned to, and the exported file name (or why nothing
+was written, e.g.\ not measured or not assigned to an output).
+
+\section{Background processing}
+Loading a speaker's measurement set, re-analyzing the whole group after
+changing the Welch window, and Apply \& export all run on background
+threads rather than blocking the editor: a progress bar appears and every
+control that could otherwise touch an analysis engine mid-computation is
+disabled until the batch finishes. This keeps the editor responsive even
+with long, multi-position measurement sets across many speakers.
+
+%==============================================================================
 \chapter{Workflows}\label{ch:workflows}
 %==============================================================================
 
@@ -1542,8 +1739,9 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
 
 \section{E — Ambisonics monitoring}
 \begin{enumerate}[nosep]
-  \item Set the plugin bus large enough (e.g.\ 24 in/out for order 3: 16
-        B-format inputs, 16 speakers and a sub).
+  \item Raise the \emph{matrix} size large enough (e.g.\ 24 in/out for order
+        3: 16 B-format inputs, 16 speakers and a sub) — the plugin bus itself
+        is always a fixed 32 in/32 out (Section~\ref{sec:channellayout}).
   \item Config tool $\rightarrow$ \textbf{Ambisonics}, pick the \textbf{Order};
         feed your B-format (AmbiX) onto inputs 1--$(\mathrm{order}+1)^2$.
   \item Enter each loudspeaker's azimuth/elevation and output channel (start
@@ -1552,6 +1750,32 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
   \item Measure and correct each speaker (workflow A) and phase-align the sub
         (workflow B); the decode, corrections and latency compensation then run
         together as one engine.
+\end{enumerate}
+
+\section{F — Multi-speaker group alignment}
+\begin{enumerate}[nosep]
+  \item Measure each speaker (and the sub, if any) into one \textbf{measurement
+        folder} per rig, using the \textbf{Sub} switch and \textbf{Sub
+        channel} combo on the Calibration view for the subwoofer's channel
+        (Section~\ref{sec:measfolder}).
+  \item Group analysis (Chapter~\ref{ch:groupanalysis}): either
+        \textbf{Load measurement folder\ldots} that folder in one step
+        (Section~\ref{sec:grouploadfolder}, which also sets \textbf{Speakers},
+        the output assignments and the \textbf{Sub} switch automatically), or
+        set \textbf{Speakers} to the number of drivers and \textbf{Load...}
+        each speaker's multi-position measurement set by hand (same positions
+        across every speaker), plus the shared \textbf{Sub} row's set if there
+        is a subwoofer.
+  \item Tune the shared correction-design controls (Welch window, smoothing,
+        correction level, max boost, FIR length, Phase, Range, Crossover,
+        Invert sub); use \textbf{Preview} to check each speaker's curves.
+  \item \textbf{Compute alignment} to get the per-row delay that time-aligns
+        the whole group on the most-distant driver.
+  \item Assign each row to the output channel that speaker is on.
+  \item \textbf{Apply \& export...}: designs and exports each speaker's
+        correction IR, writes its delay and FIR onto that output, and saves a
+        markdown report next to the impulse responses. The subwoofer only
+        ever gets its time-alignment delay (Section~\ref{sec:groupsub}).
 \end{enumerate}
 
 %==============================================================================
@@ -1572,8 +1796,9 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 \end{verbatim}
 
-Produced formats: VST3, AU, Standalone (discrete in/out, selectable 8 / 16 /
-24 / 32, default 8).
+Produced formats: VST3, AU, Standalone (fixed 32 in/32 out discrete bus; the
+active matrix size, 8 by default, is independent and set in the plugin's own
+Inputs/Outputs selectors).
 Continuous-integration builds for Linux, macOS (universal) and Windows are
 provided by the GitHub Actions workflow \texttt{.github/workflows/release.yml},
 triggered by pushing a version tag (\texttt{v\textit{X.Y.Z}}).
@@ -1591,13 +1816,14 @@ recipes of Chapter~\ref{ch:workflows}. The recurring idea is the split between
 \emph{per-output} and \emph{per-configuration} processing:
 
 \begin{itemize}[nosep]
-  \item A \textbf{configuration} (A--F) stores only the \emph{routing}: which
-        inputs feed which outputs, with a gain, a phase flip and an active state
-        per frame (Chapter~\ref{ch:matrix}).
-  \item Everything that characterises a physical loudspeaker --- trim, EQ,
-        time-alignment \textbf{delay} and \textbf{FIR} correction --- lives on
-        the \textbf{output}, and is therefore \emph{shared by every
-        configuration that uses that output} (Section~\ref{sec:outputchain}).
+  \item A \textbf{configuration} (A--F) stores the \emph{routing}: which
+        inputs feed which outputs, with a gain, a phase flip, a small 2-band
+        EQ and an active state per frame (Chapter~\ref{ch:matrix}).
+  \item Everything that characterises a physical loudspeaker --- trim, its
+        own 2-band EQ, time-alignment \textbf{delay} and \textbf{FIR}
+        correction --- lives on the \textbf{output}, and is therefore
+        \emph{shared by every configuration that uses that output}
+        (Section~\ref{sec:outputchain}).
 \end{itemize}
 
 That split is what makes multi-configuration monitoring cheap: correct and
@@ -1631,9 +1857,10 @@ E & Headphones       & in1$\rightarrow$7,\; in2$\rightarrow$8 \\
 \end{table}
 
 \begin{enumerate}[nosep]
-  \item Raise the matrix size (bottom bar \textbf{Inputs}/\textbf{Outputs}) and
-        the host bus to at least 8 in/out. Wire mains to 1--2, nearfields to
-        3--4, sub to 5, headphones to 7--8.
+  \item Raise the matrix size (bottom bar \textbf{Inputs}/\textbf{Outputs}) to
+        at least 8 in/out (the plugin bus itself is always a fixed 32 in/32
+        out). Wire mains to 1--2, nearfields to 3--4, sub to 5, headphones to
+        7--8.
   \item Correct each of outputs 1--4 (workflow~A). Measure the sub and align it
         to each pair (workflow~B); the main/sub delay sits on the per-output
         delays, the FIRs on the per-output correction slots.
@@ -1685,7 +1912,8 @@ D & 2.0 & in1$\rightarrow$1,\; in2$\rightarrow$2 \\
 \end{table}
 
 \begin{enumerate}[nosep]
-  \item Set the bus to at least 6 in/out and wire the channels as above.
+  \item Set the matrix size to at least 6 in/out and wire the channels as
+        above (the plugin bus itself is always a fixed 32 in/32 out).
   \item Config tool $\rightarrow$ \textbf{5.1} $\rightarrow$ set the crossover
         $\rightarrow$ Apply to~A. This routes the six inputs and sends the LFE
         (and, with bass management, the satellites' low end) to the sub.
@@ -1713,9 +1941,10 @@ you add speakers. The B-format (AmbiX) feed is on inputs 1--4, the speakers on
 outputs 1--8 and the sub on output~9.
 
 \begin{enumerate}[nosep]
-  \item Raise the matrix size and the host bus to at least 4 in / 9 out (16/16
-        is convenient). Wire the eight monitors to outputs 1--8 and the sub to
-        output~9; feed your AmbiX B-format onto inputs 1--4.
+  \item Raise the \emph{matrix} size to at least 4 in / 9 out (16/16 is
+        convenient) — the plugin bus itself is always fixed at 32 in/32 out.
+        Wire the eight monitors to outputs 1--8 and the sub to output~9; feed
+        your AmbiX B-format onto inputs 1--4.
   \item Config tool $\rightarrow$ \textbf{Ambisonics}, \textbf{Order}~1,
         \textbf{Speakers}~8. Enter each loudspeaker's azimuth, elevation and
         radius and its output channel (start from the default rig and edit), set

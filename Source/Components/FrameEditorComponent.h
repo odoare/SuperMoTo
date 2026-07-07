@@ -2,9 +2,10 @@
   ------------------------------------------------------------------------------
     FrameEditorComponent.h
 
-    Detail editor for the selected matrix frame (crosspoint): the routing
-    controls only — Active, overall level, phase inversion and the analyzer
-    checkbox. The speaker processing (EQ, delay, FIR) is edited on the output
+    Detail editor for the selected matrix frame (crosspoint): Active, overall
+    level, phase inversion, the analyzer checkbox, and the frame's own 2-band
+    EQ (BandEqEditor, shared with OutputEditorComponent's per-output EQ). The
+    speaker's own processing (its own EQ, delay, FIR) is edited on the output
     (see OutputEditorComponent). Writes directly into the ConfigModel (these are
     not host parameters).
 
@@ -19,12 +20,14 @@
 #include <JuceHeader.h>
 #include "../Model/ConfigModel.h"
 #include "../Theme.h"
+#include "BandEqEditor.h"
 
 class FrameEditorComponent : public juce::Component,
                              private smt::ConfigModel::Listener
 {
 public:
-    explicit FrameEditorComponent (smt::ConfigModel& m) : model (m)
+    explicit FrameEditorComponent (smt::ConfigModel& m)
+        : model (m), bandEditor (smt::numFrameBands, SuperMoToTheme::fir)
     {
         model.addListener (this);
 
@@ -57,13 +60,8 @@ public:
         levelLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (levelLabel);
 
-        hint.setJustificationType (juce::Justification::topLeft);
-        hint.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
-        hint.setFont (juce::Font (11.0f));
-        hint.setText (juce::String::fromUTF8 (
-            "EQ, delay and FIR correction are set on the output "
-            "(click an output cell in the top strip)."), juce::dontSendNotification);
-        addAndMakeVisible (hint);
+        addAndMakeVisible (bandEditor);
+        bandEditor.onChange = [this] { pushToModel(); };
 
         setFrame (-1, -1, 0);
     }
@@ -104,8 +102,8 @@ public:
         levelLabel.setBounds (row2.removeFromLeft (40));
         levelSlider.setBounds (row2.reduced (2, 1));
 
-        area.removeFromTop (10);
-        hint.setBounds (area.removeFromTop (48));
+        area.removeFromTop (8);
+        bandEditor.setBounds (area);
     }
 
 private:
@@ -133,6 +131,7 @@ private:
         phaseButton.setToggleState (f.phaseInvert, juce::dontSendNotification);
         spectrumButton.setToggleState (f.spectrum, juce::dontSendNotification);
         levelSlider.setValue (f.gainDb, juce::dontSendNotification);
+        bandEditor.setBands (f.bands.data(), (int) f.bands.size());
 
         setControlsEnabled (true);
         updating = false;
@@ -148,6 +147,7 @@ private:
         f.phaseInvert = phaseButton.getToggleState();
         f.spectrum    = spectrumButton.getToggleState();
         f.gainDb      = (float) levelSlider.getValue();
+        bandEditor.collectInto (f.bands.data(), (int) f.bands.size());
         model.setFrame (curConfig, curIn, curOut, f);
     }
 
@@ -156,15 +156,17 @@ private:
         for (auto* c : { (juce::Component*) &activeButton, (juce::Component*) &phaseButton,
                          (juce::Component*) &spectrumButton, (juce::Component*) &levelSlider })
             c->setEnabled (e);
+        bandEditor.setBandsEnabled (e);
     }
 
     smt::ConfigModel& model;
     int curIn = -1, curOut = -1, curConfig = 0;
     bool updating = false;
 
-    juce::Label title, levelLabel, hint;
+    juce::Label title, levelLabel;
     juce::ToggleButton activeButton, phaseButton, spectrumButton;
     fxme::FxmeSlider levelSlider;
+    BandEqEditor bandEditor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FrameEditorComponent)
 };

@@ -58,6 +58,21 @@ int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
     return (int) curves.size();
 }
 
+float AnalysisEngine::getPropagationDelayMs() const
+{
+    if (curves.empty() || sampleRate <= 0.0)
+        return 0.0f;
+
+    std::vector<float> delays;
+    delays.reserve (curves.size());
+    for (const auto& c : curves)
+        delays.push_back (c.delaySamples);
+
+    auto mid = delays.begin() + (long) (delays.size() / 2);
+    std::nth_element (delays.begin(), mid, delays.end());
+    return (float) (1000.0 * (double) *mid / sampleRate);
+}
+
 int AnalysisEngine::loadSubFiles (const juce::Array<juce::File>& files)
 {
     clearSub();
@@ -85,8 +100,12 @@ int AnalysisEngine::loadSubFiles (const juce::Array<juce::File>& files)
 
 void AnalysisEngine::setSmoothing (float lowFraction, float highFraction)
 {
-    smoothingLowFraction  = juce::jlimit (0.0f, 1.0f, lowFraction);
-    smoothingHighFraction = juce::jlimit (0.0f, 1.0f, highFraction);
+    lowFraction  = juce::jlimit (0.0f, 1.0f, lowFraction);
+    highFraction = juce::jlimit (0.0f, 1.0f, highFraction);
+    if (lowFraction == smoothingLowFraction && highFraction == smoothingHighFraction)
+        return;          // avoid a full re-smoothing pass when nothing changed
+    smoothingLowFraction  = lowFraction;
+    smoothingHighFraction = highFraction;
     applySmoothing();
     recomputeCorrection();
 }
@@ -116,6 +135,12 @@ void AnalysisEngine::applySmoothing()
 
 void AnalysisEngine::setMicCalibration (const MicCalibration& cal)
 {
+    // Identity check (name + validity), not a deep comparison: the shared mic
+    // cal only actually changes via an explicit load/clear in the Calibration
+    // pane, so this is enough to skip a full re-smoothing pass on every
+    // incidental re-push (e.g. from an unrelated control's onChange).
+    if (cal.isValid() == micCal.isValid() && cal.getName() == micCal.getName())
+        return;
     micCal = cal;
     applySmoothing();           // re-derives the cal-corrected smoothed spectra
     recomputeCorrection();
@@ -320,15 +345,21 @@ std::vector<std::complex<float>> AnalysisEngine::smoothVariableOctave (
 
 void AnalysisEngine::setCorrectionLevel (float level01)
 {
-    correctionLevel = juce::jlimit (0.0f, 1.0f, level01);
+    level01 = juce::jlimit (0.0f, 1.0f, level01);
+    if (level01 == correctionLevel)
+        return;
+    correctionLevel = level01;
     recomputeCorrection();
 }
 
 void AnalysisEngine::setAnalysisRange (float lowHz, float highHz)
 {
-    analysisLowHz  = juce::jlimit (5.0f, 5000.0f, lowHz);
-    analysisHighHz = juce::jlimit (juce::jmax (analysisLowHz * 1.1f, 500.0f),
-                                   30000.0f, highHz);
+    lowHz  = juce::jlimit (5.0f, 5000.0f, lowHz);
+    highHz = juce::jlimit (juce::jmax (lowHz * 1.1f, 500.0f), 30000.0f, highHz);
+    if (lowHz == analysisLowHz && highHz == analysisHighHz)
+        return;
+    analysisLowHz  = lowHz;
+    analysisHighHz = highHz;
     recomputeCorrection();
 }
 
@@ -355,19 +386,27 @@ float AnalysisEngine::bandWeight (double f) const
 
 void AnalysisEngine::setCrossoverHz (float hz)
 {
-    crossoverHz = juce::jlimit (20.0f, 1000.0f, hz);
+    hz = juce::jlimit (20.0f, 1000.0f, hz);
+    if (hz == crossoverHz)
+        return;
+    crossoverHz = hz;
     recomputeCorrection();
 }
 
 void AnalysisEngine::setSubPolarityInverted (bool inverted)
 {
+    if (inverted == subInverted)
+        return;
     subInverted = inverted;
     recomputeCorrection();
 }
 
 void AnalysisEngine::setTimeAlignMs (float ms)
 {
-    timeAlignMs = juce::jlimit (-40.0f, 40.0f, ms);
+    ms = juce::jlimit (-40.0f, 40.0f, ms);
+    if (ms == timeAlignMs)
+        return;
+    timeAlignMs = ms;
     recomputeCorrection();
 }
 

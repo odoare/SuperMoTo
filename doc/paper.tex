@@ -98,16 +98,18 @@ simultaneously.
 \subsection*{Monitoring matrix}
 
 The routing matrix connects up to 32 inputs to 32 outputs through a
-grid of crosspoint \emph{frames}, each carrying an independent gain and
-polarity setting. Six independent configurations (A--F) are stored per
-preset and can be engaged in exclusive mode (instant A/B switching
-between monitoring rigs) or summed. Each output carries a trim,
-a four-band EQ (lowpass, highpass, bandpass or peaking), a fractional
-sub-sample delay for physical speaker time-alignment, and an optional
-FIR correction filter applied by a zero-latency uniformly-partitioned
-convolution engine \cite{Gardner1995}. When filters of different lengths
-are loaded on different outputs, automatic inter-output latency
-compensation delays the shorter outputs so all speakers remain
+grid of crosspoint \emph{frames}, each carrying an independent gain,
+polarity setting and a 2-band EQ (lowpass, highpass, bandpass or peaking)
+for a configuration-specific tweak on that one route. Six independent
+configurations (A--F) are stored per preset and can be engaged in
+exclusive mode (instant A/B switching between monitoring rigs) or
+summed. Each output then carries its own trim, a further 2-band EQ, a
+fractional sub-sample delay for physical speaker time-alignment, and an
+optional FIR correction filter applied by a zero-latency
+uniformly-partitioned convolution engine \cite{Gardner1995}. When filters
+of different lengths are loaded on different outputs, automatic
+inter-output latency compensation delays the shorter outputs so all
+speakers remain
 time-aligned at the listening position.
 
 A configuration tool generates standard stereo and surround layouts
@@ -146,7 +148,10 @@ engine including routing and all FIR filters, for end-to-end
 validation). Microphone frequency-response calibration files in the
 REW/miniDSP plain-text format are supported and are applied at analysis
 time rather than baked into the recordings, so the calibration can be
-updated without re-measuring.
+updated without re-measuring. A run writes its files into a self-organising
+measurement folder (automatic per-channel position numbering, an optional
+subwoofer-channel tag, and a generated manifest), which the group-alignment
+mode below can subsequently load in a single step.
 
 \subsection*{Transfer-function estimation and correction design}
 
@@ -191,6 +196,25 @@ $N/2$ samples of latency) or \emph{minimum-phase} (real-cepstrum
 method, magnitude-only correction with essentially zero bulk latency,
 suited to tracking sessions) form \cite{OppenheimSchafer}.
 
+\subsection*{Multi-speaker group alignment}
+
+For rigs of more than a couple of loudspeakers, a group-analysis mode
+holds one transfer-function estimate per speaker (plus one shared
+subwoofer, when the rig has one) side by side, sharing a single set of
+correction-design settings across all of them. Each speaker's bulk propagation delay,
+estimated as above, is compared across the group and every driver is
+delayed to match the most distant one, so the whole rig arrives
+coherently at the reference position; the resulting delay is fed back
+into each speaker's own subwoofer phase-alignment term before its
+correction filter is finalised. The subwoofer itself is never given a
+correction filter: above its passband a broadband measurement carries
+no coherent sent/recorded content, so an inverse filter fitted there
+would be fitted to noise rather than to a real transfer function --- it
+contributes only its computed alignment delay. Loading, re-analysing
+and exporting a whole group run on a background thread pool with
+progress feedback, keeping the editor responsive with long,
+multi-position measurement sets across many speakers.
+
 %----------------------------------------------------------------------
 \section*{Implementation}
 %----------------------------------------------------------------------
@@ -200,8 +224,11 @@ framework. Per-output FIR convolution uses the WDL
 uniformly-partitioned convolution engine. Continuous-integration builds
 for Linux, macOS (Apple Silicon universal binary) and Windows are
 provided by a GitHub Actions workflow triggered by version tags. The
-plugin is available in VST3, AU, and Standalone formats with a
-configurable channel count of 8, 16, 24, or 32 discrete channels.
+plugin is available in VST3, AU, and Standalone formats with a fixed
+32-in/32-out discrete channel bus, sidestepping the inconsistent
+per-host discrete-channel-count negotiation of JUCE's AU and VST3
+wrappers; the active matrix size is an independent, user-selectable
+setting up to that count.
 
 %----------------------------------------------------------------------
 \section*{Acknowledgements}

@@ -1,0 +1,894 @@
+/*
+  ------------------------------------------------------------------------------
+    GroupAnalysisComponent.h
+
+    Multi-speaker time-alignment & correction. Load a multi-position
+    measurement set for each speaker in a group (plus one shared subwoofer
+    set), share one set of correction-design settings across every speaker
+    (window size, smoothing, correction level, max boost, phase type, analysis
+    range, crossover, sub polarity — mirroring the single-speaker Analysis
+    pane), compute the delay that time-aligns the whole group on the
+    most-distant driver, then export each speaker's correction IR and apply
+    delay + FIR to its assigned output in one step, together with a markdown
+    report (smt::SpeakerGroupAnalysis).
+
+    Author: Olivier Doaré, github.com/odoare
+    Licenced under the GNU LGPL Version 3.0
+    SPDX-License-Identifier: LGPL-3.0-or-later
+  ------------------------------------------------------------------------------
+*/
+
+#pragma once
+
+#include <JuceHeader.h>
+#include "../PluginProcessor.h"
+#include "../Dsp/SpeakerGroupAnalysis.h"
+#include "../AppSettings.h"
+#include "../Theme.h"
+#include "TransferFunctionPlot.h"
+
+class GroupAnalysisComponent : public juce::Component,
+                               private juce::Timer
+{
+public:
+    explicit GroupAnalysisComponent (SuperMoToAudioProcessor& p) : processor (p)
+    {
+        title.setText ("Group analysis \xe2\x80\x94 multi-speaker alignment", juce::dontSendNotification);
+        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
+        addAndMakeVisible (title);
+
+        micCalInfo.setFont (juce::Font (11.0f));
+        micCalInfo.setJustificationType (juce::Justification::centredRight);
+        micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
+                               "Load it in the Measurement & Calibration pane.");
+        addAndMakeVisible (micCalInfo);
+        updateMicCalInfo();
+
+        addLabel (countLabel, "Speakers");
+        for (int n = 1; n <= smt::SpeakerGroupAnalysis::maxSpeakers; ++n)
+            countBox.addItem (juce::String (n), n);
+        countBox.setSelectedId (group.getNumSpeakers(), juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (countBox, SuperMoToTheme::master);
+        countBox.onChange = [this] { setNumSpeakers (countBox.getSelectedId()); };
+        addAndMakeVisible (countBox);
+
+        subEnabledToggle.setButtonText ("Sub");
+        subEnabledToggle.setToggleState (true, juce::dontSendNotification);
+        SuperMoToTheme::accentToggleButton (subEnabledToggle, SuperMoToTheme::mono);
+        subEnabledToggle.setTooltip ("Whether this group has a subwoofer. When off, the Sub row is "
+                                     "disabled and the subwoofer is excluded from alignment and from "
+                                     "Apply & export (its own settings/data are kept, not cleared).");
+        subEnabledToggle.onClick = [this]
+        {
+            group.setSubEnabled (subEnabledToggle.getToggleState());
+            setBusy (runner.isRunning());   // refresh subRow's enablement to match
+        };
+        addAndMakeVisible (subEnabledToggle);
+
+        computeButton.setButtonText ("Compute alignment");
+        computeButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.2f));
+        computeButton.onClick = [this]
+        {
+            group.computeAlignment();
+            refreshRows();
+            updatePlotPreview();
+            status.setText ("Alignment computed.", juce::dontSendNotification);
+        };
+        addAndMakeVisible (computeButton);
+
+        applyButton.setButtonText ("Apply & export...");
+        applyButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (1.0f));
+        applyButton.onClick = [this] { applyAndExport(); };
+        addAndMakeVisible (applyButton);
+
+        loadFolderButton.setButtonText ("Load measurement folder...");
+        loadFolderButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::spectrum.darker (1.0f));
+        loadFolderButton.setTooltip ("Load an entire measurement set written by the Measurement & "
+                                     "calibration pane's folder-based capture: reads readme_measurement.md "
+                                     "to find the channels and the subwoofer, and loads every speaker's "
+                                     "(and the sub's) position files in one step.");
+        loadFolderButton.onClick = [this] { loadMeasurementFolder(); };
+        addAndMakeVisible (loadFolderButton);
+
+        status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
+        addAndMakeVisible (status);
+
+        // ── Shared correction-design controls (fanned out to every engine in
+        // the group — one "tone" for the whole speaker set). ─────────────────
+        addLabel (windowLabel, "Welch window");
+        for (int size = 1 << 14; size <= 1 << 18; size <<= 1)
+            windowBox.addItem (juce::String (size), size);
+        windowBox.setSelectedId (65536, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (windowBox, SuperMoToTheme::spectrum);
+        windowBox.onChange = [this] { pushSettingsToAll(); reanalyzeAll(); };
+        addAndMakeVisible (windowBox);
+
+        addLabel (smoothLabel, "Smooth LF/HF");
+        auto setupSmoothBox = [this] (juce::ComboBox& box, const juce::String& tip)
+        {
+            box.addItem ("Off", 1);
+            box.addItem ("1/24 oct", 2);
+            box.addItem ("1/12 oct", 3);
+            box.addItem ("1/6 oct", 4);
+            box.addItem ("1/3 oct", 5);
+            box.addItem ("1/2 oct", 6);
+            box.addItem ("1 oct", 7);
+            box.setSelectedId (4, juce::dontSendNotification);
+            box.setTooltip (tip);
+            SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
+            box.onChange = [this] { startTimer (debounceMs); };
+            addAndMakeVisible (box);
+        };
+        setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
+        setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
+
+        addLabel (rangeLabel, "Range");
+        auto setupFreqBox = [this] (juce::ComboBox& box,
+                                    std::initializer_list<int> presets, int def)
+        {
+            for (int f : presets)
+                box.addItem (juce::String (f) + " Hz", f);
+            box.setEditableText (true);
+            box.setSelectedId (def, juce::dontSendNotification);
+            SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
+            box.onChange = [this] { startTimer (debounceMs); };
+            addAndMakeVisible (box);
+        };
+        setupFreqBox (lowFreqBox,  { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
+        setupFreqBox (highFreqBox, { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
+        addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));
+        rangeToLabel.setJustificationType (juce::Justification::centred);
+
+        addLabel (previewLabel, "Preview");
+        SuperMoToTheme::accentComboBox (previewBox, SuperMoToTheme::spectrum);
+        previewBox.onChange = [this] { updatePlotPreview(); };
+        addAndMakeVisible (previewBox);
+
+        addLabel (levelLabel, "Correction level");
+        levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        levelSlider.setRange (0.0, 1.0, 0.01);
+        levelSlider.setValue (1.0, juce::dontSendNotification);
+        levelSlider.setDoubleClickReturnValue (true, 1.0);
+        SuperMoToTheme::accentSlider (levelSlider, SuperMoToTheme::master);
+        levelSlider.onValueChange = [this] { startTimer (debounceMs); };
+        addAndMakeVisible (levelSlider);
+
+        addLabel (boostLabel, "Max boost");
+        boostSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        boostSlider.setRange (0.0, 24.0, 0.5);
+        boostSlider.setValue (12.0, juce::dontSendNotification);
+        boostSlider.setDoubleClickReturnValue (true, 12.0);
+        boostSlider.setTextValueSuffix (" dB");
+        SuperMoToTheme::accentSlider (boostSlider, SuperMoToTheme::master);
+        boostSlider.onValueChange = [this] { startTimer (debounceMs); };
+        addAndMakeVisible (boostSlider);
+
+        addLabel (firLabel, "FIR length");
+        for (int size = 1 << 8; size <= 1 << 16; size <<= 1)
+            firBox.addItem (juce::String (size), size);
+        firBox.setSelectedId (4096, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (firBox, SuperMoToTheme::fir);
+        addAndMakeVisible (firBox);
+
+        addLabel (phaseLabel, "Phase");
+        phaseBox.addItem ("Linear phase", 1);
+        phaseBox.addItem ("Min phase", 2);
+        phaseBox.setSelectedId (1, juce::dontSendNotification);
+        phaseBox.setTooltip ("Linear: corrects magnitude and phase (incl. subwoofer alignment), "
+                             "adds firLength/2 latency.\n"
+                             "Min phase: magnitude only, near-zero latency, no phase correction "
+                             "or subwoofer alignment \xe2\x80\x94 for tracking.");
+        SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
+        phaseBox.onChange = [this] { startTimer (debounceMs); };
+        addAndMakeVisible (phaseBox);
+
+        addLabel (crossoverLabel, "Crossover");
+        for (int f : { 40, 50, 60, 70, 80, 100, 120, 150 })
+            crossoverBox.addItem (juce::String (f) + " Hz", f);
+        crossoverBox.setEditableText (true);
+        crossoverBox.setSelectedId (80, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (crossoverBox, SuperMoToTheme::mono);
+        crossoverBox.onChange = [this] { startTimer (debounceMs); };
+        addAndMakeVisible (crossoverBox);
+
+        subInvertToggle.setButtonText ("Invert sub");
+        SuperMoToTheme::accentToggleButton (subInvertToggle, SuperMoToTheme::mono);
+        subInvertToggle.onClick = [this] { startTimer (debounceMs); };
+        addAndMakeVisible (subInvertToggle);
+
+        // ── Per-speaker rows (pre-created up to maxSpeakers, shown/hidden as
+        // the count changes) plus one dedicated sub row, in a scrollable list.
+        for (int i = 0; i < smt::SpeakerGroupAnalysis::maxSpeakers; ++i)
+        {
+            auto* row = rows.add (new SpeakerRow());
+            row->nameLabel.setText (group.speaker (i).label, juce::dontSendNotification);
+            row->onLoad = [this, i] { loadSpeakerFiles (i); };
+            row->outputBox.onChange = [this, i, row]
+            {
+                group.speaker (i).assignedOutput = row->outputBox.getSelectedId() - 2;
+            };
+            rowsHolder.addAndMakeVisible (row);
+        }
+        subRow.nameLabel.setText ("Sub", juce::dontSendNotification);
+        subRow.nameLabel.setTooltip ("Delay only \xe2\x80\x94 no correction FIR is designed for the "
+                                     "subwoofer: above its passband a measurement is just noise.");
+        subRow.onLoad = [this] { loadSubFiles(); };
+        subRow.outputBox.onChange = [this]
+        {
+            group.subEntry().assignedOutput = subRow.outputBox.getSelectedId() - 2;
+        };
+        rowsHolder.addAndMakeVisible (subRow);
+
+        rowsViewport.setViewedComponent (&rowsHolder, false);
+        rowsViewport.setScrollBarsShown (true, false);
+        addAndMakeVisible (rowsViewport);
+
+        addAndMakeVisible (plot);
+
+        progressBar.setPercentageDisplay (true);
+        addChildComponent (progressBar);   // shown only while a background batch runs
+
+        buildFreqGrid();
+        syncRowsVisibility();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (SuperMoToTheme::panel.withAlpha (0.7f));
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+        g.setColour (SuperMoToTheme::panelLine);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 6.0f, 1.0f);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced (14);
+        auto titleRow = area.removeFromTop (26);
+        micCalInfo.setBounds (titleRow.removeFromRight (260));
+        title.setBounds (titleRow);
+        area.removeFromTop (6);
+
+        auto r0 = area.removeFromTop (24);
+        countLabel.setBounds (r0.removeFromLeft (70));
+        countBox.setBounds (r0.removeFromLeft (56));
+        r0.removeFromLeft (16);
+        subEnabledToggle.setBounds (r0.removeFromLeft (56));
+        r0.removeFromLeft (16);
+        computeButton.setBounds (r0.removeFromLeft (150));
+        r0.removeFromLeft (8);
+        applyButton.setBounds (r0.removeFromLeft (170));
+        r0.removeFromLeft (8);
+        loadFolderButton.setBounds (r0.removeFromLeft (190));
+        r0.removeFromLeft (16);
+        progressBar.setBounds (r0.removeFromRight (160));
+        r0.removeFromRight (16);
+        status.setBounds (r0);
+
+        area.removeFromTop (8);
+        auto r1 = area.removeFromTop (24);
+        windowLabel.setBounds (r1.removeFromLeft (90));
+        windowBox.setBounds (r1.removeFromLeft (90));
+        r1.removeFromLeft (16);
+        smoothLabel.setBounds (r1.removeFromLeft (96));
+        smoothLowBox.setBounds (r1.removeFromLeft (78));
+        r1.removeFromLeft (4);
+        smoothHighBox.setBounds (r1.removeFromLeft (78));
+        r1.removeFromLeft (16);
+        rangeLabel.setBounds (r1.removeFromLeft (50));
+        lowFreqBox.setBounds (r1.removeFromLeft (86));
+        rangeToLabel.setBounds (r1.removeFromLeft (12));
+        highFreqBox.setBounds (r1.removeFromLeft (86));
+        r1.removeFromLeft (16);
+        previewLabel.setBounds (r1.removeFromLeft (56));
+        previewBox.setBounds (r1);
+
+        area.removeFromTop (8);
+        auto r2 = area.removeFromTop (24);
+        levelLabel.setBounds (r2.removeFromLeft (100));
+        levelSlider.setBounds (r2.removeFromLeft (110));
+        r2.removeFromLeft (12);
+        boostLabel.setBounds (r2.removeFromLeft (64));
+        boostSlider.setBounds (r2.removeFromLeft (110));
+        r2.removeFromLeft (12);
+        phaseLabel.setBounds (r2.removeFromLeft (40));
+        phaseBox.setBounds (r2.removeFromLeft (110));
+        r2.removeFromLeft (12);
+        firLabel.setBounds (r2.removeFromLeft (64));
+        firBox.setBounds (r2.removeFromLeft (90));
+        r2.removeFromLeft (16);
+        crossoverLabel.setBounds (r2.removeFromLeft (66));
+        crossoverBox.setBounds (r2.removeFromLeft (90));
+        r2.removeFromLeft (12);
+        subInvertToggle.setBounds (r2.removeFromLeft (96));
+
+        area.removeFromTop (8);
+        constexpr int rowH = 26;
+        // Past a handful of speakers a single scrolling column wastes the
+        // pane's width; split into two side-by-side columns instead (the sub
+        // row stays full-width, below both columns — there's only ever one).
+        constexpr int columnThreshold = 6;
+        const int numColumns = group.getNumSpeakers() > columnThreshold ? 2 : 1;
+        const int rowsPerColumn = (group.getNumSpeakers() + numColumns - 1) / numColumns;
+
+        const int visibleRows = juce::jmin (5, rowsPerColumn) + 1;   // +1 for the sub row
+        rowsViewport.setBounds (area.removeFromTop (visibleRows * rowH + 4));
+
+        const int holderW = rowsViewport.getWidth() - rowsViewport.getScrollBarThickness() - 4;
+        rowsHolder.setSize (holderW, (rowsPerColumn + 1) * rowH);
+
+        auto full = rowsHolder.getLocalBounds();
+        subRow.setBounds (full.removeFromBottom (rowH).reduced (0, 2));
+
+        constexpr int columnGap = 8;
+        const int colW = numColumns == 2 ? (full.getWidth() - columnGap) / 2 : full.getWidth();
+        auto column1 = full.removeFromLeft (colW);
+        full.removeFromLeft (numColumns == 2 ? columnGap : 0);
+        auto& column2 = full;
+
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+        {
+            auto& col = i < rowsPerColumn ? column1 : column2;
+            rows[i]->setBounds (col.removeFromTop (rowH).reduced (0, 2));
+        }
+
+        area.removeFromTop (8);
+        plot.setBounds (area);
+    }
+
+    void visibilityChanged() override
+    {
+        if (isVisible())
+        {
+            updateMicCalInfo();
+            pushSettingsToAll();
+            updatePlotPreview();
+        }
+    }
+
+private:
+    // Coalesces a burst of shared-control changes (e.g. a slider drag) into
+    // one settings push + recompute per pause, instead of one per tick.
+    static constexpr int debounceMs = 150;
+
+    void timerCallback() override
+    {
+        stopTimer();
+        if (runner.isRunning())
+            return;   // a background batch owns the engines right now; drop this tick
+        pushSettingsToAll();
+        updatePlotPreview();
+    }
+
+    // One row: speaker name, "Load..." + file-count status, computed aligned
+    // delay read-out, and the output channel it's assigned to.
+    struct SpeakerRow : public juce::Component
+    {
+        SpeakerRow()
+        {
+            nameLabel.setFont (juce::Font (13.0f));
+            nameLabel.setColour (juce::Label::textColourId, SuperMoToTheme::text);
+            addAndMakeVisible (nameLabel);
+
+            loadButton.setButtonText ("Load...");
+            loadButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.4f));
+            loadButton.onClick = [this] { if (onLoad) onLoad(); };
+            addAndMakeVisible (loadButton);
+
+            fileStatus.setFont (juce::Font (11.0f));
+            fileStatus.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+            addAndMakeVisible (fileStatus);
+
+            delayReadout.setFont (juce::Font (12.0f));
+            delayReadout.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
+            delayReadout.setJustificationType (juce::Justification::centredRight);
+            addAndMakeVisible (delayReadout);
+
+            outputBox.addItem ("(none)", 1);
+            for (int o = 0; o < smt::numChannels; ++o)
+                outputBox.addItem ("Output " + juce::String (o + 1), o + 2);
+            outputBox.setSelectedId (1, juce::dontSendNotification);
+            SuperMoToTheme::accentComboBox (outputBox, SuperMoToTheme::fir);
+            addAndMakeVisible (outputBox);
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds();
+            nameLabel.setBounds (area.removeFromLeft (84));
+            outputBox.setBounds (area.removeFromRight (130));
+            area.removeFromRight (8);
+            delayReadout.setBounds (area.removeFromRight (80));
+            area.removeFromRight (8);
+            loadButton.setBounds (area.removeFromLeft (80));
+            area.removeFromLeft (8);
+            fileStatus.setBounds (area);
+        }
+
+        juce::Label nameLabel, fileStatus, delayReadout;
+        juce::TextButton loadButton;
+        juce::ComboBox outputBox;
+        std::function<void()> onLoad;
+    };
+
+    void addLabel (juce::Label& l, const juce::String& text)
+    {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (juce::Font (12.0f));
+        l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        addAndMakeVisible (l);
+    }
+
+    void buildFreqGrid()
+    {
+        freqs.resize (numPoints);
+        for (int p = 0; p < numPoints; ++p)
+            freqs[(size_t) p] = fMin * std::pow (fMax / fMin, (float) p / (float) (numPoints - 1));
+    }
+
+    void updateMicCalInfo()
+    {
+        auto& cal = smt::sharedMicCalibration();
+        micCalInfo.setText (cal.isValid() ? "Mic cal: " + cal.getName()
+                                          : juce::String ("Mic cal: none"),
+                            juce::dontSendNotification);
+    }
+
+    // Pushes the shared correction-design controls onto one engine — called
+    // both when a control changes (fanned to every engine already in the
+    // group) and right before loading a fresh engine's files, so an engine
+    // touched for the first time reflects the current UI state rather than
+    // AnalysisEngine's own defaults.
+    //
+    // isSub caps the analysis range to subMaxRangeHz regardless of the shared
+    // Range control: the sub never gets a correction FIR exported/applied
+    // (see SpeakerGroupAnalysis), but its curves are still computed and
+    // previewable, and above a subwoofer's real passband a measurement is
+    // just noise — band-limiting keeps that preview (and the otherwise-unused
+    // correction the engine still computes internally) meaningful rather than
+    // fitting noise up to the shared speaker range's top end.
+    static constexpr float subMaxRangeHz = 300.0f;
+
+    void pushSettingsTo (smt::AnalysisEngine& e, bool isSub)
+    {
+        e.setWindowSize (windowBox.getSelectedId());
+        static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
+                                           1.0f / 6.0f, 1.0f / 3.0f, 1.0f / 2.0f, 1.0f };
+        e.setSmoothing (fractions[juce::jlimit (0, 6, smoothLowBox.getSelectedId()  - 1)],
+                        fractions[juce::jlimit (0, 6, smoothHighBox.getSelectedId() - 1)]);
+        e.setCorrectionLevel ((float) levelSlider.getValue());
+        e.setMaxBoostDb ((float) boostSlider.getValue());
+        e.setPhaseType (phaseBox.getSelectedId() == 2 ? smt::AnalysisEngine::PhaseType::minimum
+                                                       : smt::AnalysisEngine::PhaseType::linear);
+        const float lowHz  = lowFreqBox.getText().getFloatValue();
+        const float highHz = highFreqBox.getText().getFloatValue();
+        e.setAnalysisRange (lowHz, isSub ? juce::jmin (highHz, subMaxRangeHz) : highHz);
+        e.setCrossoverHz (crossoverBox.getText().getFloatValue());
+        e.setSubPolarityInverted (subInvertToggle.getToggleState());
+        e.setMicCalibration (smt::sharedMicCalibration());
+    }
+
+    void pushSettingsToAll()
+    {
+        group.forEachEngine ([this] (smt::AnalysisEngine& e, bool isSub) { pushSettingsTo (e, isSub); });
+    }
+
+    // Window-size changes clear each engine's data (AnalysisEngine::setWindowSize),
+    // so re-run every already-loaded file set through it at the new size, in
+    // the background — one job per engine, each touching only its own engine
+    // (the sub's job re-loads only the sub itself, not the per-speaker
+    // crossover integration those speakers' own jobs already redo via
+    // loadSubFiles below, so no two jobs ever touch the same engine).
+    void reanalyzeAll()
+    {
+        const auto subFiles = group.subEntry().files;
+        const bool haveSub = ! subFiles.isEmpty();
+
+        std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+        {
+            const auto files = group.speaker (i).files;
+            if (files.isEmpty())
+                continue;
+            jobs.push_back ([this, i, files, subFiles, haveSub]
+            {
+                auto& e = *group.speaker (i).engine;
+                e.loadFiles (files);
+                if (haveSub)
+                    e.loadSubFiles (subFiles);
+            });
+        }
+        if (haveSub)
+            jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
+
+        if (jobs.empty())
+            return;
+
+        status.setText ("Re-analyzing " + juce::String (jobs.size()) + " measurement set(s)...",
+                        juce::dontSendNotification);
+        setBusy (true);
+
+        runner.runJobs (std::move (jobs),
+            [this] (float p) { progressValue = (double) p; },
+            [this]
+            {
+                setBusy (false);
+                status.setText ("Re-analysis complete.", juce::dontSendNotification);
+                refreshRows();
+                updatePlotPreview();
+            });
+    }
+
+    void setNumSpeakers (int n)
+    {
+        group.setNumSpeakers (n);
+        syncRowsVisibility();
+        resized();
+        updatePlotPreview();
+    }
+
+    void syncRowsVisibility()
+    {
+        for (int i = 0; i < rows.size(); ++i)
+        {
+            const bool visible = i < group.getNumSpeakers();
+            rows[i]->setVisible (visible);
+            if (visible)
+                rows[i]->nameLabel.setText (group.speaker (i).label, juce::dontSendNotification);
+        }
+        rebuildPreviewBox();
+        refreshRows();
+    }
+
+    void rebuildPreviewBox()
+    {
+        const int prevId = previewBox.getSelectedId();
+        previewBox.clear (juce::dontSendNotification);
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+            previewBox.addItem (group.speaker (i).label, i + 1);
+        previewBox.addItem ("Sub", group.getNumSpeakers() + 1);
+        previewBox.setSelectedId (juce::jlimit (1, group.getNumSpeakers() + 1, prevId > 0 ? prevId : 1),
+                                  juce::dontSendNotification);
+    }
+
+    void refreshRows()
+    {
+        auto describe = [] (const smt::SpeakerGroupAnalysis::Entry& e)
+        {
+            return e.files.isEmpty() ? juce::String ("no files")
+                                     : juce::String (e.files.size()) + " file(s)";
+        };
+        auto delayText = [] (const smt::SpeakerGroupAnalysis::Entry& e)
+        {
+            return e.hasData() ? juce::String (e.alignedDelayMs, 1) + " ms" : juce::String();
+        };
+
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+        {
+            auto& e = group.speaker (i);
+            rows[i]->fileStatus.setText (describe (e), juce::dontSendNotification);
+            rows[i]->delayReadout.setText (delayText (e), juce::dontSendNotification);
+            rows[i]->outputBox.setSelectedId (e.assignedOutput + 2, juce::dontSendNotification);
+        }
+        auto& s = group.subEntry();
+        subRow.fileStatus.setText (describe (s), juce::dontSendNotification);
+        subRow.delayReadout.setText (delayText (s), juce::dontSendNotification);
+        subRow.outputBox.setSelectedId (s.assignedOutput + 2, juce::dontSendNotification);
+    }
+
+    void loadSpeakerFiles (int i)
+    {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Select speaker " + juce::String (i + 1)
+                + "'s measurement files (same positions for every speaker)",
+            smt::getLastBrowseDir(), "*.wav");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectMultipleItems,
+            [this, i] (const juce::FileChooser& fc)
+            {
+                if (fc.getResults().isEmpty())
+                    return;
+                const auto files = fc.getResults();
+                smt::setLastBrowseDir (files[0]);
+                pushSettingsTo (*group.speaker (i).engine, false);
+
+                status.setText (group.speaker (i).label + ": analyzing...", juce::dontSendNotification);
+                setBusy (true);
+
+                runner.runJobs (
+                    { [this, i, files] { group.loadSpeakerFiles (i, files); } },
+                    [this] (float p) { progressValue = (double) p; },
+                    [this, i]
+                    {
+                        setBusy (false);
+                        status.setText (group.speaker (i).label + ": "
+                                            + juce::String (group.speaker (i).engine->getNumCurves())
+                                            + " file(s) analyzed.",
+                                        juce::dontSendNotification);
+                        refreshRows();
+                        updatePlotPreview();
+                    });
+            });
+    }
+
+    void loadSubFiles()
+    {
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Select the shared subwoofer measurement files (same positions as the speakers)",
+            smt::getLastBrowseDir(), "*.wav");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::canSelectMultipleItems,
+            [this] (const juce::FileChooser& fc)
+            {
+                if (fc.getResults().isEmpty())
+                    return;
+                const auto files = fc.getResults();
+                smt::setLastBrowseDir (files[0]);
+                pushSettingsTo (*group.subEntry().engine, true);
+
+                status.setText ("Sub: analyzing...", juce::dontSendNotification);
+                setBusy (true);
+
+                runner.runJobs (
+                    { [this, files] { group.loadSubFiles (files); } },
+                    [this] (float p) { progressValue = (double) p; },
+                    [this]
+                    {
+                        setBusy (false);
+                        status.setText ("Sub: "
+                                            + juce::String (group.subEntry().engine->getNumCurves())
+                                            + " file(s) analyzed.",
+                                        juce::dontSendNotification);
+                        refreshRows();
+                        updatePlotPreview();
+                    });
+            });
+    }
+
+    // Loads an entire measurement set written by CalibrationComponent's
+    // folder-based capture in one step: readme_measurement.md tells us the
+    // channels and which one is the sub (smt::scanMeasurementFolder), so no
+    // manual multi-select (and no risk of mismatched position order between
+    // speakers/sub) is needed.
+    void loadMeasurementFolder()
+    {
+        fileChooser = std::make_unique<juce::FileChooser> ("Select a measurement folder",
+                                                            smt::getLastBrowseDir());
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectDirectories,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto dir = fc.getResult();
+                if (dir == juce::File())
+                    return;
+                smt::setLastBrowseDir (dir);
+
+                const auto contents = smt::scanMeasurementFolder (dir);
+                if (! contents.ok)
+                {
+                    status.setText (contents.error, juce::dontSendNotification);
+                    return;
+                }
+
+                const int n = juce::jmin ((int) contents.speakers.size(),
+                                          smt::SpeakerGroupAnalysis::maxSpeakers);
+                const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
+                const auto subFiles = contents.sub.files;
+
+                // Reflect the folder's contents: auto-select the Sub switch when
+                // the folder has one, clear it when it doesn't.
+                subEnabledToggle.setToggleState (haveSub, juce::dontSendNotification);
+                group.setSubEnabled (haveSub);
+
+                // Assign files/output/settings before growing the row count, so
+                // the row refresh that setNumSpeakers() triggers already shows
+                // the correct output assignments instead of stale ones.
+                for (int i = 0; i < n; ++i)
+                {
+                    const auto& c = contents.speakers[(size_t) i];
+                    auto& entry = group.speaker (i);
+                    entry.files = c.files;
+                    entry.assignedOutput = c.channelNumber - 1;
+                    pushSettingsTo (*entry.engine, false);
+                }
+                if (haveSub)
+                {
+                    group.subEntry().files = subFiles;
+                    group.subEntry().assignedOutput = contents.sub.channelNumber - 1;
+                    pushSettingsTo (*group.subEntry().engine, true);
+                }
+
+                if (n > 0)
+                {
+                    countBox.setSelectedId (n, juce::dontSendNotification);
+                    setNumSpeakers (n);
+                }
+
+                // One job per engine, each touching only its own engine (mirrors
+                // reanalyzeAll(): never call group.loadSubFiles() from a
+                // background job, since it fans out across every speaker's
+                // engine and would race with these per-speaker jobs).
+                std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+                jobs.reserve ((size_t) n + (haveSub ? 1 : 0));
+
+                for (int i = 0; i < n; ++i)
+                {
+                    const auto files = contents.speakers[(size_t) i].files;
+                    jobs.push_back ([this, i, files, subFiles, haveSub]
+                    {
+                        auto& e = *group.speaker (i).engine;
+                        e.loadFiles (files);
+                        if (haveSub)
+                            e.loadSubFiles (subFiles);
+                    });
+                }
+                if (haveSub)
+                    jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
+
+                if (jobs.empty())
+                {
+                    status.setText ("No speaker measurement files found in " + dir.getFileName() + ".",
+                                    juce::dontSendNotification);
+                    return;
+                }
+
+                status.setText ("Loading " + juce::String (jobs.size()) + " measurement set(s) from "
+                                    + dir.getFileName() + "...", juce::dontSendNotification);
+                setBusy (true);
+
+                runner.runJobs (std::move (jobs),
+                    [this] (float p) { progressValue = (double) p; },
+                    [this, n, haveSub]
+                    {
+                        setBusy (false);
+                        status.setText (juce::String (n) + " speaker(s)" + (haveSub ? " + sub" : "")
+                                            + " loaded from the measurement folder.",
+                                        juce::dontSendNotification);
+                        refreshRows();
+                        updatePlotPreview();
+                    });
+            });
+    }
+
+    void applyAndExport()
+    {
+        fileChooser = std::make_unique<juce::FileChooser> ("Choose export folder", smt::getLastBrowseDir());
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectDirectories,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto dir = fc.getResult();
+                if (dir == juce::File())
+                    return;
+                smt::setLastBrowseDir (dir);
+
+                const int firLength = firBox.getSelectedId();
+                const int n = group.getNumSpeakers();
+
+                // One job per speaker, each rendering + writing only its own
+                // IR (background-safe: exportSpeakerIR touches only that
+                // speaker's own const engine and the filesystem). Results are
+                // collected here and applied to configModel on the message
+                // thread in finalizeApply(), once every job has finished.
+                auto exportOk = std::make_shared<std::vector<char>> ((size_t) n, 0);
+                std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+                jobs.reserve ((size_t) n);
+                for (int i = 0; i < n; ++i)
+                    jobs.push_back ([this, i, dir, firLength, exportOk]
+                    {
+                        (*exportOk)[(size_t) i] = group.exportSpeakerIR (i, dir, firLength) ? 1 : 0;
+                    });
+
+                status.setText ("Exporting...", juce::dontSendNotification);
+                setBusy (true);
+
+                runner.runJobs (std::move (jobs),
+                    [this] (float p) { progressValue = (double) p; },
+                    [this, dir, firLength, exportOk]
+                    {
+                        const std::vector<bool> ok (exportOk->begin(), exportOk->end());
+                        const auto result = group.finalizeApply (ok, dir, firLength,
+                                                                  processor.configModel, processor.engine);
+                        setBusy (false);
+                        status.setText (result.error.isNotEmpty()
+                                            ? result.error
+                                            : juce::String (result.numApplied)
+                                                + " speaker(s) applied & exported to " + dir.getFileName(),
+                                        juce::dontSendNotification);
+                    });
+            });
+    }
+
+    // Refreshes the shared plot with the currently previewed engine's curves.
+    void updatePlotPreview()
+    {
+        const int id = previewBox.getSelectedId();
+        smt::AnalysisEngine* eng = (id >= 1 && id <= group.getNumSpeakers())
+                                       ? group.speaker (id - 1).engine.get()
+                                       : group.subEntry().engine.get();
+
+        TransferFunctionPlot::Data d;
+        if (eng != nullptr)
+        {
+            for (int i = 0; i < eng->getNumCurves(); ++i)
+            {
+                d.curveDbs.push_back (eng->getCurveDb (i, freqs));
+                d.curvePhases.push_back (eng->getCurvePhaseDeg (i, freqs));
+            }
+            d.averageDb       = eng->getAverageDb (freqs);
+            d.correctionDb    = eng->getCorrectionDb (freqs);
+            d.correctedDb     = eng->getCorrectedDb (freqs);
+            d.averagePhase    = eng->getAveragePhaseDeg (freqs);
+            d.correctionPhase = eng->getCorrectionPhaseDeg (freqs);
+            d.correctedPhase  = eng->getCorrectedPhaseDeg (freqs);
+            d.subDb           = eng->getSubDb (freqs);
+            d.subPhase        = eng->getSubPhaseDeg (freqs);
+            d.hasSub          = eng->hasSub();
+            d.crossoverHz     = eng->getCrossoverHz();
+        }
+        plot.setData (std::move (d));
+    }
+
+    static constexpr int numPoints = 400;
+    static constexpr float fMin = 20.0f, fMax = 20000.0f;
+
+    // Disables every control that would otherwise touch an engine (directly,
+    // or via the shared forEachEngine fan-out) while a background batch is
+    // running, so no engine is ever read/written from two threads at once;
+    // shows/hides the progress bar accordingly.
+    void setBusy (bool busy)
+    {
+        progressBar.setVisible (busy);
+        for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
+                        &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox })
+            c->setEnabled (! busy);
+        for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
+            b->setEnabled (! busy);
+        subEnabledToggle.setEnabled (! busy);
+        levelSlider.setEnabled (! busy);
+        boostSlider.setEnabled (! busy);
+        subInvertToggle.setEnabled (! busy);
+        for (auto* row : rows)
+        {
+            row->loadButton.setEnabled (! busy);
+            row->outputBox.setEnabled (! busy);
+        }
+        const bool subControlsEnabled = ! busy && subEnabledToggle.getToggleState();
+        subRow.loadButton.setEnabled (subControlsEnabled);
+        subRow.outputBox.setEnabled (subControlsEnabled);
+    }
+
+    SuperMoToAudioProcessor& processor;
+    smt::SpeakerGroupAnalysis group;
+    fxme::BackgroundTaskRunner runner;
+    double progressValue = 0.0;
+    juce::ProgressBar progressBar { progressValue };
+
+    juce::Label title, micCalInfo, countLabel, status;
+    juce::ComboBox countBox;
+    juce::TextButton computeButton, applyButton, loadFolderButton;
+    juce::ToggleButton subEnabledToggle;
+
+    juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel;
+    juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
+    juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
+    juce::ComboBox firBox, phaseBox, crossoverBox;
+    juce::ToggleButton subInvertToggle;
+    fxme::FxmeSlider levelSlider, boostSlider;
+
+    juce::OwnedArray<SpeakerRow> rows;
+    SpeakerRow subRow;
+    juce::Viewport rowsViewport;
+    juce::Component rowsHolder;
+
+    TransferFunctionPlot plot;
+    std::vector<float> freqs;
+    std::unique_ptr<juce::FileChooser> fileChooser;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GroupAnalysisComponent)
+};

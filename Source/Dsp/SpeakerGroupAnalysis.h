@@ -1,0 +1,351 @@
+/*
+  ------------------------------------------------------------------------------
+    SpeakerGroupAnalysis.h
+
+    Multi-speaker extension of AnalysisEngine: owns one AnalysisEngine per
+    speaker in the group plus one for the subwoofer, all sharing the same
+    correction settings (window size, smoothing, correction level, max boost,
+    phase type, analysis range, crossover, sub polarity — pushed uniformly via
+    forEachEngine). Each entry's own measurement set gives its propagation
+    delay; computeAlignment() derives the per-entry delay that time-aligns the
+    whole group on the most-distant driver, then folds that delay into each
+    speaker's existing subwoofer phase-alignment (AnalysisEngine::setTimeAlignMs).
+    exportSpeakerIR() then designs and exports one SPEAKER's correction IR;
+    finalizeApply() writes delay + FIR onto each assigned output from the
+    results and returns a markdown report. The subwoofer never gets a
+    correction FIR: above its real passband a broadband measurement is just
+    noise (the sent/recorded cross-spectrum has no coherent content there), so
+    fitting/boosting an inverse filter to it would be both pointless and
+    potentially harmful. The sub only ever contributes a time-alignment delay.
+
+    Most methods are file-based (not real time) and expected on the message
+    thread, EXCEPT exportSpeakerIR(): it's deliberately const and touches only
+    its own entry's engine (read-only) and the filesystem, so callers may run
+    one per speaker on a background thread (e.g. fxme::BackgroundTaskRunner)
+    as long as nothing else concurrently touches the same entry — see
+    GroupAnalysisComponent for the intended pattern (disable UI, dispatch,
+    call finalizeApply() on the message thread once every job has finished).
+
+    Author: Olivier Doaré, github.com/odoare
+    Licenced under the GNU LGPL Version 3.0
+    SPDX-License-Identifier: LGPL-3.0-or-later
+  ------------------------------------------------------------------------------
+*/
+
+#pragma once
+
+#include <JuceHeader.h>
+#include "AnalysisEngine.h"
+#include "MatrixEngine.h"
+#include "../Model/ConfigModel.h"
+#include <memory>
+#include <vector>
+
+namespace smt
+{
+
+class SpeakerGroupAnalysis
+{
+public:
+    static constexpr int maxSpeakers = 16;
+
+    struct Entry
+    {
+        Entry() : engine (std::make_unique<AnalysisEngine>()) {}
+
+        std::unique_ptr<AnalysisEngine> engine;
+        juce::String label;
+        juce::Array<juce::File> files;
+        int assignedOutput = -1;       // -1 = none
+        float alignedDelayMs = 0.0f;   // set by computeAlignment()
+
+        bool hasData() const noexcept { return engine->hasData(); }
+    };
+
+    // All maxSpeakers slots exist for the object's whole lifetime (so a slot's
+    // loaded files/engine survive the user shrinking then re-growing the
+    // count); setNumSpeakers only changes how many are considered "active"
+    // (used by loadSubFiles/computeAlignment/finalizeApply/forEachEngine).
+    SpeakerGroupAnalysis()
+    {
+        speakers.resize ((size_t) maxSpeakers);
+        for (int i = 0; i < maxSpeakers; ++i)
+            speakers[(size_t) i].label = "Speaker " + juce::String (i + 1);
+        sub.label = "Sub";
+    }
+
+    //==========================================================================
+    void setNumSpeakers (int n)                         { activeCount = juce::jlimit (1, maxSpeakers, n); }
+    int getNumSpeakers() const noexcept                 { return activeCount; }
+
+    /** Whether this group has a subwoofer at all. Off by default doesn't clear
+        any already-loaded sub data — it just excludes the sub from
+        computeAlignment() and finalizeApply() (see below), so flipping it back
+        on resumes using whatever was loaded before. */
+    void setSubEnabled (bool enabled) noexcept          { subEnabled = enabled; }
+    bool isSubEnabled() const noexcept                  { return subEnabled; }
+
+    Entry& speaker (int i) noexcept                     { return speakers[(size_t) i]; }
+    const Entry& speaker (int i) const noexcept         { return speakers[(size_t) i]; }
+    Entry& subEntry() noexcept                          { return sub; }
+    const Entry& subEntry() const noexcept              { return sub; }
+
+    /** Loads speaker i's own multi-position measurement set. */
+    int loadSpeakerFiles (int i, const juce::Array<juce::File>& files)
+    {
+        auto& s = speakers[(size_t) i];
+        s.files = files;
+        return s.engine->loadFiles (files);
+    }
+
+    /** Loads the shared subwoofer measurement set: analyzed on its own engine
+        (so it gets its own correction, like any other speaker), and also fed
+        to every already-loaded speaker's loadSubFiles() for the existing
+        crossover phase-alignment integration. */
+    int loadSubFiles (const juce::Array<juce::File>& files)
+    {
+        sub.files = files;
+        const int ok = sub.engine->loadFiles (files);
+
+        for (int i = 0; i < activeCount; ++i)
+            if (speakers[(size_t) i].hasData())
+                speakers[(size_t) i].engine->loadSubFiles (files);
+
+        return ok;
+    }
+
+    /** Applies fn (AnalysisEngine&, bool isSub) to every engine in the group
+        (speakers + sub) — used to push the shared correction-design settings
+        (window size, smoothing, level, boost, phase type, range, crossover,
+        sub polarity, mic cal) uniformly. The isSub flag lets the caller cap
+        the sub's own analysis range instead of using the full-range speakers'
+        one — see the class doc: the sub gets no correction FIR at all, but
+        its (unexported) preview curve should still be confined to its real
+        passband rather than the noise above it. */
+    template <typename Fn>
+    void forEachEngine (Fn&& fn)
+    {
+        for (int i = 0; i < activeCount; ++i)
+            fn (*speakers[(size_t) i].engine, false);
+        fn (*sub.engine, true);
+    }
+
+    /** Computes each loaded entry's (speakers + sub) delay relative to the
+        most-distant one — the farthest driver gets 0 ms, everything else is
+        pushed back to match it, so all delays end up non-negative. Then
+        re-derives each speaker's subwoofer phase-alignment from its own
+        applied delay (AnalysisEngine::setTimeAlignMs), since that alignment
+        assumes the delay that will actually be applied physically. */
+    void computeAlignment()
+    {
+        float maxDelay = 0.0f;
+        bool any = false;
+        auto consider = [&] (const Entry& e)
+        {
+            if (! e.hasData())
+                return;
+            maxDelay = any ? juce::jmax (maxDelay, e.engine->getPropagationDelayMs())
+                           : e.engine->getPropagationDelayMs();
+            any = true;
+        };
+        for (int i = 0; i < activeCount; ++i)
+            consider (speakers[(size_t) i]);
+        if (subEnabled)
+            consider (sub);
+
+        if (! any)
+            return;
+
+        auto apply = [&] (Entry& e)
+        {
+            if (! e.hasData())
+            {
+                e.alignedDelayMs = 0.0f;
+                return;
+            }
+            e.alignedDelayMs = juce::jlimit (0.0f, smt::maxDelayMs,
+                                             maxDelay - e.engine->getPropagationDelayMs());
+        };
+        for (int i = 0; i < activeCount; ++i)
+        {
+            auto& s = speakers[(size_t) i];
+            apply (s);
+            if (s.hasData() && s.engine->hasSub())
+                s.engine->setTimeAlignMs (s.alignedDelayMs);
+        }
+        if (subEnabled)
+            apply (sub);
+    }
+
+    //==========================================================================
+    struct ApplyResult
+    {
+        int numApplied = 0;
+        juce::String report;
+        juce::String error;
+    };
+
+    /** Background-safe half of "Apply & export": renders and writes speaker
+        i's correction IR to directory/speakerN_correction.wav. Returns false
+        without touching the filesystem if the speaker has no data or isn't
+        assigned to an output. Touches only this entry's own (const) engine
+        and the filesystem — safe to call from a background thread, one job
+        per speaker, PROVIDED nothing else touches the same speaker's engine
+        concurrently (disable its controls while a batch is running). Call
+        finalizeApply() on the MESSAGE THREAD once every speaker's export has
+        been attempted (the sub needs no equivalent — it never gets a FIR,
+        see the class doc). */
+    bool exportSpeakerIR (int i, const juce::File& directory, int firLengthSamples) const
+    {
+        const auto& e = speakers[(size_t) i];
+        if (! e.hasData() || e.assignedOutput < 0)
+            return false;
+        const auto irFile = directory.getChildFile ("speaker" + juce::String (i + 1) + "_correction.wav");
+        return e.engine->exportCorrectionIR (irFile, firLengthSamples);
+    }
+
+    /** Message-thread finalization: given exportOk[i] = whether
+        exportSpeakerIR(i, ...) succeeded (exportOk.size() must equal
+        getNumSpeakers()), writes delay (+ FIR, for successfully-exported
+        speakers) onto each assigned output, writes the sub's delay-only
+        entry, calls matrixEngine.updateFirFiles() once if anything changed,
+        and returns a markdown report (the caller writes it to
+        directory/report.md, alongside the wavs exportSpeakerIR already
+        wrote). */
+    ApplyResult finalizeApply (const std::vector<bool>& exportOk, const juce::File& directory,
+                               int firLengthSamples, ConfigModel& configModel,
+                               MatrixEngine& matrixEngine) const
+    {
+        ApplyResult result;
+
+        if (! directory.isDirectory())
+        {
+            result.error = "Not a valid directory.";
+            return result;
+        }
+
+        result.report << "# SuperMoTo multi-speaker alignment report\n\n"
+                       << juce::Time::getCurrentTime().toString (true, true) << "\n\n"
+                       << "## Group settings\n\n"
+                       << "- Window size: " << sub.engine->getWindowSize() << " samples\n"
+                       << "- Smoothing: " << smoothingLabel (sub.engine->getSmoothingLow())
+                       << " (LF) / " << smoothingLabel (sub.engine->getSmoothingHigh()) << " (HF)\n"
+                       << "- Correction level: " << juce::String (sub.engine->getCorrectionLevel(), 2) << "\n"
+                       << "- Max boost: " << juce::String (sub.engine->getMaxBoostDb(), 1) << " dB\n"
+                       << "- Analysis range: " << juce::String (sub.engine->getAnalysisLowHz(), 0)
+                       << " Hz - " << juce::String (sub.engine->getAnalysisHighHz(), 0) << " Hz\n"
+                       << "- Crossover: " << juce::String (sub.engine->getCrossoverHz(), 0) << " Hz"
+                       << (sub.engine->getSubPolarityInverted() ? " (sub inverted)" : "") << "\n"
+                       << "- Phase type: "
+                       << (sub.engine->getPhaseType() == AnalysisEngine::PhaseType::minimum
+                               ? "Minimum phase" : "Linear phase") << "\n"
+                       << "- FIR length: " << firLengthSamples << " samples\n\n"
+                       << "## Speakers\n\n";
+
+        auto reportFiles = [&] (const Entry& e)
+        {
+            result.report << "- Files (" << e.files.size() << " position(s)):\n";
+            for (const auto& f : e.files)
+                result.report << "    - `" << f.getFullPathName() << "`\n";
+        };
+
+        for (int i = 0; i < activeCount; ++i)
+        {
+            const auto& e = speakers[(size_t) i];
+            result.report << "### " << e.label << "\n\n";
+
+            if (! e.hasData())
+            {
+                result.report << "- Not measured.\n\n";
+                continue;
+            }
+            reportFiles (e);
+            result.report << "- Measured propagation delay: "
+                           << juce::String (e.engine->getPropagationDelayMs(), 2) << " ms\n"
+                           << "- Applied (aligned) delay: "
+                           << juce::String (e.alignedDelayMs, 2) << " ms\n";
+
+            if (e.assignedOutput < 0)
+            {
+                result.report << "- Not assigned to an output; nothing written.\n\n";
+                continue;
+            }
+
+            const bool ok = (size_t) i < exportOk.size() && exportOk[(size_t) i];
+            if (! ok)
+            {
+                result.report << "- Export FAILED for output " << (e.assignedOutput + 1) << ".\n\n";
+                continue;
+            }
+
+            const auto irFile = directory.getChildFile ("speaker" + juce::String (i + 1) + "_correction.wav");
+            auto settings = configModel.getOutput (e.assignedOutput);
+            settings.delayMs = e.alignedDelayMs;
+            settings.firPath = irFile.getFullPathName();
+            settings.firOn = true;
+            configModel.setOutput (e.assignedOutput, settings);
+
+            result.report << "- Assigned to output " << (e.assignedOutput + 1)
+                           << ", exported `" << irFile.getFileName() << "`\n\n";
+            ++result.numApplied;
+        }
+
+        // Sub: delay only, never a FIR (see class doc).
+        result.report << "### " << sub.label << "\n\n";
+        if (! subEnabled)
+        {
+            result.report << "- Subwoofer disabled for this group; excluded from alignment "
+                              "and nothing written.\n\n";
+        }
+        else if (! sub.hasData())
+        {
+            result.report << "- Not measured.\n\n";
+        }
+        else
+        {
+            reportFiles (sub);
+            result.report << "- Measured propagation delay: "
+                           << juce::String (sub.engine->getPropagationDelayMs(), 2) << " ms\n"
+                           << "- Applied (aligned) delay: "
+                           << juce::String (sub.alignedDelayMs, 2) << " ms\n";
+
+            if (sub.assignedOutput < 0)
+            {
+                result.report << "- Not assigned to an output; nothing written.\n\n";
+            }
+            else
+            {
+                auto settings = configModel.getOutput (sub.assignedOutput);
+                settings.delayMs = sub.alignedDelayMs;
+                configModel.setOutput (sub.assignedOutput, settings);
+                result.report << "- Assigned to output " << (sub.assignedOutput + 1)
+                               << " \xe2\x80\x94 time-alignment delay only "
+                                  "(no correction FIR is designed for the subwoofer).\n\n";
+                ++result.numApplied;
+            }
+        }
+
+        if (result.numApplied > 0)
+            matrixEngine.updateFirFiles();
+
+        directory.getChildFile ("report.md").replaceWithText (result.report);
+        return result;
+    }
+
+private:
+    static juce::String smoothingLabel (float octaveFraction)
+    {
+        if (octaveFraction <= 0.0f)
+            return "off";
+        return "1/" + juce::String (juce::roundToInt (1.0f / octaveFraction)) + " oct";
+    }
+
+    std::vector<Entry> speakers;
+    Entry sub;
+    int activeCount = 2;
+    bool subEnabled = true;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpeakerGroupAnalysis)
+};
+
+} // namespace smt

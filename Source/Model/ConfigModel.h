@@ -6,10 +6,11 @@
     Data model for the SuperMoTo monitoring matrix.
 
     The plugin holds 6 matrix configurations (A..F). Each configuration is a
-    full 16x16 routing matrix where every frame (crosspoint) carries its own
-    gain, IIR filter, phase and delay settings. Output settings (FIR speaker
-    correction, trim) describe the physical speaker attached to an output and
-    are therefore global, shared by all configurations.
+    full routing matrix (up to 32x32) where every frame (crosspoint) carries
+    its own gain, phase and a small 2-band EQ. Output settings (trim, its own
+    2-band EQ, time-alignment delay, FIR speaker correction) describe the
+    physical speaker attached to an output and are therefore global, shared by
+    all configurations.
 
     Frame/output settings are deliberately NOT host-automatable parameters
     (6 x 256 x ~10 fields would swamp any host); they live here and are
@@ -54,9 +55,11 @@ inline juce::String configName (int c)      { return juce::String::charToString 
 //==============================================================================
 enum class FilterType : int { lowpass = 0, highpass = 1, bandpass = 2, peaking = 3 };
 
-constexpr int numFrameBands = 4;        // EQ bands per matrix frame
+constexpr int numOutputBands = 2;       // EQ bands per output
+constexpr int numFrameBands  = 2;       // EQ bands per matrix frame (crosspoint)
 
-// One EQ band of a frame's filter chain (the bands are cascaded in series).
+// One EQ band of a filter chain (the bands are cascaded in series). Shared by
+// both frames and outputs.
 struct FrameBand
 {
     bool  on     = false;
@@ -74,25 +77,35 @@ struct FrameBand
     bool operator!= (const FrameBand& o) const { return ! (*this == o); }
 };
 
-// A matrix frame is just a routing cell now: how much of the input reaches the
-// output, with an optional polarity flip and an analyzer tap. The speaker
-// processing (EQ, delay, FIR, trim) lives on the output.
+// A matrix frame: how much of the input reaches the output (gain + optional
+// polarity flip), its own small 2-band EQ (e.g. a config-specific tonal
+// tweak on just this route), and an analyzer tap. The speaker's own
+// processing (trim, its own EQ, delay, FIR) lives on the output.
 struct FrameSettings
 {
     bool  active      = false;
     float gainDb      = 0.0f;     // overall frame level
     bool  phaseInvert = false;
     bool  spectrum    = false;    // show this frame's signal on the analyzer
+    std::array<FrameBand, (size_t) numFrameBands> bands {};
+
+    bool anyBandOn() const
+    {
+        for (const auto& b : bands)
+            if (b.on)
+                return true;
+        return false;
+    }
 
     bool isDefault() const
     {
         const FrameSettings d;
         return active == d.active && gainDb == d.gainDb && phaseInvert == d.phaseInvert
-            && spectrum == d.spectrum;
+            && spectrum == d.spectrum && bands == d.bands;
     }
 };
 
-// One physical speaker output: trim, a 4-band EQ (e.g. the bass-management
+// One physical speaker output: trim, a 2-band EQ (e.g. the bass-management
 // crossover), a time-alignment delay, an FIR correction, and an analyzer tap.
 struct OutputSettings
 {
@@ -101,7 +114,7 @@ struct OutputSettings
     bool         firOn    = false;
     juce::String firPath;          // impulse response wav file
     bool         spectrum = false; // show this output's sum on the analyzer
-    std::array<FrameBand, (size_t) numFrameBands> bands {};
+    std::array<FrameBand, (size_t) numOutputBands> bands {};
 
     bool anyBandOn() const
     {

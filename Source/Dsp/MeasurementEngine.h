@@ -50,7 +50,11 @@ public:
         MeasureMode mode = MeasureMode::dryOutput;
         float durationS = 10.0f;                            // 5 .. 30
         float levelDb = -12.0f;
-        juce::String basePath;                              // folder + base name
+        juce::String folder;                                // destination folder
+        int subChannel = -1;                                // 0-based; -1 = none.
+                                                            // Only meaningful for dry/FIR
+                                                            // modes (fullSystem's toggled
+                                                            // channels are inputs).
     };
 
     MeasurementEngine() = default;
@@ -82,6 +86,7 @@ private:
     void setStatus (const juce::String& s);
     juce::String channelStatus (int idx) const;
     juce::File captureFile (int ch) const;
+    void updateReadme() const;
 
     float nextStimulusSample();
 
@@ -89,6 +94,9 @@ private:
 
     Settings settings;
     std::vector<int> channelList;           // outputs (or inputs) still to do
+    std::vector<int> positions;             // per-channel position number for this run,
+                                            // parallel to channelList
+    juce::Array<juce::File> filesWrittenThisRun;
     int currentChannel = -1;
 
     juce::AudioBuffer<float> capture;       // ch0 = sent, ch1 = recorded
@@ -112,5 +120,27 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeasurementEngine)
 };
+
+/** Reads back a folder written by MeasurementEngine: which channels were
+    measured (from readme_measurement.md's "Channels:"/"Sub channel:" lines),
+    and for each, its files sorted by position (re-derived from the actual
+    ch<NN>_pos<PPP>.wav / sub_pos<PPP>.wav files on disk, not counted from the
+    readme, so this stays correct even if the readme and folder ever drift).
+    Used by GroupAnalysisComponent's "Load measurement folder..." button. */
+struct MeasurementFolderContents
+{
+    struct Channel
+    {
+        int channelNumber = -1;         // 1-based, as written to disk/readme
+        juce::Array<juce::File> files;  // sorted by ascending position
+    };
+
+    std::vector<Channel> speakers;      // ascending channel number, sub excluded
+    Channel sub;                        // sub.channelNumber == -1 if none
+    bool ok = false;
+    juce::String error;                 // set when !ok
+};
+
+MeasurementFolderContents scanMeasurementFolder (const juce::File& folder);
 
 } // namespace smt

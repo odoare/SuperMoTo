@@ -4,7 +4,8 @@ SuperMoTo is an FX-Mechanics JUCE audio plugin for the monitoring section,
 the big brother of [MoTo](https://github.com/odoare/MoTo). It manages
 multiple loudspeaker systems and subwoofers through a routing matrix of up to
 32x32, and embeds the tools to measure the speakers, design FIR correction
-curves and integrate a subwoofer in phase with the mains.
+curves and integrate a subwoofer in phase with the mains — one speaker at a
+time, or a whole rig together with the Group analysis mode.
 
 Every page has an **info button (i)** in its corner with a summary of the
 controls and shortcuts.
@@ -12,11 +13,12 @@ controls and shortcuts.
 ## Part 1 — Monitoring matrix
 
 - **Input/output matrix up to 32x32** (default 8 in / 8 out; choose the active
-  size with the Inputs/Outputs selectors). Each frame (crosspoint) is a routing
-  cell: **gain**, **phase inversion**, its own **vu-meter** and a checkbox to
-  show its signal on the analyzer.
+  size with the Inputs/Outputs selectors). Each frame (crosspoint) is mostly a
+  routing cell — **gain**, **phase inversion**, its own **vu-meter** and a
+  checkbox to show its signal on the analyzer — but also carries its own
+  **2-band EQ** for a config-specific tweak on just that one route.
 - **Per-output (per-speaker) processing**, edited by clicking an output cell:
-  - **trim**, a **4-band EQ** (lowpass / highpass / bandpass for the
+  - **trim**, a **2-band EQ** (lowpass / highpass / bandpass for the
     bass-management crossover, peaking for correction; 2nd or 4th order),
   - a **time-alignment delay** (0..100 ms, fractional),
   - **one FIR correction filter** (WDL convolution, zero latency) loaded from a
@@ -125,6 +127,43 @@ of the monitoring part. The centred IR introduces firLength/2 samples of
 delay on that output — which the matrix's inter-output latency compensation
 then absorbs automatically.
 
+## Part 4 — Group analysis (multi-speaker alignment)
+
+Where Part 3 designs one speaker's correction at a time, Group analysis
+aligns and corrects **several speakers (plus one shared subwoofer) in a
+single pass** — the natural workflow once more than a couple of drivers are
+involved.
+
+- **Speakers** selects how many drivers to align (1..16); each gets its own
+  row with a **Load...** button (same multi-position measurement convention
+  as Part 3), a file-count / measured-delay readout, and an output-channel
+  assignment. A dedicated **Sub** row takes the shared subwoofer set.
+- The correction-design controls are **shared across the whole group** (one
+  Welch window, smoothing, correction level, max boost, FIR length, phase
+  type, analysis range, crossover and sub-polarity setting for every
+  speaker) — a **Preview** selector picks which speaker's (or the sub's)
+  curves the plot shows while tuning.
+- **Compute alignment** reads each loaded speaker's (and the sub's) measured
+  propagation delay (from the impulse-response peak, the same estimate Part 3
+  uses) and proposes the delay that time-aligns everyone on the
+  most-distant driver — the farthest speaker gets 0 ms, every other one is
+  pushed back to match it, so no delay is ever negative.
+- **The subwoofer never gets a correction FIR.** Above its real passband a
+  broadband measurement is just noise (there is no coherent sent/recorded
+  content there), so designing — let alone boosting — an inverse filter for
+  it would be fitting noise. The sub only ever contributes its
+  time-alignment delay; its own analysis range is automatically capped so
+  its (diagnostic-only) preview curve stays meaningful too.
+- **Apply & export...** designs and exports each assigned speaker's
+  correction IR into a chosen folder, writes delay + FIR onto that output
+  (global per output, exactly like Part 3 — not per configuration A..F), and
+  writes a `report.md` alongside the impulse responses with the group
+  settings, each entry's full measurement file paths, measured/applied delay
+  and export status.
+- Loading, re-analyzing (e.g. after changing the Welch window) and exporting
+  all run in the background with a progress indicator, so the editor stays
+  responsive even with long, multi-position measurement sets.
+
 ## Use cases
 
 ### A. Stereo monitoring with corrected speakers
@@ -165,6 +204,24 @@ then absorbs automatically.
   C = nearfields) and switch from the top bar. Use **Exclusive** for A/B,
   non-exclusive to sum. Collapse (▲) to a compact output-strip-only window.
 
+### E. Aligning and correcting several speakers at once
+1. Group analysis: set **Speakers** to the number of drivers in the rig, and
+   load each speaker's multi-position measurement set (**Load...** on its
+   row), plus the shared **Sub** row's set if there's a subwoofer.
+2. Tune the shared correction-design controls (Welch window, smoothing,
+   correction level, max boost, FIR length, Phase, Range, Crossover, Invert
+   sub) — one tone for the whole group; use **Preview** to check each
+   speaker's curves in turn.
+3. **Compute alignment**: measures every speaker's (and the sub's)
+   propagation delay and proposes the per-row delay that time-aligns the
+   whole group on the most-distant driver.
+4. Assign each row to the output channel that speaker is on.
+5. **Apply & export...**: designs and exports each speaker's correction IR,
+   writes its delay and FIR onto that output, and saves a markdown report
+   (with the full measurement file paths) alongside the impulse responses.
+   The subwoofer only ever gets its time-alignment delay — see
+   [Part 4](#part-4--group-analysis-multi-speaker-alignment).
+
 ## Building
 
 CMake based, mirroring MechanOdd. Expected sibling layout:
@@ -183,8 +240,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Formats: VST3, AU, Standalone (discrete in/out, selectable 8 / 16 / 24 / 32,
-default 8).
+Formats: VST3, AU, Standalone (fixed 32 in / 32 out discrete bus — this
+sidesteps inconsistent per-host channel-count negotiation; the active matrix
+size, 8 by default, is independent and set with the Inputs/Outputs
+selectors).
 
 ## License
 

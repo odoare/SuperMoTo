@@ -40,6 +40,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
       configTool (p.configModel),
       calibration (p),
       analysis (p),
+      groupAnalysis (p),
       presetPane (p.getPresetManager()),
       presetBar (p.getPresetManager())
 {
@@ -100,6 +101,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     initViewButton (configToolButton, "Config tool", View::configTool);
     initViewButton (calibrationButton, "Calibration", View::calibration);
     initViewButton (analysisButton, "Analysis", View::analysis);
+    initViewButton (groupAnalysisButton, "Group", View::groupAnalysis);
     initViewButton (presetsViewButton, "Presets", View::presets);
 
     // Compact preset selector: top-right corner, expanded mode only.
@@ -198,6 +200,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addChildComponent (configTool);
     addChildComponent (calibration);
     addChildComponent (analysis);
+    addChildComponent (groupAnalysis);
     presetPane.setAccentColour (SuperMoToTheme::master);
     addChildComponent (presetPane);
 
@@ -218,7 +221,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     setEditConfig (initial);
 
     // Restore the interface mode left last time (which panel, compact or not).
-    setView (static_cast<View> (juce::jlimit (0, 4, smt::getUiView())));
+    setView (static_cast<View> (juce::jlimit (0, 5, smt::getUiView())));
 
     setResizable (true, true);
     setResizeLimits (1100, 720, 2400, 1600);
@@ -285,12 +288,13 @@ void SuperMoToAudioProcessorEditor::setView (View v)
         b->setVisible (m);
 
     for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton,
-                     &presetsViewButton })
+                     &groupAnalysisButton, &presetsViewButton })
         b->setVisible (! collapsed);
 
     configTool.setVisible (v == View::configTool && ! collapsed);
     calibration.setVisible (v == View::calibration && ! collapsed);
     analysis.setVisible (v == View::analysis && ! collapsed);
+    groupAnalysis.setVisible (v == View::groupAnalysis && ! collapsed);
     presetPane.setVisible (v == View::presets && ! collapsed);
     presetBar.setVisible (! collapsed);
 
@@ -298,6 +302,7 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     configToolButton.setToggleState (v == View::configTool, juce::dontSendNotification);
     calibrationButton.setToggleState (v == View::calibration, juce::dontSendNotification);
     analysisButton.setToggleState (v == View::analysis, juce::dontSendNotification);
+    groupAnalysisButton.setToggleState (v == View::groupAnalysis, juce::dontSendNotification);
     presetsViewButton.setToggleState (v == View::presets, juce::dontSendNotification);
 
     juce::String t, body;
@@ -333,7 +338,7 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "A frame (crosspoint) is a routing cell (gain + phase). The speaker "
                 "processing — trim, EQ, delay and FIR — lives on the output.\n\n"
                 "Frame (crosspoint):\n"
-                " - Click: select (opens the frame editor, bottom right)\n"
+                " - Click: select (opens the frame editor: level, phase, EQ)\n"
                 " - Double-click: activate / deactivate\n"
                 " - Vertical drag: gain\n"
                 " - Alt+click: show / hide its analyzer trace\n"
@@ -353,8 +358,9 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "Keyboard (click a cell first to give the matrix focus):\n"
                 " - Arrow keys: move the selection across the grid and the output strip "
                 "(top row); left/right and up/down both wrap around\n"
-                " - On a frame: A active, P phase, N analyzer, +/- gain \xc2\xb1 0.1 dB\n"
-                " - On an output: F FIR, 1-4 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
+                " - On a frame: A active, P phase, N analyzer, 1-2 toggle EQ band, "
+                "+/- gain \xc2\xb1 0.1 dB\n"
+                " - On an output: F FIR, 1-2 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
                 "Analyzer: click the avg/peak badge (bottom-right) to switch aggregation.";
             break;
 
@@ -442,6 +448,32 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "delay onto the output (so the FIR and its delay land together).\n\n"
                 "Export IR saves the measured response; Export correction IR saves the "
                 "correction and can assign it directly to an output.";
+            break;
+
+        case View::groupAnalysis:
+            title = "Group analysis \xe2\x80\x94 multi-speaker alignment";
+            body  =
+                "Time-align and correct several speakers (plus a shared subwoofer) at once, "
+                "instead of one at a time in the Analysis page.\n\n"
+                "1. Speakers: how many to align (each gets its own measurement set, same mic "
+                "positions as the others).\n"
+                "2. Load... each speaker's multi-position measurement set, and the shared sub "
+                "set (same positions).\n"
+                "3. The correction-design controls (Welch window, smoothing, correction level, "
+                "max boost, FIR length, Phase, Range, Crossover, Invert sub) are shared: one "
+                "tone for the whole group. Preview switches which speaker's curves the plot "
+                "below shows.\n"
+                "4. Compute alignment: measures each speaker's (and the sub's) propagation "
+                "delay and proposes the delay that time-aligns everyone on the most-distant "
+                "driver (shown next to each row).\n"
+                "5. Assign each row to the output channel that speaker is on.\n"
+                "6. Apply & export...: designs and exports each assigned speaker's correction "
+                "IR, writes its delay and FIR onto that output, and saves a markdown report "
+                "alongside the impulse responses.\n\n"
+                "The subwoofer only ever gets the time-alignment delay \xe2\x80\x94 no correction "
+                "FIR is designed for it. Above a sub's real passband a measurement is just "
+                "noise (no coherent sent/recorded content), so fitting an inverse filter to it "
+                "would be fitting noise.";
             break;
 
         case View::presets:
@@ -589,8 +621,9 @@ void SuperMoToAudioProcessorEditor::resized()
     for (auto* b : editConfigButtons)
         b->setBounds (bottom.removeFromLeft (40).reduced (2, 1));
 
-    const int vw = juce::jmin (110, bottom.getWidth() / 5);
+    const int vw = juce::jmin (110, bottom.getWidth() / 6);
     presetsViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    groupAnalysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     analysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     calibrationButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     configToolButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
@@ -604,6 +637,7 @@ void SuperMoToAudioProcessorEditor::resized()
     configTool.setBounds (main);
     calibration.setBounds (main);
     analysis.setBounds (main);
+    groupAnalysis.setBounds (main);
     presetPane.setBounds (main);
 
     // Matrix view: matrix left, analyzer + frame editor right

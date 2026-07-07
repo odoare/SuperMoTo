@@ -48,6 +48,19 @@ juce::ValueTree ConfigModel::toValueTree() const
                 vf.setProperty ("gain", f.gainDb, nullptr);
                 vf.setProperty ("phaseInvert", f.phaseInvert, nullptr);
                 vf.setProperty ("spectrum", f.spectrum, nullptr);
+
+                for (int bi = 0; bi < numFrameBands; ++bi)
+                {
+                    const auto& b = f.bands[(size_t) bi];
+                    juce::ValueTree vb (idBand);
+                    vb.setProperty ("on", b.on, nullptr);
+                    vb.setProperty ("type", b.type, nullptr);
+                    vb.setProperty ("order", b.order, nullptr);
+                    vb.setProperty ("freq", b.freq, nullptr);
+                    vb.setProperty ("q", b.q, nullptr);
+                    vb.setProperty ("gain", b.gainDb, nullptr);
+                    vf.addChild (vb, -1, nullptr);
+                }
                 cfg.addChild (vf, -1, nullptr);
             }
 
@@ -68,7 +81,7 @@ juce::ValueTree ConfigModel::toValueTree() const
         vo.setProperty ("firPath", s.firPath, nullptr);
         vo.setProperty ("spectrum", s.spectrum, nullptr);
 
-        for (int bi = 0; bi < numFrameBands; ++bi)
+        for (int bi = 0; bi < numOutputBands; ++bi)
         {
             const auto& b = s.bands[(size_t) bi];
             juce::ValueTree vb (idBand);
@@ -125,13 +138,28 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                     if (i < 0 || i >= numChannels || o < 0 || o >= numChannels)
                         continue;
 
-                    // EQ and delay moved to the outputs; any band/delay data on
-                    // old frame nodes is intentionally ignored.
+                    // Delay stays output-only; a frame's own EQ bands (if any)
+                    // are read below like an output's.
                     FrameSettings f;
                     f.active      = (bool)  vf.getProperty ("active", f.active);
                     f.gainDb      = (float) (double) vf.getProperty ("gain", f.gainDb);
                     f.phaseInvert = (bool)  vf.getProperty ("phaseInvert", f.phaseInvert);
                     f.spectrum    = (bool)  vf.getProperty ("spectrum", f.spectrum);
+
+                    int fbi = 0;
+                    for (int k = 0; k < vf.getNumChildren() && fbi < numFrameBands; ++k)
+                    {
+                        auto vb = vf.getChild (k);
+                        if (! vb.hasType (idBand))
+                            continue;
+                        auto& b = f.bands[(size_t) fbi++];
+                        b.on     = (bool)  vb.getProperty ("on", b.on);
+                        b.type   = (int)   vb.getProperty ("type", b.type);
+                        b.order  = (int)   vb.getProperty ("order", b.order);
+                        b.freq   = (float) (double) vb.getProperty ("freq", b.freq);
+                        b.q      = (float) (double) vb.getProperty ("q", b.q);
+                        b.gainDb = (float) (double) vb.getProperty ("gain", b.gainDb);
+                    }
                     frames[(size_t) c][(size_t) i][(size_t) o] = f;
                 }
             }
@@ -149,7 +177,7 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                 s.spectrum = (bool)  child.getProperty ("spectrum", s.spectrum);
 
                 int bi = 0;
-                for (int k = 0; k < child.getNumChildren() && bi < numFrameBands; ++k)
+                for (int k = 0; k < child.getNumChildren() && bi < numOutputBands; ++k)
                 {
                     auto vb = child.getChild (k);
                     if (! vb.hasType (idBand))

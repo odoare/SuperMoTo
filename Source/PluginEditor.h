@@ -41,6 +41,7 @@
 #include "Components/ConfigToolComponent.h"
 #include "Components/CalibrationComponent.h"
 #include "Components/AnalysisComponent.h"
+#include "Components/GroupAnalysisComponent.h"
 
 //==============================================================================
 class SuperMoToAudioProcessorEditor  : public juce::AudioProcessorEditor,
@@ -56,7 +57,7 @@ public:
     void resized() override;
 
 private:
-    enum class View { matrix, configTool, calibration, analysis, presets };
+    enum class View { matrix, configTool, calibration, analysis, presets, groupAnalysis };
     void setView (View v);
     void setEditConfig (int c);
     void layoutInfoButton();
@@ -87,7 +88,7 @@ private:
 
     // ── Bottom control bar ───────────────────────────────────────────────────
     juce::TextButton matrixViewButton, configToolButton, calibrationButton, analysisButton,
-                     presetsViewButton;
+                     presetsViewButton, groupAnalysisButton;
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;
@@ -109,6 +110,7 @@ private:
     ConfigToolComponent configTool;
     CalibrationComponent calibration;
     AnalysisComponent analysis;
+    GroupAnalysisComponent groupAnalysis;
 
     // ── Presets ──────────────────────────────────────────────────────────────
     fxme::PresetComponent presetPane;    // full browser (Presets page)

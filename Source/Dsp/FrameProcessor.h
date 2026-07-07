@@ -3,9 +3,11 @@
     FrameProcessor.h
 
     Processing of one matrix frame (crosspoint): a smoothed gain with optional
-    polarity flip. The result of process() is *added* into the destination
-    output channel; the speaker processing (EQ, delay, FIR) lives downstream on
-    the output (see OutputProcessor / MatrixEngine).
+    polarity flip, followed by the frame's own small 2-band cascaded IIR EQ
+    (coefficient math shared with OutputProcessor via BandFilter.h). The
+    result of process() is *added* into the destination output channel; the
+    speaker's own processing (its own EQ, delay, FIR) lives downstream on the
+    output (see OutputProcessor / MatrixEngine).
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -17,6 +19,7 @@
 
 #include <JuceHeader.h>
 #include "../Model/ConfigModel.h"
+#include "BandFilter.h"
 
 namespace smt
 {
@@ -36,12 +39,15 @@ public:
     void reset()
     {
         level.store (0.0f);
+        for (auto& b : biquads)
+            b.reset();
     }
 
     /** Called on the audio thread when the model changed (no allocation). */
     void applySettings (const FrameSettings& s, bool force = false)
     {
         const bool wasActive = settings.active;
+        const bool filterChanged = force || s.bands != settings.bands;
         settings = s;
 
         const float target = settings.active
@@ -57,6 +63,9 @@ public:
         {
             smoothedGain.setTargetValue (target);
         }
+
+        if (filterChanged)
+            updateFilters();
     }
 
     bool isActive() const noexcept
@@ -82,7 +91,9 @@ public:
         float peak = 0.0f;
         for (int i = 0; i < n; ++i)
         {
-            const float v = input[i] * smoothedGain.getNextValue();
+            float v = input[i] * smoothedGain.getNextValue();
+            for (int b = 0; b < activeBiquads; ++b)
+                v = biquads[b].processSample (v);
             tmp[i] = v;
             dest[i] += v;
             peak = juce::jmax (peak, std::abs (v));
@@ -104,12 +115,22 @@ public:
     const FrameSettings& getSettings() const noexcept { return settings; }
 
 private:
+    void updateFilters()
+    {
+        activeBiquads = buildBiquadCascade (settings.bands.data(), (int) settings.bands.size(),
+                                            sr, biquads, maxBiquads);
+    }
+
     double sr = 44100.0;
     FrameSettings settings;
 
     juce::LinearSmoothedValue<float> smoothedGain;
     std::vector<float> scratch;
     std::atomic<float> level { 0.0f };
+
+    static constexpr int maxBiquads = numFrameBands * 2;
+    fxme::Biquad biquads[maxBiquads];
+    int activeBiquads = 0;
 };
 
 } // namespace smt

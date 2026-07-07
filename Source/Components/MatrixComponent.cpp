@@ -221,10 +221,12 @@ void MatrixComponent::paint (juce::Graphics& g)
                             r.toNearestInt().withTrimmedBottom ((int) (r.getHeight() * 0.35f)),
                             juce::Justification::centred);
 
-                // Indicators (EQ / delay now live on the output strip).
+                // Indicators (delay lives on the output strip; EQ can now be on
+                // the frame too, in addition to the output's own EQ).
                 g.setFont (8.0f);
                 juce::String tags;
                 if (f.phaseInvert)      tags << juce::String::fromUTF8 ("\xc3\x98");
+                if (f.anyBandOn())      tags << (tags.isEmpty() ? "" : " ") << "EQ";
                 g.setColour (inCol.brighter (0.4f));
                 g.drawText (tags, (int) r.getX() + 2, (int) (r.getBottom() - 11.0f),
                             (int) r.getWidth() - 10, 9, juce::Justification::centredLeft);
@@ -427,6 +429,8 @@ bool MatrixComponent::keyPressed (const juce::KeyPress& key)
         else if (ch == 'n')  f.spectrum    = ! f.spectrum;
         else if (plus)       f.gainDb = juce::jlimit (-60.0f, 12.0f, f.gainDb + 0.1f);
         else if (minus)      f.gainDb = juce::jlimit (-60.0f, 12.0f, f.gainDb - 0.1f);
+        else if (ch >= '1' && ch < juce_wchar ('1' + smt::numFrameBands))
+            f.bands[(size_t) (ch - '1')].on = ! f.bands[(size_t) (ch - '1')].on;
         else                 handled = false;
 
         if (handled)
@@ -445,7 +449,7 @@ bool MatrixComponent::keyPressed (const juce::KeyPress& key)
         else if (ch == 'f') { s.firOn = ! s.firOn; firChanged = true; }
         else if (plus)       s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb + 0.1f);
         else if (minus)      s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb - 0.1f);
-        else if (ch >= '1' && ch < juce_wchar ('1' + smt::numFrameBands))
+        else if (ch >= '1' && ch < juce_wchar ('1' + smt::numOutputBands))
             s.bands[(size_t) (ch - '1')].on = ! s.bands[(size_t) (ch - '1')].on;
         else                 handled = false;
 

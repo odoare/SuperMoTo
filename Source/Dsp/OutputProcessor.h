@@ -3,10 +3,11 @@
     OutputProcessor.h
 
     Per-output (per-loudspeaker) processing applied after the matrix sum and the
-    output trim, and before the FIR correction: a 4-band cascaded IIR EQ
+    output trim, and before the FIR correction: a 2-band cascaded IIR EQ
     (lowpass / highpass / bandpass for the bass-management crossover, peaking for
     correction) and a fractional time-alignment delay. Runs in place on the
-    output buffer; no allocation on the audio thread.
+    output buffer; no allocation on the audio thread. The coefficient math is
+    shared with FrameProcessor's own 2-band EQ via BandFilter.h.
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -18,6 +19,7 @@
 
 #include <JuceHeader.h>     // fxme::Biquad comes via the FxmeTools module umbrella
 #include "../Model/ConfigModel.h"
+#include "BandFilter.h"
 
 namespace smt
 {
@@ -90,67 +92,16 @@ public:
     }
 
 private:
-    // Rebuild the flat biquad cascade from the enabled bands. Each LP/HP/BP band
-    // is 1 (2nd order) or 2 (4th order) biquads; a peaking band is 1 biquad.
     void updateFilters()
     {
-        int n = 0;
-        for (const auto& band : settings.bands)
-        {
-            if (! band.on)
-                continue;
-
-            const auto  type = (FilterType) band.type;
-            const float f = band.freq;
-            const float q = band.q;
-
-            if (type == FilterType::peaking)
-            {
-                biquads[(size_t) n++].c = fxme::BiquadCoeffs::peaking (sr, f, q, band.gainDb);
-            }
-            else if (band.order >= 4)
-            {
-                const float scale = q / 0.707f;
-                const float q1 = 0.54119610f * scale;
-                const float q2 = 1.30656296f * scale;
-                switch (type)
-                {
-                    case FilterType::lowpass:
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass (sr, f, q1);
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass (sr, f, q2);
-                        break;
-                    case FilterType::highpass:
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q1);
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q2);
-                        break;
-                    case FilterType::bandpass:
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q);
-                        biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q);
-                        break;
-                    default: break;
-                }
-            }
-            else
-            {
-                switch (type)
-                {
-                    case FilterType::lowpass:  biquads[(size_t) n++].c = fxme::BiquadCoeffs::lowpass  (sr, f, q); break;
-                    case FilterType::highpass: biquads[(size_t) n++].c = fxme::BiquadCoeffs::highpass (sr, f, q); break;
-                    case FilterType::bandpass: biquads[(size_t) n++].c = fxme::BiquadCoeffs::bandpass (sr, f, q); break;
-                    default: break;
-                }
-            }
-        }
-
-        for (int i = 0; i < n; ++i)
-            biquads[(size_t) i].reset();
-        activeBiquads = n;
+        activeBiquads = buildBiquadCascade (settings.bands.data(), (int) settings.bands.size(),
+                                            sr, biquads, maxBiquads);
     }
 
     double sr = 44100.0;
     OutputSettings settings;
 
-    static constexpr int maxBiquads = numFrameBands * 2;
+    static constexpr int maxBiquads = numOutputBands * 2;
     fxme::Biquad biquads[maxBiquads];
     int activeBiquads = 0;
 

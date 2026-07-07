@@ -132,10 +132,29 @@ public:
         SuperMoToTheme::accentSlider (level, SuperMoToTheme::measure);
         addAndMakeVisible (level);
 
-        addLabel (pathLabel, "Base pathname (folder + base name)");
+        subEnabledToggle.setButtonText ("Sub");
+        subEnabledToggle.setToggleState (false, juce::dontSendNotification);
+        SuperMoToTheme::accentToggleButton (subEnabledToggle, SuperMoToTheme::measure);
+        subEnabledToggle.setTooltip ("Whether this measurement run includes a subwoofer channel. When "
+                                     "off, no channel is tagged as sub even if one is picked below.");
+        subEnabledToggle.onClick = [this] { updateSubUi(); };
+        addAndMakeVisible (subEnabledToggle);
+
+        addLabel (subChannelLabel, "Sub channel");
+        subChannelBox.addItem ("(none)", 1);
+        for (int c = 0; c < smt::numChannels; ++c)
+            subChannelBox.addItem (juce::String (c + 1), c + 2);
+        subChannelBox.setSelectedId (1, juce::dontSendNotification);
+        subChannelBox.setTooltip ("Which output channel is the subwoofer. Its files are named "
+                                  "sub_pos<N>.wav instead of ch<channel>_pos<N>.wav, so Group analysis's "
+                                  "\"Load measurement folder...\" recognizes it automatically. Not used "
+                                  "in Full system mode (there the toggled channels are plugin inputs).");
+        SuperMoToTheme::accentComboBox (subChannelBox, SuperMoToTheme::measure);
+        addAndMakeVisible (subChannelBox);
+
+        addLabel (pathLabel, "Measurement folder");
         pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
-        pathEditor.setText (smt::getLastBrowseDir()
-                                .getChildFile ("supermoto_measure").getFullPathName());
+        pathEditor.setText (smt::getLastBrowseDir().getFullPathName());
         addAndMakeVisible (pathEditor);
 
         browseButton.setButtonText ("...");
@@ -235,6 +254,13 @@ public:
         }
 
         area.removeFromTop (10);
+        auto rSub = area.removeFromTop (24);
+        subEnabledToggle.setBounds (rSub.removeFromLeft (56));
+        rSub.removeFromLeft (8);
+        subChannelLabel.setBounds (rSub.removeFromLeft (80));
+        subChannelBox.setBounds (rSub.removeFromLeft (90));
+
+        area.removeFromTop (10);
         pathLabel.setBounds (area.removeFromTop (18));
         auto r3 = area.removeFromTop (24);
         browseButton.setBounds (r3.removeFromRight (36));
@@ -316,11 +342,24 @@ private:
                    : processor.configModel.getNumOuts();
     }
 
+    // The sub-channel tag is an output-channel concept; fullSystem's toggled
+    // channels are plugin inputs, so neither the switch nor the channel combo
+    // apply there. Otherwise the combo only matters once the switch is on.
+    void updateSubUi()
+    {
+        const bool full = currentMode() == smt::MeasureMode::fullSystem;
+        subEnabledToggle.setEnabled (! full);
+        subChannelLabel.setEnabled (! full && subEnabledToggle.getToggleState());
+        subChannelBox.setEnabled (! full && subEnabledToggle.getToggleState());
+    }
+
     void updateModeUi()
     {
         const bool full = currentMode() == smt::MeasureMode::fullSystem;
         outputsLabel.setText (full ? "Inputs to measure" : "Outputs to measure",
                               juce::dontSendNotification);
+
+        updateSubUi();
 
         // Switching between output- and input-meaning clears the selection so
         // stale channels are not measured under the new meaning.
@@ -511,19 +550,18 @@ private:
     void browse()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
-            "Base file name for the measurements (without extension)",
+            "Select the measurement folder",
             juce::File::createFileWithoutCheckingPath (pathEditor.getText()));
 
-        fileChooser->launchAsync (juce::FileBrowserComponent::saveMode
-                                  | juce::FileBrowserComponent::canSelectFiles
-                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectDirectories,
             [this] (const juce::FileChooser& fc)
             {
                 auto f = fc.getResult();
                 if (f == juce::File())
                     return;
                 smt::setLastBrowseDir (f);
-                pathEditor.setText (f.getFullPathName().upToLastOccurrenceOf (".wav", false, true));
+                pathEditor.setText (f.getFullPathName());
             });
     }
 
@@ -548,7 +586,9 @@ private:
         s.mode = currentMode();
         s.durationS = (float) duration.getValue();
         s.levelDb = (float) level.getValue();
-        s.basePath = pathEditor.getText().trim();
+        s.folder = pathEditor.getText().trim();
+        s.subChannel = (s.mode == smt::MeasureMode::fullSystem || ! subEnabledToggle.getToggleState())
+                           ? -1 : (subChannelBox.getSelectedId() - 2);
 
         processor.measurementMicChannel.store (s.micInput);
 
@@ -556,10 +596,10 @@ private:
             status.setText (juce::String ("Cannot start: select at least one ")
                             + (s.mode == smt::MeasureMode::fullSystem ? "input" : "output")
                             + " and a valid folder.", juce::dontSendNotification);
-        else if (juce::File::isAbsolutePath (s.basePath))
+        else if (juce::File::isAbsolutePath (s.folder))
             // Remember where the measurements are written so the Analysis view's
             // "Load measurements" starts in the same folder.
-            smt::setLastBrowseDir (juce::File (s.basePath));
+            smt::setLastBrowseDir (juce::File (s.folder));
     }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
@@ -597,8 +637,9 @@ private:
     SuperMoToAudioProcessor& processor;
 
     juce::Label title, micLabel, outputsLabel, signalLabel, measureLabel, durationLabel,
-                levelLabel, pathLabel, status, micCalLabel, micCalValue;
-    juce::ComboBox micBox, signalBox;
+                levelLabel, pathLabel, status, micCalLabel, micCalValue, subChannelLabel;
+    juce::ComboBox micBox, signalBox, subChannelBox;
+    juce::ToggleButton subEnabledToggle;
     juce::OwnedArray<juce::ToggleButton> outputToggles;
     juce::TextButton modeDryButton, modeFirButton, modeSystemButton;
     juce::TextButton micCalLoadButton, micCalClearButton;

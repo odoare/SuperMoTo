@@ -32,6 +32,7 @@
 
 #include <JuceHeader.h>
 #include "MicCalibration.h"
+#include <algorithm>
 #include <complex>
 #include <limits>
 #include <vector>
@@ -57,6 +58,11 @@ public:
     int getNumCurves() const noexcept           { return (int) curves.size(); }
     juce::String getCurveName (int i) const     { return curves[(size_t) i].name; }
     double getSampleRate() const noexcept       { return sampleRate; }
+
+    /** Aggregate measured propagation delay of the loaded set, in ms: the
+        median of the per-file delaySamples (so one outlier mic position
+        can't skew it), converted via getSampleRate(). 0 if no data. */
+    float getPropagationDelayMs() const;
 
     //==========================================================================
     // Optional subwoofer integration (phase-only alignment). A second set of
@@ -97,7 +103,13 @@ public:
     float getCorrectionLevel() const noexcept   { return correctionLevel; }
 
     /** Maximum correction boost in dB (regularization of deep notches). */
-    void setMaxBoostDb (float db)               { maxBoostDb = db; recomputeCorrection(); }
+    void setMaxBoostDb (float db)
+    {
+        if (db == maxBoostDb) return;
+        maxBoostDb = db;
+        recomputeCorrection();
+    }
+    float getMaxBoostDb() const noexcept        { return maxBoostDb; }
 
     /** Phase type of the rendered correction IR. Affects only
         exportCorrectionIR / renderCorrectionIR, not the displayed design.
