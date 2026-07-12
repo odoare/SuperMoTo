@@ -775,14 +775,23 @@ can later load in one step:
         incrementing — so moving the microphone and running the same channel
         selection again adds the next position without any manual renaming,
         and channels measured together in one run stay in step across runs.
-  \item After every run, SuperMoTo (re)writes a \texttt{readme\_measurement.md}
-        in the folder: which channels have been measured, which one is the
-        subwoofer, how many positions exist so far, and a log entry per run
-        (mode, stimulus, duration, level, mic input, files written). This is
-        what Group analysis's \textbf{Load measurement folder\ldots} button
-        reads (Section~\ref{sec:grouploadfolder}) — it is regenerated from the
-        folder's actual contents each time, so it stays correct even if files
-        are added or removed by hand.
+  \item After every run, SuperMoTo (re)writes \emph{two} manifests in the
+        folder, both regenerated from the folder's actual contents each time
+        (so they stay correct even if files are added or removed by hand):
+        \begin{itemize}[nosep]
+          \item \texttt{measurement.xml} — the \emph{machine-readable}
+                manifest: the measured channels, which one is the subwoofer,
+                the position count, and a structured log entry per run. This
+                is what Group analysis's \textbf{Load measurement
+                folder\ldots} button actually reads
+                (Section~\ref{sec:grouploadfolder}), so hand-editing or
+                reformatting the readme can never break folder loading.
+          \item \texttt{readme\_measurement.md} — the same information as
+                \emph{human-readable} documentation of the campaign (mode,
+                stimulus, duration, level, mic input, files written per run).
+                It also serves as a fallback for folders recorded before the
+                XML manifest existed.
+        \end{itemize}
   \item The \textbf{Sub} switch turns subwoofer handling on for this
         measurement run; the \textbf{Sub channel} combo next to it then picks
         \emph{which} of the measured channels is the subwoofer. Both are
@@ -1621,7 +1630,9 @@ clicks works, but is tedious for a large rig and depends on picking files in
 the right order in each dialog. \textbf{Load measurement folder\ldots} does
 the whole thing in one step: point it at a folder written by the Calibration
 view's folder-based capture (Section~\ref{sec:measfolder}), and it reads that
-folder's \texttt{readme\_measurement.md} to find which channels were
+folder's \texttt{measurement.xml} manifest (falling back to parsing
+\texttt{readme\_measurement.md} for folders recorded before the XML manifest
+existed) to find which channels were
 measured and which one is the subwoofer, sets \textbf{Speakers} to match, and
 loads every speaker's (and the sub's) files — sorted by position, not by file-
 dialog order, so the main/sub pairing is always correct. Each channel's

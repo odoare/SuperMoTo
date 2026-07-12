@@ -71,21 +71,30 @@ A..F, Exclusive, Level, Mute, Dim, Mono.
 
 Select the microphone input, the **measurement type**, the channels to
 measure, the stimulus (band-limited white noise or logarithmic sweep,
-10 Hz..20 kHz), the duration (5..30 s), the level and the base pathname.
-**Run** measures each selected channel in turn and writes a stereo file with
-channel 1 = sent signal and channel 2 = recorded signal.
+10 Hz..20 kHz), the duration (5..30 s), the level and the **measurement
+folder**. **Run** measures each selected channel in turn and writes a stereo
+file with channel 1 = sent signal and channel 2 = recorded signal.
+
+Measurements are organised per folder: files are named automatically
+(`ch<N>_pos<P>.wav`, `sub_pos<P>.wav` for the channel flagged by the **Sub**
+switch + channel combo, `in<N>_pos<P>.wav` in System mode), the position
+number auto-increments per channel by scanning the folder, and after every
+run two manifests are (re)written — `measurement.xml` (machine-readable, what
+Group analysis's "Load measurement folder…" reads) and
+`readme_measurement.md` (human-readable documentation of the campaign, also
+the loading fallback for folders that predate the XML manifest).
 
 Three measurement modes:
 
 - **Dry** — stimulus straight to an output (the raw loudspeaker; the first
-  step before designing a FIR). Files `<base>_<output>.wav`.
+  step before designing a FIR). Files `ch<N>_pos<P>.wav`.
 - **FIR** — stimulus to an output through its trim + FIR chain (verify a
   correction by re-measuring). The saved "sent" channel stays the raw
   stimulus.
 - **System** — stimulus into a plugin **input**, run through the whole
   engine (matrix, crossover filters, output FIRs, latency compensation);
   the complete system as heard. Channels mean inputs in this mode; files
-  `<base>_in<input>.wav`.
+  `in<N>_pos<P>.wav`.
 
 A right-hand **SPL meter** section reuses the microphone / channel /
 measurement-type selections: it shows the mic RMS on a dual dBFS / dB SPL
@@ -144,7 +153,15 @@ involved.
 - **Speakers** selects how many drivers to align (1..16); each gets its own
   row with a **Load...** button (same multi-position measurement convention
   as Part 3), a file-count / measured-delay readout, and an output-channel
-  assignment. A dedicated **Sub** row takes the shared subwoofer set.
+  assignment. A **Sub** switch turns subwoofer handling on/off for the group;
+  a dedicated **Sub** row takes the shared subwoofer set.
+- **Load measurement folder...** loads an entire folder written by Part 2's
+  folder-based capture in one step: it reads the folder's `measurement.xml`
+  manifest (falling back to `readme_measurement.md` for older folders) to
+  find the channels and the subwoofer, sets **Speakers**, the output
+  assignments and the **Sub** switch automatically, and loads every
+  speaker's (and the sub's) position files sorted by position — no manual
+  multi-select, no file-order mistakes.
 - The correction-design controls are **shared across the whole group** (one
   Welch window, smoothing, correction level, max boost, FIR length, phase
   type, analysis range, crossover and sub-polarity setting for every

@@ -86,7 +86,7 @@ private:
     void setStatus (const juce::String& s);
     juce::String channelStatus (int idx) const;
     juce::File captureFile (int ch) const;
-    void updateReadme() const;
+    void writeManifests() const;    // measurement.xml + readme_measurement.md
 
     float nextStimulusSample();
 
@@ -122,10 +122,12 @@ private:
 };
 
 /** Reads back a folder written by MeasurementEngine: which channels were
-    measured (from readme_measurement.md's "Channels:"/"Sub channel:" lines),
-    and for each, its files sorted by position (re-derived from the actual
-    ch<NN>_pos<PPP>.wav / sub_pos<PPP>.wav files on disk, not counted from the
-    readme, so this stays correct even if the readme and folder ever drift).
+    measured — from the machine-readable measurement.xml manifest, falling
+    back to parsing readme_measurement.md's "Channels:"/"Sub channel:" lines
+    for folders recorded before the XML existed — and for each, its files
+    sorted by position (re-derived from the actual ch<NN>_pos<PPP>.wav /
+    sub_pos<PPP>.wav files on disk, not counted from either manifest, so this
+    stays correct even if a manifest and the folder ever drift).
     Used by GroupAnalysisComponent's "Load measurement folder..." button. */
 struct MeasurementFolderContents
 {

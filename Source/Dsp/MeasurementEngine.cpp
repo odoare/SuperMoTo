@@ -303,7 +303,7 @@ void MeasurementEngine::handleAsyncUpdate()
     }
     else
     {
-        updateReadme();
+        writeManifests();
         setStatus ("Done (" + juce::String (channelList.size()) + " files written)");
         progress.store (1.0f);
         state.store (State::idle);
@@ -312,9 +312,10 @@ void MeasurementEngine::handleAsyncUpdate()
     sendChangeMessage();
 }
 
-void MeasurementEngine::updateReadme() const
+void MeasurementEngine::writeManifests() const
 {
     const juce::File folder (settings.folder);
+    const juce::File xmlFile = folder.getChildFile ("measurement.xml");
     const juce::File readme = folder.getChildFile ("readme_measurement.md");
     const bool full = settings.mode == MeasureMode::fullSystem;
 
@@ -343,6 +344,42 @@ void MeasurementEngine::updateReadme() const
         channels.push_back (settings.subChannel + 1);
     std::sort (channels.begin(), channels.end());
 
+    const auto now = juce::Time::getCurrentTime();
+
+    // ── measurement.xml: the machine-readable manifest Group analysis's
+    // folder loader reads (scanMeasurementFolder). The readme below stays
+    // purely human documentation.
+    {
+        juce::XmlElement root ("SuperMoToMeasurements");
+        root.setAttribute ("version", 1);
+        root.setAttribute ("subChannel",
+                           haveSub && settings.subChannel >= 0 ? settings.subChannel + 1 : 0);
+        root.setAttribute ("positions", maxPosition);
+        root.setAttribute ("lastRun", now.toISO8601 (true));
+
+        for (int ch : channels)
+            root.createNewChildElement ("Channel")->setAttribute ("number", ch);
+
+        auto* run = root.createNewChildElement ("Run");
+        run->setAttribute ("time", now.toISO8601 (true));
+        run->setAttribute ("mode", full ? "system"
+                                   : settings.mode == MeasureMode::outputFir ? "fir" : "dry");
+        run->setAttribute ("signal", settings.signalType == SignalType::logSweep ? "sweep" : "noise");
+        run->setAttribute ("durationS", settings.durationS);
+        run->setAttribute ("levelDb", settings.levelDb);
+        run->setAttribute ("micInput", settings.micInput + 1);
+        for (auto& f : filesWrittenThisRun)
+            run->createNewChildElement ("File")->setAttribute ("name", f.getFileName());
+
+        // Preserve prior runs' log entries beneath the new one.
+        if (auto prior = juce::parseXML (xmlFile))
+            if (prior->hasTagName (root.getTagName()))
+                for (auto* priorRun : prior->getChildWithTagNameIterator ("Run"))
+                    root.addChildElement (new juce::XmlElement (*priorRun));
+
+        root.writeTo (xmlFile);
+    }
+
     juce::String out;
     out << "# SuperMoTo measurement folder\n\n";
     out << "Channels: ";
@@ -353,11 +390,11 @@ void MeasurementEngine::updateReadme() const
         << (haveSub && settings.subChannel >= 0 ? juce::String (settings.subChannel + 1) : juce::String ("none"))
         << "\n";
     out << "Positions so far: " << maxPosition << "\n";
-    out << "Last run: " << juce::Time::getCurrentTime().toString (true, true) << "\n\n";
+    out << "Last run: " << now.toString (true, true) << "\n\n";
     out << "## Measurement log\n\n";
 
     // New run entry, most recent first.
-    out << "### " << juce::Time::getCurrentTime().toString (true, true) << "\n\n";
+    out << "### " << now.toString (true, true) << "\n\n";
     out << "- Mode: " << (full ? "Full system"
                           : settings.mode == MeasureMode::outputFir ? "Output + FIR" : "Dry outputs") << "\n";
     out << "- Signal: " << (settings.signalType == SignalType::logSweep ? "Log sweep" : "White noise")
@@ -398,39 +435,76 @@ MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 {
     MeasurementFolderContents result;
 
+    // The channel set and sub identity come from a manifest; the actual file
+    // lists are always re-derived from the wavs on disk below, so a stale or
+    // hand-edited manifest can't misorder the position pairing.
+    std::vector<int> channels;
+    int subChannel = -1;    // 1-based, -1 = none
+    bool haveManifest = false;
+
+    // Preferred: the machine-readable measurement.xml (written alongside the
+    // readme by MeasurementEngine::writeManifests()).
+    if (auto xml = juce::parseXML (folder.getChildFile ("measurement.xml")))
+    {
+        if (xml->hasTagName ("SuperMoToMeasurements"))
+        {
+            const int sc = xml->getIntAttribute ("subChannel", 0);
+            subChannel = sc > 0 ? sc : -1;
+            for (auto* c : xml->getChildWithTagNameIterator ("Channel"))
+            {
+                const int ch = c->getIntAttribute ("number", 0);
+                if (ch > 0 && std::find (channels.begin(), channels.end(), ch) == channels.end())
+                    channels.push_back (ch);
+            }
+            haveManifest = true;
+        }
+    }
+
+    // Fallback for folders recorded before measurement.xml existed: parse the
+    // human-readable readme's "Channels:" / "Sub channel:" lines.
     const juce::File readme = folder.getChildFile ("readme_measurement.md");
-    if (! readme.existsAsFile())
+    if (! haveManifest && readme.existsAsFile())
     {
-        result.error = "No readme_measurement.md found in " + folder.getFullPathName() + ".";
+        const auto text = readme.loadFileAsString();
+        auto lineStartingWith = [&text] (const juce::String& prefix) -> juce::String
+        {
+            for (const auto& line : juce::StringArray::fromLines (text))
+                if (line.startsWith (prefix))
+                    return line.substring (prefix.length()).trim();
+            return {};
+        };
+
+        const auto channelsLine = lineStartingWith ("Channels:");
+        const auto subLine      = lineStartingWith ("Sub channel:");
+
+        if (channelsLine.isNotEmpty())
+        {
+            subChannel = subLine.equalsIgnoreCase ("none") ? -1 : subLine.getIntValue();
+            if (subChannel <= 0)
+                subChannel = -1;
+
+            juce::StringArray channelTokens;
+            channelTokens.addTokens (channelsLine, ",", "");
+            for (auto& tok : channelTokens)
+            {
+                const int ch = tok.trim().getIntValue();
+                if (ch > 0 && std::find (channels.begin(), channels.end(), ch) == channels.end())
+                    channels.push_back (ch);
+            }
+            haveManifest = true;
+        }
+    }
+
+    if (! haveManifest)
+    {
+        result.error = "No measurement.xml or readable readme_measurement.md found in "
+                       + folder.getFullPathName() + ".";
         return result;
     }
 
-    const auto text = readme.loadFileAsString();
-    auto lineStartingWith = [&text] (const juce::String& prefix) -> juce::String
+    for (int ch : channels)
     {
-        for (const auto& line : juce::StringArray::fromLines (text))
-            if (line.startsWith (prefix))
-                return line.substring (prefix.length()).trim();
-        return {};
-    };
-
-    const auto channelsLine = lineStartingWith ("Channels:");
-    const auto subLine      = lineStartingWith ("Sub channel:");
-
-    if (channelsLine.isEmpty())
-    {
-        result.error = "Could not find a \"Channels:\" line in readme_measurement.md.";
-        return result;
-    }
-
-    const int subChannel = subLine.equalsIgnoreCase ("none") ? -1 : subLine.getIntValue();
-
-    juce::StringArray channelTokens;
-    channelTokens.addTokens (channelsLine, ",", "");
-    for (auto& tok : channelTokens)
-    {
-        const int ch = tok.trim().getIntValue();
-        if (ch <= 0 || ch == subChannel)
+        if (ch == subChannel)
             continue;
 
         auto files = folder.findChildFiles (juce::File::findFiles, false,
