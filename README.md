@@ -171,7 +171,11 @@ involved.
   propagation delay (from the impulse-response peak, the same estimate Part 3
   uses) and proposes the delay that time-aligns everyone on the
   most-distant driver — the farthest speaker gets 0 ms, every other one is
-  pushed back to match it, so no delay is ever negative.
+  pushed back to match it, so no delay is ever negative. It also suggests a
+  **level-matching trim** per speaker: the corrected mid-band level
+  (500 Hz – 2 kHz, the SMPTE ST 2095-1 calibration band) relative to the
+  quietest speaker, so every suggestion is ≤ 0 dB (attenuate down, preserving
+  headroom). Informational only — apply it via the output's Trim if wanted.
 - **The subwoofer never gets a correction FIR.** Above its real passband a
   broadband measurement is just noise (there is no coherent sent/recorded
   content there), so designing — let alone boosting — an inverse filter for

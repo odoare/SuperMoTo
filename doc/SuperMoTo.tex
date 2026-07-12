@@ -1667,6 +1667,43 @@ is fed back into that speaker's own subwoofer phase alignment
 designed for the delay that will actually be applied, not the raw, unaligned
 one.
 
+\section{Level matching between speakers}\label{sec:grouplevel}
+Speakers of different models — or the same model driven by different
+amplifier gains — rarely play at the same level for the same input.
+\textbf{Compute alignment} therefore also derives a suggested
+\textbf{level-matching trim} per speaker, shown next to each row's delay and
+recorded in the report.
+
+The level estimate is the mean \emph{power} of each speaker's
+\emph{corrected} response — the spatially averaged transfer function
+(Section~\ref{sec:spatialavg}) multiplied by its designed correction, i.e.\
+the level that speaker will actually play at once its FIR is applied — over
+the band \textbf{\SIrange{500}{2000}{\hertz}}. That mid-band restriction is
+deliberate, and is standard practice rather than a SuperMoTo invention:
+SMPTE~ST~2095-1 specifies band-limited pink noise over exactly
+\SIrange{500}{2000}{\hertz} as the calibration signal for setting channel
+levels~\cite{SMPTE2095}, and CTA-2034-A rates loudspeaker sensitivity over a
+similar mid-band average (\SIrange{300}{3000}{\hertz})~\cite{CTA2034}. The
+reasoning~\cite{Toole}: below a few hundred hertz the reading is dominated by
+the room's position-dependent modal field (and by how far each model's bass
+extends) rather than by channel gain, while above a few kilohertz rising
+loudspeaker directivity makes the level a function of toe-in and microphone
+orientation. In between, the estimate is robust.
+
+The \textbf{quietest} speaker is the reference, so every suggested trim is
+\textbf{$\le$ \SI{0}{dB}}: attenuate the louder channels down to it, which
+preserves headroom — the same convention as the delays, where the
+most-distant driver is the one left untouched. The suggestion is
+\emph{informational only}: \textbf{Apply \& export} never writes it, so an
+intentional level offset (e.g.\ a rear-channel shelf you set by ear) is
+never silently overwritten. To apply one, enter it in that output's
+\textbf{Trim} in the matrix view (Section~\ref{sec:outputchain}).
+
+The subwoofer gets no trim suggestion: the matching band sits above its
+passband, and a sub's level against the mains is a crossover-balance
+decision made by ear or by an SPL measurement, not a sensitivity-matching
+one.
+
 \section{The subwoofer is delay-only}\label{sec:groupsub}
 Group analysis \textbf{never designs a correction FIR for the subwoofer}.
 Above a subwoofer's real passband, a broadband measurement (sent full-band,
@@ -1700,8 +1737,10 @@ its delay written (Section~\ref{sec:groupsub}).
 A \texttt{report.md} is written alongside the exported impulse responses,
 recording the group's shared settings and, per speaker (and the sub): the
 full path of every measurement file used, the measured and applied delay,
-which output it was assigned to, and the exported file name (or why nothing
-was written, e.g.\ not measured or not assigned to an output).
+the corrected in-band level and suggested level-matching trim
+(Section~\ref{sec:grouplevel}), which output it was assigned to, and the
+exported file name (or why nothing was written, e.g.\ not measured or not
+assigned to an output).
 
 \section{Background processing}
 Loading a speaker's measurement set, re-analyzing the whole group after
@@ -1799,12 +1838,17 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
         correction level, max boost, FIR length, Phase, Range, Crossover,
         Invert sub); use \textbf{Preview} to check each speaker's curves.
   \item \textbf{Compute alignment} to get the per-row delay that time-aligns
-        the whole group on the most-distant driver.
+        the whole group on the most-distant driver, and the per-row suggested
+        level-matching trim relative to the quietest speaker
+        (Section~\ref{sec:grouplevel}).
   \item Assign each row to the output channel that speaker is on.
   \item \textbf{Apply \& export...}: designs and exports each speaker's
         correction IR, writes its delay and FIR onto that output, and saves a
         markdown report next to the impulse responses. The subwoofer only
         ever gets its time-alignment delay (Section~\ref{sec:groupsub}).
+  \item If the suggested trims are significant, enter them in each output's
+        \textbf{Trim} in the matrix view — they are reported, never written
+        automatically.
 \end{enumerate}
 
 %==============================================================================
@@ -2266,6 +2310,17 @@ A.~V. Oppenheim and R.~W. Schafer, \textit{Discrete-Time Signal Processing},
 \bibitem{Harris1978}
 F.~J. Harris, ``On the use of windows for harmonic analysis with the discrete
 Fourier transform,'' \textit{Proc. IEEE}, vol.~66, no.~1, pp.~51--83, 1978.
+
+\bibitem{SMPTE2095}
+SMPTE ST 2095-1:2015, \textit{Calibration Reference Wideband Digital Pink
+Noise Signal}. White Plains, NY: Society of Motion Picture and Television
+Engineers, 2015. (Band-limited pink noise, \SIrange{500}{2000}{\hertz}, as
+the reference signal for channel level calibration.)
+
+\bibitem{CTA2034}
+CTA-2034-A, \textit{Standard Method of Measurement for In-Home Loudspeakers}.
+Arlington, VA: Consumer Technology Association, 2015. (Loudspeaker
+sensitivity rated as the mid-band average, \SIrange{300}{3000}{\hertz}.)
 
 \bibitem{MullerMassarani}
 S.~Müller and P.~Massarani, ``Transfer-function measurement with sweeps,''

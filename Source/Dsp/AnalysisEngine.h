@@ -64,6 +64,16 @@ public:
         can't skew it), converted via getSampleRate(). 0 if no data. */
     float getPropagationDelayMs() const;
 
+    /** Absolute in-band level, in dB, of the CORRECTED response: the mean
+        power of |smoothed average x correction| over [lowHz, highHz],
+        i.e. the level this speaker will actually play at once its correction
+        is applied (with no correction designed yet it degrades to the raw
+        measured level). Unlike the plot getters this is NOT normalized to
+        the mid-band reference, so levels of different engines/speakers can
+        be compared directly — used by Group analysis's level matching.
+        Returns -120 with no data. */
+    float getBandLevelDb (float lowHz, float highHz) const;
+
     //==========================================================================
     // Optional subwoofer integration (phase-only alignment). A second set of
     // measurements taken at the SAME positions as the main set (paired by load

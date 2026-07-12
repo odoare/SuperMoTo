@@ -74,7 +74,7 @@ public:
             group.computeAlignment();
             refreshRows();
             updatePlotPreview();
-            status.setText ("Alignment computed.", juce::dontSendNotification);
+            status.setText ("Alignment and level match computed.", juce::dontSendNotification);
         };
         addAndMakeVisible (computeButton);
 
@@ -362,7 +362,8 @@ private:
     }
 
     // One row: speaker name, "Load..." + file-count status, computed aligned
-    // delay read-out, and the output channel it's assigned to.
+    // delay and suggested level-matching trim read-outs, and the output
+    // channel it's assigned to.
     struct SpeakerRow : public juce::Component
     {
         SpeakerRow()
@@ -385,6 +386,16 @@ private:
             delayReadout.setJustificationType (juce::Justification::centredRight);
             addAndMakeVisible (delayReadout);
 
+            trimReadout.setFont (juce::Font (12.0f));
+            trimReadout.setColour (juce::Label::textColourId, SuperMoToTheme::master);
+            trimReadout.setJustificationType (juce::Justification::centredRight);
+            trimReadout.setTooltip ("Suggested level-matching trim: how much to attenuate this "
+                                    "output to match the quietest speaker in the group, from the "
+                                    "corrected mid-band (500 Hz - 2 kHz, the SMPTE ST 2095-1 "
+                                    "calibration band) level. Informational \xe2\x80\x94 apply it "
+                                    "yourself via the output's Trim in the matrix view.");
+            addAndMakeVisible (trimReadout);
+
             outputBox.addItem ("(none)", 1);
             for (int o = 0; o < smt::numChannels; ++o)
                 outputBox.addItem ("Output " + juce::String (o + 1), o + 2);
@@ -399,14 +410,16 @@ private:
             nameLabel.setBounds (area.removeFromLeft (84));
             outputBox.setBounds (area.removeFromRight (130));
             area.removeFromRight (8);
-            delayReadout.setBounds (area.removeFromRight (80));
+            trimReadout.setBounds (area.removeFromRight (64));
+            area.removeFromRight (4);
+            delayReadout.setBounds (area.removeFromRight (74));
             area.removeFromRight (8);
             loadButton.setBounds (area.removeFromLeft (80));
             area.removeFromLeft (8);
             fileStatus.setBounds (area);
         }
 
-        juce::Label nameLabel, fileStatus, delayReadout;
+        juce::Label nameLabel, fileStatus, delayReadout, trimReadout;
         juce::TextButton loadButton;
         juce::ComboBox outputBox;
         std::function<void()> onLoad;
@@ -563,17 +576,24 @@ private:
         {
             return e.hasData() ? juce::String (e.alignedDelayMs, 1) + " ms" : juce::String();
         };
+        auto trimText = [] (const smt::SpeakerGroupAnalysis::Entry& e)
+        {
+            return e.hasData() ? juce::String (e.suggestedTrimDb, 1) + " dB" : juce::String();
+        };
 
         for (int i = 0; i < group.getNumSpeakers(); ++i)
         {
             auto& e = group.speaker (i);
             rows[i]->fileStatus.setText (describe (e), juce::dontSendNotification);
             rows[i]->delayReadout.setText (delayText (e), juce::dontSendNotification);
+            rows[i]->trimReadout.setText (trimText (e), juce::dontSendNotification);
             rows[i]->outputBox.setSelectedId (e.assignedOutput + 2, juce::dontSendNotification);
         }
         auto& s = group.subEntry();
         subRow.fileStatus.setText (describe (s), juce::dontSendNotification);
         subRow.delayReadout.setText (delayText (s), juce::dontSendNotification);
+        // No trim suggestion for the sub: its level is a crossover-balance
+        // question and the matching band sits above its passband.
         subRow.outputBox.setSelectedId (s.assignedOutput + 2, juce::dontSendNotification);
     }
 

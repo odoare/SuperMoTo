@@ -9,7 +9,9 @@
     forEachEngine). Each entry's own measurement set gives its propagation
     delay; computeAlignment() derives the per-entry delay that time-aligns the
     whole group on the most-distant driver, then folds that delay into each
-    speaker's existing subwoofer phase-alignment (AnalysisEngine::setTimeAlignMs).
+    speaker's existing subwoofer phase-alignment (AnalysisEngine::setTimeAlignMs),
+    and also derives each speaker's suggested level-matching trim (mid-band
+    corrected level vs the quietest speaker — see computeAlignment's doc).
     exportSpeakerIR() then designs and exports one SPEAKER's correction IR;
     finalizeApply() writes delay + FIR onto each assigned output from the
     results and returns a markdown report. The subwoofer never gets a
@@ -49,6 +51,15 @@ class SpeakerGroupAnalysis
 public:
     static constexpr int maxSpeakers = 16;
 
+    // Band used for inter-speaker level matching: mid-band, where the level
+    // reading is robust — above the room's modal region, below the range
+    // where loudspeaker directivity and mic orientation dominate. 500 Hz to
+    // 2 kHz is the band SMPTE ST 2095-1 specifies (as band-limited pink
+    // noise) for calibrating channel levels; CTA-2034-A similarly rates
+    // loudspeaker sensitivity over a mid-band average (300 Hz - 3 kHz).
+    static constexpr float levelMatchLowHz  = 500.0f;
+    static constexpr float levelMatchHighHz = 2000.0f;
+
     struct Entry
     {
         Entry() : engine (std::make_unique<AnalysisEngine>()) {}
@@ -58,6 +69,8 @@ public:
         juce::Array<juce::File> files;
         int assignedOutput = -1;       // -1 = none
         float alignedDelayMs = 0.0f;   // set by computeAlignment()
+        float bandLevelDb = 0.0f;      // in-band corrected level, set by computeAlignment()
+        float suggestedTrimDb = 0.0f;  // <= 0, relative to the quietest speaker
 
         bool hasData() const noexcept { return engine->hasData(); }
     };
@@ -135,7 +148,18 @@ public:
         pushed back to match it, so all delays end up non-negative. Then
         re-derives each speaker's subwoofer phase-alignment from its own
         applied delay (AnalysisEngine::setTimeAlignMs), since that alignment
-        assumes the delay that will actually be applied physically. */
+        assumes the delay that will actually be applied physically.
+
+        Also computes the LEVEL matching between the speakers (sub excluded —
+        its level is a crossover-balance question, and its passband sits below
+        the matching band anyway): each loaded speaker's corrected in-band
+        level over levelMatchLowHz..levelMatchHighHz (see the constants' doc
+        for the SMPTE ST 2095-1 rationale), and from it the suggested trim
+        relative to the QUIETEST speaker — always <= 0 dB (attenuate the
+        louder channels down to it, preserving headroom; the same convention
+        as the delays, where the most-distant driver is the one left
+        untouched). Purely informational: shown in the UI and the report,
+        never written to the outputs. */
     void computeAlignment()
     {
         float maxDelay = 0.0f;
@@ -175,6 +199,28 @@ public:
         }
         if (subEnabled)
             apply (sub);
+
+        // Level matching (speakers only, see the method doc).
+        float minLevel = 0.0f;
+        bool anyLevel = false;
+        for (int i = 0; i < activeCount; ++i)
+        {
+            auto& s = speakers[(size_t) i];
+            if (! s.hasData())
+            {
+                s.bandLevelDb = 0.0f;
+                s.suggestedTrimDb = 0.0f;
+                continue;
+            }
+            s.bandLevelDb = s.engine->getBandLevelDb (levelMatchLowHz, levelMatchHighHz);
+            minLevel = anyLevel ? juce::jmin (minLevel, s.bandLevelDb) : s.bandLevelDb;
+            anyLevel = true;
+        }
+        for (int i = 0; i < activeCount; ++i)
+        {
+            auto& s = speakers[(size_t) i];
+            s.suggestedTrimDb = s.hasData() ? minLevel - s.bandLevelDb : 0.0f;
+        }
     }
 
     //==========================================================================
@@ -239,7 +285,10 @@ public:
                        << "- Phase type: "
                        << (sub.engine->getPhaseType() == AnalysisEngine::PhaseType::minimum
                                ? "Minimum phase" : "Linear phase") << "\n"
-                       << "- FIR length: " << firLengthSamples << " samples\n\n"
+                       << "- FIR length: " << firLengthSamples << " samples\n"
+                       << "- Level-match band: " << juce::String (levelMatchLowHz, 0)
+                       << " Hz - " << juce::String (levelMatchHighHz, 0)
+                       << " Hz (per SMPTE ST 2095-1)\n\n"
                        << "## Speakers\n\n";
 
         auto reportFiles = [&] (const Entry& e)
@@ -263,7 +312,15 @@ public:
             result.report << "- Measured propagation delay: "
                            << juce::String (e.engine->getPropagationDelayMs(), 2) << " ms\n"
                            << "- Applied (aligned) delay: "
-                           << juce::String (e.alignedDelayMs, 2) << " ms\n";
+                           << juce::String (e.alignedDelayMs, 2) << " ms\n"
+                           << "- In-band level ("
+                           << juce::String (levelMatchLowHz, 0) << " Hz - "
+                           << juce::String (levelMatchHighHz, 0) << " Hz, corrected): "
+                           << juce::String (e.bandLevelDb, 1) << " dB\n"
+                           << "- Suggested level-matching trim: "
+                           << juce::String (e.suggestedTrimDb, 1)
+                           << " dB (relative to the quietest speaker; "
+                              "informational, not written to the output)\n";
 
             if (e.assignedOutput < 0)
             {

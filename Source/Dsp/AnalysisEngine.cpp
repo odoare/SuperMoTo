@@ -73,6 +73,34 @@ float AnalysisEngine::getPropagationDelayMs() const
     return (float) (1000.0 * (double) *mid / sampleRate);
 }
 
+float AnalysisEngine::getBandLevelDb (float lowHz, float highHz) const
+{
+    if (averageSmoothed.empty() || sampleRate <= 0.0)
+        return -120.0f;
+
+    // Mean POWER (not mean dB) of the corrected response over the band —
+    // energy is the right quantity to average for level matching. The
+    // correction already carries the referenceGain normalization, so this is
+    // the absolute level the corrected speaker will actually play at.
+    double sum = 0.0;
+    int count = 0;
+    for (size_t k = 0; k < averageSmoothed.size(); ++k)
+    {
+        const double f = (double) k * sampleRate / (double) windowSize;
+        if (f < (double) lowHz || f > (double) highHz)
+            continue;
+        auto h = std::complex<double> (averageSmoothed[k]);
+        if (k < correction.size())
+            h *= std::complex<double> (correction[k]);
+        sum += std::norm (h);
+        ++count;
+    }
+    if (count == 0)
+        return -120.0f;
+
+    return (float) (10.0 * std::log10 (juce::jmax (1.0e-12, sum / (double) count)));
+}
+
 int AnalysisEngine::loadSubFiles (const juce::Array<juce::File>& files)
 {
     clearSub();
