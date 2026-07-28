@@ -3,10 +3,12 @@
     MeasurementEngine.h
 
     Part 2 of SuperMoTo: loudspeaker / system measurement. Sends a stimulus
-    (band limited white noise or logarithmic sweep, 10 Hz .. 20 kHz) to each
-    selected channel in turn while recording the measurement microphone on a
-    selected input. Each measurement is a stereo file with channel 1 = sent
-    signal and channel 2 = recorded signal.
+    (band limited white noise, or a SYNCHRONIZED logarithmic sweep — Novak et
+    al. JAES 2015, f1*L integer so deconvolution separates the harmonic IRs
+    with true phase — 10 Hz .. 20 kHz) to each selected channel in turn while
+    recording the measurement microphone on a selected input. Each measurement
+    is a stereo file with channel 1 = sent signal and channel 2 = recorded
+    signal; measurement.xml records the sweep identity (f1, f2, L) per run.
 
     Three modes (MeasureMode):
       dryOutput  – stimulus straight to an output (raw speaker, to design FIRs),

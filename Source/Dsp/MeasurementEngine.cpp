@@ -10,6 +10,7 @@
 
 #include "MeasurementEngine.h"
 #include <algorithm>
+#include <cmath>
 
 namespace smt
 {
@@ -98,15 +99,25 @@ bool MeasurementEngine::start (const Settings& s)
         positions.push_back (maxPos + 1);
     }
 
-    stimulusSamples = (int) (settings.durationS * sr);
+    // Log sweep parameters (f1 = sweepF1Hz, f2 = sweepF2Hz):
+    //   phase(t) = K * (exp(t/L) - 1),  K = 2*pi*f1*L,
+    // with L QUANTIZED so f1*L is an integer — the synchronized swept-sine
+    // of Novak et al. (JAES 2015). That makes the harmonic impulse responses
+    // separate with true phase when the recording is deconvolved by the
+    // sweep's analytic inverse (the sweep sounds the same; only its exact
+    // duration moves slightly off the requested one).
+    const double T = (double) settings.durationS;
+    sweepL = fxme::SynchronizedSweep::synchronizedL (sweepF1Hz, sweepF2Hz, T);
+    sweepK = 2.0 * juce::MathConstants<double>::pi * sweepF1Hz * sweepL;
+
+    // Sweep runs use the exact synchronized duration L*ln(f2/f1); noise runs
+    // keep the requested duration.
+    const double actualT = settings.signalType == SignalType::logSweep
+                               ? sweepL * std::log (sweepF2Hz / sweepF1Hz)
+                               : T;
+    stimulusSamples = (int) std::llround (actualT * sr);
     totalSamples    = stimulusSamples + (int) (tailSeconds * sr);
     capture.setSize (2, totalSamples);
-
-    // Log sweep parameters (f1 = sweepF1Hz, f2 = sweepF2Hz):
-    //   phase(t) = K * (exp(t/L) - 1),  L = T/ln(f2/f1),  K = 2*pi*f1*L
-    const double T = (double) settings.durationS;
-    sweepL = T / std::log (sweepF2Hz / sweepF1Hz);
-    sweepK = 2.0 * juce::MathConstants<double>::pi * sweepF1Hz * sweepL;
 
     // Band-limit the white noise to the same band.
     noiseHp.c = fxme::BiquadCoeffs::highpass (sr, (float) sweepF1Hz, 0.707f);
