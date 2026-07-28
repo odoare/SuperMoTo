@@ -100,6 +100,20 @@ public:
         applyButton.onClick = [this] { applyAndExport(); };
         addAndMakeVisible (applyButton);
 
+        // Everything a run exports is named "<prefix>_speakerN_correction.wav" /
+        // "<prefix>_report.md", so several alignments can share one folder.
+        addLabel (prefixLabel, "Prefix");
+        prefixEditor.setColour (juce::TextEditor::backgroundColourId,
+                                SuperMoToTheme::plotBackground.withAlpha (0.4f));
+        prefixEditor.setTextToShowWhenEmpty ("(none)", SuperMoToTheme::dimText);
+        prefixEditor.setTooltip ("Optional name prefix for everything Apply & export writes: "
+                                 "<prefix>_speaker1_correction.wav, <prefix>_report.md. Lets "
+                                 "several alignments (rooms, groups, takes) live in one folder "
+                                 "instead of overwriting each other \xe2\x80\x94 which also keeps "
+                                 "the FIR files of previously applied outputs intact. "
+                                 "Pre-filled from the measurement folder's name.");
+        addAndMakeVisible (prefixEditor);
+
         loadFolderButton.setButtonText ("Load measurement folder...");
         loadFolderButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::spectrum.darker (1.0f));
         loadFolderButton.setTooltip ("Load an entire measurement set written by the Measurement & "
@@ -347,10 +361,11 @@ public:
         computeButton.setBounds (r0.removeFromLeft (150));
         r0.removeFromLeft (8);
         applyButton.setBounds (r0.removeFromLeft (170));
+        r0.removeFromLeft (12);
+        prefixLabel.setBounds (r0.removeFromLeft (42));
+        prefixEditor.setBounds (r0.removeFromLeft (150).reduced (0, 1));
         r0.removeFromLeft (16);
         progressBar.setBounds (r0.removeFromRight (160));
-        r0.removeFromRight (16);
-        status.setBounds (r0);
 
         // Row 1 — how the measurements are turned into transfer functions.
         area.removeFromTop (8);
@@ -432,6 +447,10 @@ public:
         rD.removeFromLeft (16);
         levelRefLabel.setBounds (rD.removeFromLeft (40));
         levelRefBox.setBounds (rD.removeFromLeft (110));
+        // The status line lives here, right above the plot the user is
+        // watching, where it has room for a full sentence.
+        rD.removeFromLeft (20);
+        status.setBounds (rD);
 
         area.removeFromTop (6);
         plot.setBounds (area);
@@ -838,6 +857,12 @@ private:
                     return;
                 }
 
+                // Suggest the folder's name as the export prefix, but never
+                // overwrite one the user has already typed.
+                if (prefixEditor.getText().trim().isEmpty()
+                    && ! prefixEditor.hasKeyboardFocus (true))
+                    prefixEditor.setText (juce::File::createLegalFileName (dir.getFileName()), false);
+
                 // Adopt the folder's embedded mic calibration when it carries
                 // one (still overridable via the source selector). Kept before
                 // the pushSettingsTo calls below so the engines get it.
@@ -958,6 +983,10 @@ private:
                 const int firLength = firBox.getSelectedId();
                 const int n = group.getNumSpeakers();
 
+                // Snapshot the prefix on the message thread; the export jobs
+                // and finalizeApply must all use the same one.
+                const auto prefix = juce::File::createLegalFileName (prefixEditor.getText().trim());
+
                 // One job per speaker, each rendering + writing only its own
                 // IR (background-safe: exportSpeakerIR touches only that
                 // speaker's own const engine and the filesystem). Results are
@@ -967,9 +996,10 @@ private:
                 std::vector<fxme::BackgroundTaskRunner::Job> jobs;
                 jobs.reserve ((size_t) n);
                 for (int i = 0; i < n; ++i)
-                    jobs.push_back ([this, i, dir, firLength, exportOk]
+                    jobs.push_back ([this, i, dir, firLength, prefix, exportOk]
                     {
-                        (*exportOk)[(size_t) i] = group.exportSpeakerIR (i, dir, firLength) ? 1 : 0;
+                        (*exportOk)[(size_t) i] =
+                            group.exportSpeakerIR (i, dir, firLength, prefix) ? 1 : 0;
                     });
 
                 status.setText ("Exporting...", juce::dontSendNotification);
@@ -977,16 +1007,21 @@ private:
 
                 runner.runJobs (std::move (jobs),
                     [this] (float p) { progressValue = (double) p; },
-                    [this, dir, firLength, exportOk]
+                    [this, dir, firLength, prefix, exportOk]
                     {
                         const std::vector<bool> ok (exportOk->begin(), exportOk->end());
                         const auto result = group.finalizeApply (ok, dir, firLength,
-                                                                  processor.configModel, processor.engine);
+                                                                  processor.configModel, processor.engine,
+                                                                  prefix);
                         setBusy (false);
                         status.setText (result.error.isNotEmpty()
                                             ? result.error
                                             : juce::String (result.numApplied)
-                                                + " speaker(s) applied & exported to " + dir.getFileName(),
+                                                + " speaker(s) applied & exported to "
+                                                + dir.getFileName() + "/ as "
+                                                + smt::SpeakerGroupAnalysis::namePrefix (prefix)
+                                                + "speaker*_correction.wav + "
+                                                + result.reportFile.getFileName(),
                                         juce::dontSendNotification);
                     });
             });
@@ -1146,6 +1181,7 @@ private:
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
         subEnabledToggle.setEnabled (! busy);
+        prefixEditor.setEnabled (! busy);   // must not change mid-export
         levelSlider.setEnabled (! busy);
         boostSlider.setEnabled (! busy);
         subInvertToggle.setEnabled (! busy);
@@ -1171,6 +1207,8 @@ private:
     smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
     juce::TextButton computeButton, applyButton, loadFolderButton;
     juce::ToggleButton subEnabledToggle;
+    juce::Label prefixLabel;
+    juce::TextEditor prefixEditor;      // export file-name prefix
 
     juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;

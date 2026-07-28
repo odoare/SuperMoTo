@@ -98,6 +98,37 @@ public:
     void setSubEnabled (bool enabled) noexcept          { subEnabled = enabled; }
     bool isSubEnabled() const noexcept                  { return subEnabled; }
 
+    //==========================================================================
+    // Export naming. Everything an "Apply & export" run writes is named from
+    // one optional file prefix, so several alignments (different groups, rooms
+    // or takes) can live in the same folder without overwriting each other —
+    // which matters beyond tidiness: finalizeApply() points each output's FIR
+    // at the wav it exported, so a same-named re-export would silently swap
+    // the filter under a previously applied output.
+
+    /** "<prefix>_" for a non-empty prefix, empty otherwise. */
+    static juce::String namePrefix (const juce::String& filePrefix)
+    {
+        const auto p = filePrefix.trim();
+        return p.isEmpty() ? juce::String() : p + "_";
+    }
+
+    /** Speaker i's correction IR: "<prefix>_speaker<N>_correction.wav". The
+        single source of truth for the name, shared by exportSpeakerIR() (which
+        writes it) and finalizeApply() (which points the output at it). */
+    static juce::File irFileFor (const juce::File& directory, const juce::String& filePrefix, int i)
+    {
+        return directory.getChildFile (namePrefix (filePrefix) + "speaker"
+                                       + juce::String (i + 1) + "_correction.wav");
+    }
+
+    /** The markdown report: "<prefix>_report.md". */
+    static juce::File reportFileFor (const juce::File& directory, const juce::String& filePrefix)
+    {
+        return directory.getChildFile (namePrefix (filePrefix) + "report.md");
+    }
+
+    //==========================================================================
     Entry& speaker (int i) noexcept                     { return speakers[(size_t) i]; }
     const Entry& speaker (int i) const noexcept         { return speakers[(size_t) i]; }
     Entry& subEntry() noexcept                          { return sub; }
@@ -228,26 +259,27 @@ public:
     {
         int numApplied = 0;
         juce::String report;
+        juce::File reportFile;      // where the report was written
         juce::String error;
     };
 
     /** Background-safe half of "Apply & export": renders and writes speaker
-        i's correction IR to directory/speakerN_correction.wav. Returns false
-        without touching the filesystem if the speaker has no data or isn't
-        assigned to an output. Touches only this entry's own (const) engine
-        and the filesystem — safe to call from a background thread, one job
-        per speaker, PROVIDED nothing else touches the same speaker's engine
-        concurrently (disable its controls while a batch is running). Call
-        finalizeApply() on the MESSAGE THREAD once every speaker's export has
-        been attempted (the sub needs no equivalent — it never gets a FIR,
-        see the class doc). */
-    bool exportSpeakerIR (int i, const juce::File& directory, int firLengthSamples) const
+        i's correction IR to irFileFor (directory, filePrefix, i). Returns
+        false without touching the filesystem if the speaker has no data or
+        isn't assigned to an output. Touches only this entry's own (const)
+        engine and the filesystem — safe to call from a background thread, one
+        job per speaker, PROVIDED nothing else touches the same speaker's
+        engine concurrently (disable its controls while a batch is running).
+        Call finalizeApply() on the MESSAGE THREAD once every speaker's export
+        has been attempted, with the SAME prefix (the sub needs no equivalent —
+        it never gets a FIR, see the class doc). */
+    bool exportSpeakerIR (int i, const juce::File& directory, int firLengthSamples,
+                          const juce::String& filePrefix = {}) const
     {
         const auto& e = speakers[(size_t) i];
         if (! e.hasData() || e.assignedOutput < 0)
             return false;
-        const auto irFile = directory.getChildFile ("speaker" + juce::String (i + 1) + "_correction.wav");
-        return e.engine->exportCorrectionIR (irFile, firLengthSamples);
+        return e.engine->exportCorrectionIR (irFileFor (directory, filePrefix, i), firLengthSamples);
     }
 
     /** Message-thread finalization: given exportOk[i] = whether
@@ -255,12 +287,13 @@ public:
         getNumSpeakers()), writes delay (+ FIR, for successfully-exported
         speakers) onto each assigned output, writes the sub's delay-only
         entry, calls matrixEngine.updateFirFiles() once if anything changed,
-        and returns a markdown report (the caller writes it to
-        directory/report.md, alongside the wavs exportSpeakerIR already
-        wrote). */
+        and writes the markdown report to reportFileFor (directory, filePrefix),
+        alongside the wavs exportSpeakerIR already wrote (pass it the same
+        prefix). */
     ApplyResult finalizeApply (const std::vector<bool>& exportOk, const juce::File& directory,
                                int firLengthSamples, ConfigModel& configModel,
-                               MatrixEngine& matrixEngine) const
+                               MatrixEngine& matrixEngine,
+                               const juce::String& filePrefix = {}) const
     {
         ApplyResult result;
 
@@ -288,8 +321,10 @@ public:
                        << "- FIR length: " << firLengthSamples << " samples\n"
                        << "- Level-match band: " << juce::String (levelMatchLowHz, 0)
                        << " Hz - " << juce::String (levelMatchHighHz, 0)
-                       << " Hz (per SMPTE ST 2095-1)\n\n"
-                       << "## Speakers\n\n";
+                       << " Hz (per SMPTE ST 2095-1)\n";
+        if (filePrefix.trim().isNotEmpty())
+            result.report << "- File prefix: `" << filePrefix.trim() << "`\n";
+        result.report << "\n## Speakers\n\n";
 
         auto reportFiles = [&] (const Entry& e)
         {
@@ -335,7 +370,7 @@ public:
                 continue;
             }
 
-            const auto irFile = directory.getChildFile ("speaker" + juce::String (i + 1) + "_correction.wav");
+            const auto irFile = irFileFor (directory, filePrefix, i);
             auto settings = configModel.getOutput (e.assignedOutput);
             settings.delayMs = e.alignedDelayMs;
             settings.firPath = irFile.getFullPathName();
@@ -385,7 +420,8 @@ public:
         if (result.numApplied > 0)
             matrixEngine.updateFirFiles();
 
-        directory.getChildFile ("report.md").replaceWithText (result.report);
+        result.reportFile = reportFileFor (directory, filePrefix);
+        result.reportFile.replaceWithText (result.report);
         return result;
     }
 
