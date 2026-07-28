@@ -26,6 +26,7 @@
 #include "../AppSettings.h"
 #include "../Theme.h"
 #include "TransferFunctionPlot.h"
+#include "ReportFigures.h"
 
 class GroupAnalysisComponent : public juce::Component,
                                private juce::Timer
@@ -113,6 +114,15 @@ public:
                                  "the FIR files of previously applied outputs intact. "
                                  "Pre-filled from the measurement folder's name.");
         addAndMakeVisible (prefixEditor);
+
+        figuresToggle.setButtonText ("Figures");
+        figuresToggle.setToggleState (true, juce::dontSendNotification);
+        SuperMoToTheme::accentToggleButton (figuresToggle, SuperMoToTheme::spectrum);
+        figuresToggle.setTooltip ("Also render each speaker's frequency-response and "
+                                  "impulse-response plots as PNGs into <prefix>_figs/ and embed "
+                                  "them in the report. Adds a few seconds to Apply & export for "
+                                  "a large group.");
+        addAndMakeVisible (figuresToggle);
 
         loadFolderButton.setButtonText ("Load measurement folder...");
         loadFolderButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::spectrum.darker (1.0f));
@@ -364,6 +374,8 @@ public:
         r0.removeFromLeft (12);
         prefixLabel.setBounds (r0.removeFromLeft (42));
         prefixEditor.setBounds (r0.removeFromLeft (150).reduced (0, 1));
+        r0.removeFromLeft (12);
+        figuresToggle.setBounds (r0.removeFromLeft (86));
         r0.removeFromLeft (16);
         progressBar.setBounds (r0.removeFromRight (160));
 
@@ -986,6 +998,7 @@ private:
                 // Snapshot the prefix on the message thread; the export jobs
                 // and finalizeApply must all use the same one.
                 const auto prefix = juce::File::createLegalFileName (prefixEditor.getText().trim());
+                const bool wantFigures = figuresToggle.getToggleState();
 
                 // One job per speaker, each rendering + writing only its own
                 // IR (background-safe: exportSpeakerIR touches only that
@@ -1007,22 +1020,53 @@ private:
 
                 runner.runJobs (std::move (jobs),
                     [this] (float p) { progressValue = (double) p; },
-                    [this, dir, firLength, prefix, exportOk]
+                    [this, dir, firLength, prefix, wantFigures, exportOk]
                     {
                         const std::vector<bool> ok (exportOk->begin(), exportOk->end());
-                        const auto result = group.finalizeApply (ok, dir, firLength,
-                                                                  processor.configModel, processor.engine,
-                                                                  prefix);
-                        setBusy (false);
-                        status.setText (result.error.isNotEmpty()
-                                            ? result.error
-                                            : juce::String (result.numApplied)
-                                                + " speaker(s) applied & exported to "
-                                                + dir.getFileName() + "/ as "
-                                                + smt::SpeakerGroupAnalysis::namePrefix (prefix)
-                                                + "speaker*_correction.wav + "
-                                                + result.reportFile.getFileName(),
-                                        juce::dontSendNotification);
+
+                        // Back on the message thread: the background jobs are
+                        // done, so painting the engines' data into figures is
+                        // safe here (and only possible here).
+                        auto finish = [safe = juce::Component::SafePointer<GroupAnalysisComponent> (this),
+                                       dir, firLength, prefix, wantFigures, ok]
+                        {
+                            if (safe == nullptr)
+                                return;
+
+                            smt::SpeakerGroupAnalysis::ReportFigures figs;
+                            if (wantFigures)
+                                figs = smt::renderGroupFigures (safe->group, dir, prefix, firLength);
+
+                            const auto result = safe->group.finalizeApply (
+                                ok, dir, firLength, safe->processor.configModel,
+                                safe->processor.engine, prefix, figs);
+
+                            safe->setBusy (false);
+                            safe->status.setText (
+                                result.error.isNotEmpty()
+                                    ? result.error
+                                    : juce::String (result.numApplied)
+                                        + " speaker(s) applied & exported to "
+                                        + dir.getFileName() + "/ as "
+                                        + smt::SpeakerGroupAnalysis::namePrefix (prefix)
+                                        + "speaker*_correction.wav + "
+                                        + result.reportFile.getFileName()
+                                        + (wantFigures ? " (with figures)" : ""),
+                                juce::dontSendNotification);
+                        };
+
+                        // Rendering blocks the message thread for a moment, so
+                        // let the "rendering" status paint first (the UI stays
+                        // disabled until finish() runs).
+                        if (wantFigures)
+                        {
+                            status.setText ("Rendering figures...", juce::dontSendNotification);
+                            juce::MessageManager::callAsync (std::move (finish));
+                        }
+                        else
+                        {
+                            finish();
+                        }
                     });
             });
     }
@@ -1182,6 +1226,7 @@ private:
             b->setEnabled (! busy);
         subEnabledToggle.setEnabled (! busy);
         prefixEditor.setEnabled (! busy);   // must not change mid-export
+        figuresToggle.setEnabled (! busy);
         levelSlider.setEnabled (! busy);
         boostSlider.setEnabled (! busy);
         subInvertToggle.setEnabled (! busy);
@@ -1209,6 +1254,7 @@ private:
     juce::ToggleButton subEnabledToggle;
     juce::Label prefixLabel;
     juce::TextEditor prefixEditor;      // export file-name prefix
+    juce::ToggleButton figuresToggle;   // render report figures on export
 
     juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;

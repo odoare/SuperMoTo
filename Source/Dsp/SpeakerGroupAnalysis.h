@@ -263,6 +263,28 @@ public:
         juce::String error;
     };
 
+    /** Optional figures for the report: the paths of already-rendered PNGs,
+        RELATIVE to the report file, per entry (an empty string means "no
+        figure for this one"). Rendering them means painting components, which
+        is message-thread work and so belongs to the GUI layer, not here — see
+        Components/ReportFigures.h; this struct is just the plumbing that
+        carries the results into the markdown. */
+    struct ReportFigures
+    {
+        std::vector<juce::String> responsePng;      // indexed by speaker
+        std::vector<juce::String> irPng;
+        juce::String subResponsePng, subIrPng;
+
+        juce::String speakerResponse (int i) const
+        {
+            return i >= 0 && i < (int) responsePng.size() ? responsePng[(size_t) i] : juce::String();
+        }
+        juce::String speakerIr (int i) const
+        {
+            return i >= 0 && i < (int) irPng.size() ? irPng[(size_t) i] : juce::String();
+        }
+    };
+
     /** Background-safe half of "Apply & export": renders and writes speaker
         i's correction IR to irFileFor (directory, filePrefix, i). Returns
         false without touching the filesystem if the speaker has no data or
@@ -293,7 +315,8 @@ public:
     ApplyResult finalizeApply (const std::vector<bool>& exportOk, const juce::File& directory,
                                int firLengthSamples, ConfigModel& configModel,
                                MatrixEngine& matrixEngine,
-                               const juce::String& filePrefix = {}) const
+                               const juce::String& filePrefix = {},
+                               const ReportFigures& figures = {}) const
     {
         ApplyResult result;
 
@@ -333,6 +356,34 @@ public:
                 result.report << "    - `" << f.getFullPathName() << "`\n";
         };
 
+        // Figures (when the caller rendered any), embedded right after an
+        // entry's numbers so they are present whether or not it ended up
+        // assigned to an output.
+        auto reportFigureLinks = [&] (const juce::String& label,
+                                      const juce::String& responsePng,
+                                      const juce::String& irPng)
+        {
+            if (responsePng.isEmpty() && irPng.isEmpty())
+                return;
+
+            // A prefix may contain spaces; CommonMark needs those targets
+            // wrapped in angle brackets to stay one link.
+            auto target = [] (const juce::String& path)
+            {
+                return path.containsChar (' ') ? "<" + path + ">" : path;
+            };
+            auto figure = [&] (const juce::String& path, const char* what)
+            {
+                if (path.isNotEmpty())
+                    result.report << "![" << label << juce::String::fromUTF8 (" \xe2\x80\x94 ")
+                                   << what << "](" << target (path) << ")\n\n";
+            };
+
+            result.report << "\n";
+            figure (responsePng, "frequency response");
+            figure (irPng, "impulse responses");
+        };
+
         for (int i = 0; i < activeCount; ++i)
         {
             const auto& e = speakers[(size_t) i];
@@ -356,6 +407,8 @@ public:
                            << juce::String (e.suggestedTrimDb, 1)
                            << " dB (relative to the quietest speaker; "
                               "informational, not written to the output)\n";
+
+            reportFigureLinks (e.label, figures.speakerResponse (i), figures.speakerIr (i));
 
             if (e.assignedOutput < 0)
             {
@@ -400,6 +453,8 @@ public:
                            << juce::String (sub.engine->getPropagationDelayMs(), 2) << " ms\n"
                            << "- Applied (aligned) delay: "
                            << juce::String (sub.alignedDelayMs, 2) << " ms\n";
+
+            reportFigureLinks (sub.label, figures.subResponsePng, figures.subIrPng);
 
             if (sub.assignedOutput < 0)
             {
