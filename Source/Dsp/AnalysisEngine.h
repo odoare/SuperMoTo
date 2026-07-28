@@ -49,6 +49,44 @@ public:
     void setWindowSize (int sizePow2);          // e.g. 16384 .. 262144
     int getWindowSize() const noexcept          { return windowSize; }
 
+    /** Transfer-function estimation method.
+
+        welch — cross/auto spectrum averaged over Hann windows (any stimulus).
+        sweep — deconvolution by the synchronized sweep's analytic spectral
+                inverse (Novak et al., JAES 2015): needs the sweep identity
+                (setSweepInfo, read from the measurement manifest). Gives the
+                full-band response with true phase in one shot and separates
+                the harmonic-distortion impulse responses, exposed as curves
+                via getHarmonicDb(). Falls back to Welch for a file whose
+                recording is shorter than the sweep, or when no valid sweep
+                info is set.
+
+        Changing the method invalidates the analysis (like setWindowSize);
+        the GUI re-loads the files. */
+    enum class TfMethod { welch, sweep };
+    void setTfMethod (TfMethod m);
+    TfMethod getTfMethod() const noexcept       { return tfMethod; }
+
+    /** Sweep identity of the loaded files' measurement run:
+        phase(t) = 2*pi*f1*L*(exp(t/L) - 1), L in seconds — the attributes
+        MeasurementEngine writes per <Run> in measurement.xml. Takes effect
+        at the next loadFiles()/loadSubFiles(). */
+    struct SweepInfo
+    {
+        double f1 = 0.0, f2 = 0.0, L = 0.0;
+        bool isValid() const noexcept { return L > 0.0 && f1 > 0.0 && f2 > f1; }
+    };
+    void setSweepInfo (const SweepInfo& s) noexcept { sweepInfo = s; }
+    const SweepInfo& getSweepInfo() const noexcept  { return sweepInfo; }
+
+    /** Harmonic-distortion magnitude curves (sweep method only): index i is
+        harmonic order i + 2, evaluated at the given (output) frequencies in
+        dB, normalized to the same mid-band reference as the measured curves
+        — so the values read directly as distortion level below the
+        fundamental. Empty when the Welch method was used. */
+    int getNumHarmonics() const noexcept        { return (int) harmonicAvgSmoothed.size(); }
+    std::vector<float> getHarmonicDb (int index, const std::vector<float>& freqs) const;
+
     /** Loads measurement files and computes their transfer functions.
         Returns the number of successfully analyzed files. */
     int loadFiles (const juce::Array<juce::File>& files);
@@ -219,11 +257,14 @@ private:
         juce::String name;
         std::vector<std::complex<float>> H;     // windowSize/2+1 bins, delay removed
         std::vector<std::complex<float>> Hs;    // smoothed version (display)
+        std::vector<std::vector<float>> harmonics;  // |H_m|, m = 2.. (sweep method)
         float delaySamples = 0.0f;
     };
 
     bool analyzeFile (const juce::File& file, Curve& out,
                       float forcedDelaySamples = std::numeric_limits<float>::quiet_NaN());
+    bool estimateSweepTf (const float* recorded, int numSamples,
+                          juce::dsp::FFT& fft, Curve& out);
     juce::AudioBuffer<float> renderIR (const std::vector<std::complex<float>>& spec,
                                        int firLength, bool minimumPhase = false) const;
     float bandWeight (double freqHz) const;     // 1 in band, raised-cosine skirts
@@ -263,10 +304,20 @@ private:
     bool  subInverted    = false;
     float timeAlignMs    = 0.0f;                // assumed physical main delay
 
+    TfMethod tfMethod = TfMethod::welch;
+    SweepInfo sweepInfo;                        // used when tfMethod == sweep
+    static constexpr int maxHarmonicOrder = 5;  // orders 2..5 extracted
+
     std::vector<Curve> curves;
     std::vector<std::complex<float>> average;           // delay-aligned complex average
     std::vector<std::complex<float>> averageSmoothed;   // what plots & correction use
     std::vector<std::complex<float>> correction;        // designed correction
+
+    // Harmonic magnitudes, power-averaged across mic positions (stored as
+    // real-valued complex so the smoothing / mic-cal / interpDb machinery of
+    // the main curves applies unchanged). Index 0 = order 2.
+    std::vector<std::vector<std::complex<float>>> harmonicAvg;
+    std::vector<std::vector<std::complex<float>>> harmonicAvgSmoothed;
 
     std::vector<Curve> subCurves;                       // sub set, anchored on main
     std::vector<std::complex<float>> subAverage;

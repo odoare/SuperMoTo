@@ -141,6 +141,25 @@ public:
         setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
         setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
 
+        // Transfer-function estimation method; "Sweep" auto-selects when the
+        // loaded folder's manifest carries the sweep identity. Changing it
+        // re-analyzes every loaded set (like the Welch window size).
+        addLabel (tfLabel, "TF");
+        tfBox.addItem ("Welch", 1);
+        tfBox.addItem ("Sweep (Farina)", 2);
+        tfBox.setSelectedId (1, juce::dontSendNotification);
+        tfBox.setItemEnabled (2, false);
+        tfBox.setTooltip ("Transfer-function estimation:\n"
+                          "Welch: averaged cross/auto spectra (any stimulus).\n"
+                          "Sweep (Farina): deconvolution by the synchronized sweep's analytic "
+                          "inverse (Novak et al. 2015) \xe2\x80\x94 full-band response with true "
+                          "phase in one shot, plus the harmonic-distortion curves (H2...). "
+                          "Needs the sweep parameters from the folder's measurement.xml; "
+                          "auto-selected when available.");
+        SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
+        tfBox.onChange = [this] { pushSettingsToAll(); reanalyzeAll(); };
+        addAndMakeVisible (tfBox);
+
         addLabel (rangeLabel, "Range");
         auto setupFreqBox = [this] (juce::ComboBox& box,
                                     std::initializer_list<int> presets, int def)
@@ -347,6 +366,9 @@ public:
         r1.removeFromLeft (16);
         levelRefLabel.setBounds (r1.removeFromLeft (40));
         levelRefBox.setBounds (r1.removeFromLeft (110));
+        r1.removeFromLeft (12);
+        tfLabel.setBounds (r1.removeFromLeft (22));
+        tfBox.setBounds (r1.removeFromLeft (130));
 
         area.removeFromTop (8);
         auto r2 = area.removeFromTop (24);
@@ -547,8 +569,27 @@ private:
     // fitting noise up to the shared speaker range's top end.
     static constexpr float subMaxRangeHz = 300.0f;
 
+    // The sweep identity for one entry's file set, from the folder manifest
+    // (invalid — Welch fallback — for manually loaded files without one).
+    smt::AnalysisEngine::SweepInfo sweepInfoFor (const juce::Array<juce::File>& files) const
+    {
+        smt::AnalysisEngine::SweepInfo s;
+        if (files.isEmpty())
+            return s;
+        const auto it = folderInfo.fileRuns.find (files[0].getFileName());
+        if (it != folderInfo.fileRuns.end() && it->second.signal == "sweep")
+        {
+            s.f1 = it->second.sweepF1;
+            s.f2 = it->second.sweepF2;
+            s.L  = it->second.sweepL;
+        }
+        return s;
+    }
+
     void pushSettingsTo (smt::AnalysisEngine& e, bool isSub)
     {
+        e.setTfMethod (tfBox.getSelectedId() == 2 ? smt::AnalysisEngine::TfMethod::sweep
+                                                  : smt::AnalysisEngine::TfMethod::welch);
         e.setWindowSize (windowBox.getSelectedId());
         static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
                                            1.0f / 6.0f, 1.0f / 3.0f, 1.0f / 2.0f, 1.0f };
@@ -588,6 +629,7 @@ private:
             const auto files = group.speaker (i).files;
             if (files.isEmpty())
                 continue;
+            group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
             jobs.push_back ([this, i, files, subFiles, haveSub]
             {
                 auto& e = *group.speaker (i).engine;
@@ -597,7 +639,10 @@ private:
             });
         }
         if (haveSub)
+        {
+            group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
             jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
+        }
 
         if (jobs.empty())
             return;
@@ -698,6 +743,7 @@ private:
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
                 pushSettingsTo (*group.speaker (i).engine, false);
+                group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
 
                 status.setText (group.speaker (i).label + ": analyzing...", juce::dontSendNotification);
                 setBusy (true);
@@ -734,6 +780,7 @@ private:
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
                 pushSettingsTo (*group.subEntry().engine, true);
+                group.subEntry().engine->setSweepInfo (sweepInfoFor (files));
 
                 status.setText ("Sub: analyzing...", juce::dontSendNotification);
                 setBusy (true);
@@ -795,6 +842,14 @@ private:
 
                 const int n = juce::jmin ((int) contents.speakers.size(),
                                           smt::SpeakerGroupAnalysis::maxSpeakers);
+
+                // Sweep runs get the Farina deconvolution automatically.
+                // Selected BEFORE the pushSettingsTo calls below, which read
+                // the method from this box.
+                const bool sweepOk = n > 0
+                    && sweepInfoFor (contents.speakers[0].files).isValid();
+                tfBox.setItemEnabled (2, sweepOk);
+                tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
                 const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
                 const auto subFiles = contents.sub.files;
 
@@ -813,12 +868,14 @@ private:
                     entry.files = c.files;
                     entry.assignedOutput = c.channelNumber - 1;
                     pushSettingsTo (*entry.engine, false);
+                    entry.engine->setSweepInfo (sweepInfoFor (c.files));
                 }
                 if (haveSub)
                 {
                     group.subEntry().files = subFiles;
                     group.subEntry().assignedOutput = contents.sub.channelNumber - 1;
                     pushSettingsTo (*group.subEntry().engine, true);
+                    group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
                 }
 
                 if (n > 0)
@@ -1036,6 +1093,8 @@ private:
             d.subPhase        = eng->getSubPhaseDeg (freqs);
             d.hasSub          = eng->hasSub();
             d.crossoverHz     = eng->getCrossoverHz();
+            for (int i = 0; i < eng->getNumHarmonics(); ++i)
+                d.harmonicDbs.push_back (eng->getHarmonicDb (i, freqs));
 
             // Level reference: display offset on the measured curves. dB SPL =
             // absolute |H| + stimulus level (sine RMS, hence -3 dB) + offset.
@@ -1070,7 +1129,7 @@ private:
         progressBar.setVisible (busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
                         &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
-                        &micCalSourceBox, &levelRefBox, &displayBox })
+                        &micCalSourceBox, &levelRefBox, &displayBox, &tfBox })
             c->setEnabled (! busy);
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
@@ -1104,8 +1163,8 @@ private:
     juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
-    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox;
-    juce::Label displayLabel;
+    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox, tfBox;
+    juce::Label displayLabel, tfLabel;
     juce::ToggleButton subInvertToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 

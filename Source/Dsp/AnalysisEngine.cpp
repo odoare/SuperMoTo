@@ -9,6 +9,7 @@
 */
 
 #include "AnalysisEngine.h"
+#include <FxmeTools/dsp/SynchronizedSweep.h>
 
 namespace smt
 {
@@ -23,12 +24,23 @@ void AnalysisEngine::setWindowSize (int sizePow2)
     clear();
 }
 
+void AnalysisEngine::setTfMethod (TfMethod m)
+{
+    if (m == tfMethod)
+        return;
+    tfMethod = m;
+    // Method changes invalidate the analysis; the GUI re-loads files.
+    clear();
+}
+
 void AnalysisEngine::clear()
 {
     curves.clear();
     average.clear();
     averageSmoothed.clear();
     correction.clear();
+    harmonicAvg.clear();
+    harmonicAvgSmoothed.clear();
     sampleRate = 0.0;
     referenceGain = 1.0;
     clearSub();                 // reloading the main set invalidates the pairing
@@ -159,6 +171,14 @@ void AnalysisEngine::applySmoothing()
     micCal.applyToSpectrum (averageSmoothed, sampleRate, windowSize);
     subAverageSmoothed = on && ! subAverage.empty() ? smooth (subAverage) : subAverage;
     micCal.applyToSpectrum (subAverageSmoothed, sampleRate, windowSize);
+
+    harmonicAvgSmoothed.clear();
+    for (const auto& h : harmonicAvg)
+    {
+        auto hs = on ? smooth (h) : h;
+        micCal.applyToSpectrum (hs, sampleRate, windowSize);
+        harmonicAvgSmoothed.push_back (std::move (hs));
+    }
 }
 
 void AnalysisEngine::setMicCalibration (const MicCalibration& cal)
@@ -204,49 +224,59 @@ bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out, float forc
         window[(size_t) i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi
                                                       * (float) i / (float) (W - 1)));
 
-    std::vector<float> bufX ((size_t) (2 * W)), bufY ((size_t) (2 * W));
-    std::vector<double> pxx ((size_t) numBins, 0.0);
-    std::vector<std::complex<double>> pxy ((size_t) numBins, { 0.0, 0.0 });
-
     const float* x = data.getReadPointer (0);   // sent
     const float* y = data.getReadPointer (1);   // recorded
 
-    int numSegments = 0;
-    for (int start = 0; start + W <= n; start += hop)
+    // Sweep deconvolution (Novak): one-shot full-band H with true phase plus
+    // the harmonic-distortion IRs. Falls back to Welch when not applicable
+    // (no/invalid sweep info, or a recording shorter than the sweep).
+    out.harmonics.clear();
+    const bool haveSweepH = tfMethod == TfMethod::sweep && sweepInfo.isValid()
+                         && estimateSweepTf (y, n, fft, out);
+
+    if (! haveSweepH)
     {
-        std::fill (bufX.begin(), bufX.end(), 0.0f);
-        std::fill (bufY.begin(), bufY.end(), 0.0f);
-        for (int i = 0; i < W; ++i)
+        std::vector<float> bufX ((size_t) (2 * W)), bufY ((size_t) (2 * W));
+        std::vector<double> pxx ((size_t) numBins, 0.0);
+        std::vector<std::complex<double>> pxy ((size_t) numBins, { 0.0, 0.0 });
+
+        int numSegments = 0;
+        for (int start = 0; start + W <= n; start += hop)
         {
-            bufX[(size_t) i] = x[start + i] * window[(size_t) i];
-            bufY[(size_t) i] = y[start + i] * window[(size_t) i];
+            std::fill (bufX.begin(), bufX.end(), 0.0f);
+            std::fill (bufY.begin(), bufY.end(), 0.0f);
+            for (int i = 0; i < W; ++i)
+            {
+                bufX[(size_t) i] = x[start + i] * window[(size_t) i];
+                bufY[(size_t) i] = y[start + i] * window[(size_t) i];
+            }
+
+            fft.performRealOnlyForwardTransform (bufX.data(), true);
+            fft.performRealOnlyForwardTransform (bufY.data(), true);
+
+            for (int k = 0; k < numBins; ++k)
+            {
+                const std::complex<double> X (bufX[(size_t) (2 * k)], bufX[(size_t) (2 * k + 1)]);
+                const std::complex<double> Y (bufY[(size_t) (2 * k)], bufY[(size_t) (2 * k + 1)]);
+                pxx[(size_t) k] += std::norm (X);
+                pxy[(size_t) k] += std::conj (X) * Y;
+            }
+            ++numSegments;
         }
 
-        fft.performRealOnlyForwardTransform (bufX.data(), true);
-        fft.performRealOnlyForwardTransform (bufY.data(), true);
+        if (numSegments == 0)
+            return false;
 
+        // H = Pxy / Pxx, regularized against silent bins.
+        double pxxMax = 0.0;
+        for (auto v : pxx)
+            pxxMax = std::max (pxxMax, v);
+        const double eps = pxxMax * 1.0e-10 + 1.0e-30;
+
+        out.H.resize ((size_t) numBins);
         for (int k = 0; k < numBins; ++k)
-        {
-            const std::complex<double> X (bufX[(size_t) (2 * k)], bufX[(size_t) (2 * k + 1)]);
-            const std::complex<double> Y (bufY[(size_t) (2 * k)], bufY[(size_t) (2 * k + 1)]);
-            pxx[(size_t) k] += std::norm (X);
-            pxy[(size_t) k] += std::conj (X) * Y;
-        }
-        ++numSegments;
+            out.H[(size_t) k] = std::complex<float> (pxy[(size_t) k] / (pxx[(size_t) k] + eps));
     }
-
-    if (numSegments == 0)
-        return false;
-
-    // H = Pxy / Pxx, regularized against silent bins.
-    double pxxMax = 0.0;
-    for (auto v : pxx)
-        pxxMax = std::max (pxxMax, v);
-    const double eps = pxxMax * 1.0e-10 + 1.0e-30;
-
-    out.H.resize ((size_t) numBins);
-    for (int k = 0; k < numBins; ++k)
-        out.H[(size_t) k] = std::complex<float> (pxy[(size_t) k] / (pxx[(size_t) k] + eps));
 
     // --- Delay: either estimated from the impulse response (IFFT of H), or,
     // for sub measurements, forced to the paired main measurement's delay so
@@ -290,9 +320,79 @@ bool AnalysisEngine::analyzeFile (const juce::File& file, Curve& out, float forc
     return true;
 }
 
+// Deconvolution path (Novak et al. 2015): the recorded channel is deconvolved
+// by the synchronized sweep's analytic spectral inverse. The first windowSize
+// samples of the full response hold the (propagation-delayed) linear IR —
+// FFT'd onto the same windowSize/2+1 bin grid the Welch path uses, so
+// everything downstream (delay removal, complex averaging, correction design)
+// is method-agnostic. The harmonic IRs, wrapped towards the end of the full
+// response at L*ln(m)*fs before the linear one, are windowed out and kept as
+// magnitude spectra (their phase is not used across mic positions).
+bool AnalysisEngine::estimateSweepTf (const float* recorded, int numSamples,
+                                      juce::dsp::FFT& fft, Curve& out)
+{
+    const int W = windowSize;
+    const int numBins = W / 2 + 1;
+
+    fxme::SynchronizedSweep sweep;
+    sweep.prepareExact (sweepInfo.f1, sweepInfo.f2, sampleRate, sweepInfo.L);
+    if (sweep.getNumSamples() > numSamples)
+        return false;               // not this sweep's recording
+
+    const auto full = sweep.deconvolve (recorded, numSamples);
+    const int N = (int) full.size();
+    if (N < 2 * W)
+        return false;               // harmonics would not stay clear of the linear IR
+
+    std::vector<float> buf ((size_t) (2 * W), 0.0f);
+    std::copy (full.begin(), full.begin() + W, buf.begin());
+    fft.performRealOnlyForwardTransform (buf.data(), true);
+
+    out.H.resize ((size_t) numBins);
+    for (int k = 0; k < numBins; ++k)
+        out.H[(size_t) k] = { buf[(size_t) (2 * k)], buf[(size_t) (2 * k + 1)] };
+
+    // Harmonic IRs, centred on (linear peak - L*ln(m)*fs). The extraction
+    // half-width is bounded by the shrinking spacing to the NEXT order, so
+    // neighbouring orders never leak into the window.
+    int linPos = 0;
+    float linPeak = 0.0f;
+    for (int i = 0; i < W; ++i)
+        if (std::abs (full[(size_t) i]) > linPeak)
+        {
+            linPeak = std::abs (full[(size_t) i]);
+            linPos = i;
+        }
+
+    for (int m = 2; m <= maxHarmonicOrder; ++m)
+    {
+        const double off = sweep.harmonicOffsetSamples (m);
+        const double gapNext = sweep.harmonicOffsetSamples (m + 1) - off;
+        const int half = (int) std::min ((double) (W / 2), 0.45 * gapNext);
+        if (half < 128 || off + (double) half >= (double) (N - W))
+            break;                  // too short a sweep to separate this order
+
+        const auto ir = fxme::SynchronizedSweep::extractCircular (
+                            full, (double) linPos - off, 2 * half);
+
+        std::fill (buf.begin(), buf.end(), 0.0f);
+        std::copy (ir.begin(), ir.end(), buf.begin());
+        fft.performRealOnlyForwardTransform (buf.data(), true);
+
+        std::vector<float> mag ((size_t) numBins);
+        for (int k = 0; k < numBins; ++k)
+            mag[(size_t) k] = std::abs (std::complex<float> (buf[(size_t) (2 * k)],
+                                                             buf[(size_t) (2 * k + 1)]));
+        out.harmonics.push_back (std::move (mag));
+    }
+
+    return true;
+}
+
 void AnalysisEngine::computeAverage()
 {
     average.clear();
+    harmonicAvg.clear();
     if (curves.empty())
         return;
 
@@ -306,6 +406,32 @@ void AnalysisEngine::computeAverage()
     const float inv = 1.0f / (float) curves.size();
     for (auto& v : average)
         v *= inv;
+
+    // Harmonic magnitudes: POWER average across mic positions (distortion
+    // phase is not coherent between positions, so a complex average would
+    // cancel). Stored as real-valued complex so smoothing / mic-cal /
+    // interpolation reuse the main-curve machinery.
+    size_t maxOrders = 0;
+    for (const auto& c : curves)
+        maxOrders = std::max (maxOrders, c.harmonics.size());
+
+    for (size_t o = 0; o < maxOrders; ++o)
+    {
+        std::vector<double> acc (numBins, 0.0);
+        int cnt = 0;
+        for (const auto& c : curves)
+            if (o < c.harmonics.size())
+            {
+                for (size_t k = 0; k < numBins; ++k)
+                    acc[k] += (double) c.harmonics[o][k] * (double) c.harmonics[o][k];
+                ++cnt;
+            }
+
+        std::vector<std::complex<float>> avg (numBins);
+        for (size_t k = 0; k < numBins; ++k)
+            avg[k] = { (float) std::sqrt (acc[k] / (double) cnt), 0.0f };
+        harmonicAvg.push_back (std::move (avg));
+    }
 }
 
 void AnalysisEngine::computeSubAverage()
@@ -726,6 +852,17 @@ std::vector<float> AnalysisEngine::getCorrectionDb (const std::vector<float>& fr
     std::vector<float> v (freqs.size(), -120.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
         v[i] = interpDb (correction, freqs[i]);
+    return v;
+}
+
+std::vector<float> AnalysisEngine::getHarmonicDb (int index, const std::vector<float>& freqs) const
+{
+    std::vector<float> v (freqs.size(), -120.0f);
+    if (index < 0 || index >= (int) harmonicAvgSmoothed.size())
+        return v;
+    const float refDb = juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
+    for (size_t i = 0; i < freqs.size(); ++i)
+        v[i] = interpDb (harmonicAvgSmoothed[(size_t) index], freqs[i]) - refDb;
     return v;
 }
 

@@ -35,6 +35,10 @@ public:
         std::vector<float> averageDb, correctionDb, correctedDb;
         std::vector<float> averagePhase, correctionPhase, correctedPhase;
         std::vector<float> subDb, subPhase;
+
+        /** Harmonic-distortion magnitude curves (sweep analysis): index i is
+            order i + 2, magnitude panel only, legend "H2", "H3", ... */
+        std::vector<std::vector<float>> harmonicDbs;
         bool hasSub = false;
         float crossoverHz = 80.0f;
 
@@ -66,7 +70,9 @@ public:
         i.e. including Data::measuredOffsetDb), padded out to 10 dB steps,
         and makes the result the new double-click default view. Falls back
         to -30..+30 dB with no data. Call after switching level references,
-        where the sensible window jumps (e.g. 0-centred -> ~85 dB SPL). */
+        where the sensible window jumps (e.g. 0-centred -> ~85 dB SPL).
+        Harmonic curves are deliberately excluded from the fit: they sit tens
+        of dB below the fundamental and would stretch the window. */
     void fitVerticalToData()
     {
         float lo = std::numeric_limits<float>::max();
@@ -255,6 +261,16 @@ private:
         g.strokePath (path, juce::PathStrokeType (thickness));
     }
 
+    // Harmonic-distortion trace palette (H2, H3, ...).
+    static juce::Colour harmonicColour (int idx)
+    {
+        static const juce::Colour cols[] = { SuperMoToTheme::measure,
+                                             SuperMoToTheme::dim,
+                                             juce::Colour (0xffb070e0),
+                                             juce::Colour (0xff70b0e0) };
+        return cols[idx % 4];
+    }
+
     // Magnitude panel rectangle (mirrors the split done in paintPlot).
     juce::Rectangle<float> magPanelArea() const
     {
@@ -320,6 +336,9 @@ private:
         for (const auto& c : data.curveDbs)
             drawCurve (g, c, magR, SuperMoToTheme::curveMeasurement.withAlpha (0.55f), 1.0f, off);
 
+        for (size_t hIdx = 0; hIdx < data.harmonicDbs.size(); ++hIdx)
+            drawCurve (g, data.harmonicDbs[hIdx], magR, harmonicColour ((int) hIdx), 1.2f, off);
+
         if (data.hasSub)
             drawCurve (g, data.subDb, magR, SuperMoToTheme::mono, 1.8f, off);
         drawCurve (g, data.averageDb, magR, SuperMoToTheme::curveAverage, 2.4f, off);
@@ -347,13 +366,15 @@ private:
         drawPhaseCurve (g, data.correctedPhase, phR, SuperMoToTheme::spectrum, 1.4f);
 
         // ── Legend & axis descriptions ───────────────────────────────────────
-        struct Item { const char* name; juce::Colour col; };
+        struct Item { juce::String name; juce::Colour col; };
         std::vector<Item> items { { "measurements", SuperMoToTheme::curveMeasurement },
                                   { "average", SuperMoToTheme::curveAverage },
                                   { "correction", SuperMoToTheme::master },
                                   { "corrected", SuperMoToTheme::spectrum } };
         if (data.hasSub)
             items.push_back ({ "sub", SuperMoToTheme::mono });
+        for (size_t hIdx = 0; hIdx < data.harmonicDbs.size(); ++hIdx)
+            items.push_back ({ "H" + juce::String ((int) hIdx + 2), harmonicColour ((int) hIdx) });
         int x = (int) magR.getX() + 6;
         g.setFont (11.0f);
         for (const auto& item : items)

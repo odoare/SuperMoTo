@@ -99,6 +99,28 @@ public:
         setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
         setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
 
+        // Transfer-function estimation method; "Sweep" auto-selects when the
+        // loaded files' manifest carries the sweep identity.
+        addLabel (tfLabel, "TF");
+        tfBox.addItem ("Welch", 1);
+        tfBox.addItem ("Sweep (Farina)", 2);
+        tfBox.setSelectedId (1, juce::dontSendNotification);
+        tfBox.setItemEnabled (2, false);
+        tfBox.setTooltip ("Transfer-function estimation:\n"
+                          "Welch: averaged cross/auto spectra (any stimulus).\n"
+                          "Sweep (Farina): deconvolution by the synchronized sweep's analytic "
+                          "inverse (Novak et al. 2015) \xe2\x80\x94 full-band response with true "
+                          "phase in one shot, plus the harmonic-distortion curves (H2...). "
+                          "Needs the sweep parameters from the folder's measurement.xml; "
+                          "auto-selected when available.");
+        SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
+        tfBox.onChange = [this]
+        {
+            if (! loadedFiles.isEmpty())
+                analyze();
+        };
+        addAndMakeVisible (tfBox);
+
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         levelSlider.setRange (0.0, 1.0, 0.01);
@@ -382,6 +404,9 @@ public:
         lowFreqBox.setBounds (r1.removeFromLeft (86));
         rangeToLabel.setBounds (r1.removeFromLeft (12));
         highFreqBox.setBounds (r1.removeFromLeft (86));
+        r1.removeFromLeft (12);
+        tfLabel.setBounds (r1.removeFromLeft (22));
+        tfBox.setBounds (r1.removeFromLeft (130));
 
         // Row 2: correction level, max boost, Phase, FIR length, Assign to,
         // Export correction IR (aligned under "Export IR"). The two sliders
@@ -494,6 +519,13 @@ private:
                 else if (micCalSourceBox.getSelectedId() == 2)
                     micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
 
+                // Sweep runs (with the sweep identity in the manifest) get
+                // the Farina deconvolution automatically; anything else
+                // falls back to Welch.
+                const bool sweepOk = currentSweepInfo().isValid();
+                tfBox.setItemEnabled (2, sweepOk);
+                tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
+
                 analyze();
             });
     }
@@ -533,6 +565,23 @@ private:
             });
     }
 
+    // The loaded files' sweep identity from the folder manifest (invalid when
+    // the run was not a sweep or no manifest was found).
+    smt::AnalysisEngine::SweepInfo currentSweepInfo() const
+    {
+        smt::AnalysisEngine::SweepInfo s;
+        if (loadedFiles.isEmpty())
+            return s;
+        const auto it = folderInfo.fileRuns.find (loadedFiles[0].getFileName());
+        if (it != folderInfo.fileRuns.end() && it->second.signal == "sweep")
+        {
+            s.f1 = it->second.sweepF1;
+            s.f2 = it->second.sweepF2;
+            s.L  = it->second.sweepL;
+        }
+        return s;
+    }
+
     void analyze()
     {
         status.setText ("Analyzing " + juce::String (loadedFiles.size()) + " file(s)...",
@@ -540,6 +589,10 @@ private:
 
         analysis.setCorrectionLevel ((float) levelSlider.getValue());
         pushMicCalibration();               // apply the current mic cal to the data
+        analysis.setSweepInfo (currentSweepInfo());
+        analysis.setTfMethod (tfBox.getSelectedId() == 2
+                                  ? smt::AnalysisEngine::TfMethod::sweep
+                                  : smt::AnalysisEngine::TfMethod::welch);
         const int ok = analysis.loadFiles (loadedFiles);
 
         status.setText (ok > 0
@@ -718,6 +771,8 @@ private:
         d.subPhase        = analysis.getSubPhaseDeg (freqs);
         d.hasSub          = analysis.hasSub();
         d.crossoverHz     = analysis.getCrossoverHz();
+        for (int i = 0; i < analysis.getNumHarmonics(); ++i)
+            d.harmonicDbs.push_back (analysis.getHarmonicDb (i, freqs));
         d.measuredOffsetDb = measuredOffsetDb();
         d.levelAxisText    = levelAxisText();
         plot.setData (std::move (d));
@@ -872,8 +927,8 @@ private:
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
-    juce::ComboBox micCalSourceBox, levelRefBox, displayBox;
-    juce::Label displayLabel;
+    juce::ComboBox micCalSourceBox, levelRefBox, displayBox, tfBox;
+    juce::Label displayLabel, tfLabel;
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
 
