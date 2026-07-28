@@ -314,6 +314,7 @@ public:
         addAndMakeVisible (status);
 
         addAndMakeVisible (plot);
+        plot.onViewChanged = [this] { buildFreqGrid(); updatePlotData(); };
 
         // Impulse-response view (fxme::WaveformDisplay), swapped in for the
         // frequency plot by the View selector. Shows the measured average IR
@@ -387,13 +388,17 @@ public:
         // flush to the right edge (same width) so they always line up.
         constexpr int exportW = 165;
 
-        // Row 1: load, Welch window, smoothing, analysis range, Export IR.
+        // Row 1 — load the measurements, then how they become transfer
+        // functions (window, method, smoothing, range); Export IR right.
         auto r1 = area.removeFromTop (24);
         exportMeasuredButton.setBounds (r1.removeFromRight (exportW));
         loadButton.setBounds (r1.removeFromLeft (170));
         r1.removeFromLeft (16);
         windowLabel.setBounds (r1.removeFromLeft (90));
         windowBox.setBounds (r1.removeFromLeft (90));
+        r1.removeFromLeft (12);
+        tfLabel.setBounds (r1.removeFromLeft (22));
+        tfBox.setBounds (r1.removeFromLeft (130));
         r1.removeFromLeft (16);
         smoothLabel.setBounds (r1.removeFromLeft (96));
         smoothLowBox.setBounds (r1.removeFromLeft (78));
@@ -404,9 +409,6 @@ public:
         lowFreqBox.setBounds (r1.removeFromLeft (86));
         rangeToLabel.setBounds (r1.removeFromLeft (12));
         highFreqBox.setBounds (r1.removeFromLeft (86));
-        r1.removeFromLeft (12);
-        tfLabel.setBounds (r1.removeFromLeft (22));
-        tfBox.setBounds (r1.removeFromLeft (130));
 
         // Row 2: correction level, max boost, Phase, FIR length, Assign to,
         // Export correction IR (aligned under "Export IR"). The two sliders
@@ -444,12 +446,6 @@ public:
         r3.removeFromRight (16);
         loadSubButton.setBounds (r3.removeFromRight (190));
         r3.removeFromRight (16);
-        displayLabel.setBounds (r3.removeFromLeft (36));
-        displayBox.setBounds (r3.removeFromLeft (150));
-        r3.removeFromLeft (12);
-        levelRefLabel.setBounds (r3.removeFromLeft (40));
-        levelRefBox.setBounds (r3.removeFromLeft (110));
-        r3.removeFromLeft (12);
         firInfo.setBounds (r3);
 
         // Row 4, right-aligned: the delay-correction info text (right-justified,
@@ -466,14 +462,21 @@ public:
         area.removeFromTop (4);
         status.setBounds (area.removeFromBottom (20));
         area.removeFromBottom (4);
+
+        // What the plot below shows — kept directly above it.
+        auto rD = area.removeFromTop (24);
+        displayLabel.setBounds (rD.removeFromLeft (36));
+        displayBox.setBounds (rD.removeFromLeft (150));
+        rD.removeFromLeft (16);
+        levelRefLabel.setBounds (rD.removeFromLeft (40));
+        levelRefBox.setBounds (rD.removeFromLeft (110));
+
+        area.removeFromTop (6);
         plot.setBounds (area);
         irPlot.setBounds (area);    // same slot; View selector swaps them
     }
 
 private:
-    static constexpr int numPoints = 400;
-    static constexpr float fMin = 20.0f, fMax = 20000.0f;
-
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
@@ -482,11 +485,12 @@ private:
         addAndMakeVisible (l);
     }
 
+    // The curves are sampled over the plot's current frequency window, so
+    // zooming in keeps full resolution instead of stretching the full-range
+    // grid (the plot calls back through onViewChanged when it moves).
     void buildFreqGrid()
     {
-        freqs.resize (numPoints);
-        for (int p = 0; p < numPoints; ++p)
-            freqs[(size_t) p] = fMin * std::pow (fMax / fMin, (float) p / (float) (numPoints - 1));
+        freqs = TransferFunctionPlot::freqGridFor (plot.getViewLowHz(), plot.getViewHighHz());
     }
 
     void loadFiles()

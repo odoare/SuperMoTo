@@ -233,25 +233,19 @@ public:
         title.setBounds (area.removeFromTop (26).withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (8);
 
+        // The rows follow the order of the actions: pick the microphone (and
+        // its calibration), choose what to measure, set the stimulus, choose
+        // where it is written, then Run.
         auto r1 = area.removeFromTop (26);
         micLabel.setBounds (r1.removeFromLeft (118));
         micBox.setBounds (r1.removeFromLeft (104));
         r1.removeFromLeft (16);
         micCalLabel.setBounds (r1.removeFromLeft (56));
-        micCalValue.setBounds (r1.removeFromLeft (130));
+        micCalValue.setBounds (r1.removeFromLeft (200));
         r1.removeFromLeft (4);
         micCalLoadButton.setBounds (r1.removeFromLeft (30));
         r1.removeFromLeft (3);
         micCalClearButton.setBounds (r1.removeFromLeft (24));
-        r1.removeFromLeft (16);
-        signalLabel.setBounds (r1.removeFromLeft (46));
-        signalBox.setBounds (r1.removeFromLeft (200));
-        r1.removeFromLeft (16);
-        durationLabel.setBounds (r1.removeFromLeft (56));
-        duration.setBounds (r1.removeFromLeft (96));
-        r1.removeFromLeft (14);
-        levelLabel.setBounds (r1.removeFromLeft (38));
-        level.setBounds (r1.removeFromLeft (96));
 
         // Measurement mode on the left, numbered input/output toggles on the
         // right; each keeps its label on the row above.
@@ -283,6 +277,18 @@ public:
         rSub.removeFromLeft (8);
         subChannelLabel.setBounds (rSub.removeFromLeft (80));
         subChannelBox.setBounds (rSub.removeFromLeft (90));
+
+        // Stimulus: what is played into the channels selected above.
+        area.removeFromTop (10);
+        auto rStim = area.removeFromTop (26);
+        signalLabel.setBounds (rStim.removeFromLeft (46));
+        signalBox.setBounds (rStim.removeFromLeft (200));
+        rStim.removeFromLeft (16);
+        durationLabel.setBounds (rStim.removeFromLeft (56));
+        duration.setBounds (rStim.removeFromLeft (96));
+        rStim.removeFromLeft (14);
+        levelLabel.setBounds (rStim.removeFromLeft (38));
+        level.setBounds (rStim.removeFromLeft (96));
 
         area.removeFromTop (10);
         pathLabel.setBounds (area.removeFromTop (18));

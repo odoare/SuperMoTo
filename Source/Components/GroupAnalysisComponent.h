@@ -286,6 +286,10 @@ public:
         addAndMakeVisible (rowsViewport);
 
         addAndMakeVisible (plot);
+        // Re-sample the curves over the new window on zoom/pan. setBusy()
+        // freezes the plot's interaction while a background batch owns the
+        // engines, so the axis can never move without the data following.
+        plot.onViewChanged = [this] { buildFreqGrid(); updatePlotPreview(); };
 
         // Impulse-response view (fxme::WaveformDisplay), swapped in for the
         // frequency plot by the View selector; shows the previewed speaker's
@@ -330,26 +334,32 @@ public:
         title.setBounds (titleRow);
         area.removeFromTop (6);
 
+        // Row 0 — the workflow, left to right: load the measurements, describe
+        // the set, compute the alignment, apply & export.
         auto r0 = area.removeFromTop (24);
+        loadFolderButton.setBounds (r0.removeFromLeft (190));
+        r0.removeFromLeft (16);
         countLabel.setBounds (r0.removeFromLeft (70));
         countBox.setBounds (r0.removeFromLeft (56));
-        r0.removeFromLeft (16);
+        r0.removeFromLeft (12);
         subEnabledToggle.setBounds (r0.removeFromLeft (56));
         r0.removeFromLeft (16);
         computeButton.setBounds (r0.removeFromLeft (150));
         r0.removeFromLeft (8);
         applyButton.setBounds (r0.removeFromLeft (170));
-        r0.removeFromLeft (8);
-        loadFolderButton.setBounds (r0.removeFromLeft (190));
         r0.removeFromLeft (16);
         progressBar.setBounds (r0.removeFromRight (160));
         r0.removeFromRight (16);
         status.setBounds (r0);
 
+        // Row 1 — how the measurements are turned into transfer functions.
         area.removeFromTop (8);
         auto r1 = area.removeFromTop (24);
         windowLabel.setBounds (r1.removeFromLeft (90));
         windowBox.setBounds (r1.removeFromLeft (90));
+        r1.removeFromLeft (12);
+        tfLabel.setBounds (r1.removeFromLeft (22));
+        tfBox.setBounds (r1.removeFromLeft (130));
         r1.removeFromLeft (16);
         smoothLabel.setBounds (r1.removeFromLeft (96));
         smoothLowBox.setBounds (r1.removeFromLeft (78));
@@ -360,16 +370,8 @@ public:
         lowFreqBox.setBounds (r1.removeFromLeft (86));
         rangeToLabel.setBounds (r1.removeFromLeft (12));
         highFreqBox.setBounds (r1.removeFromLeft (86));
-        r1.removeFromLeft (16);
-        previewLabel.setBounds (r1.removeFromLeft (56));
-        previewBox.setBounds (r1.removeFromLeft (110));
-        r1.removeFromLeft (16);
-        levelRefLabel.setBounds (r1.removeFromLeft (40));
-        levelRefBox.setBounds (r1.removeFromLeft (110));
-        r1.removeFromLeft (12);
-        tfLabel.setBounds (r1.removeFromLeft (22));
-        tfBox.setBounds (r1.removeFromLeft (130));
 
+        // Row 2 — how the correction is designed from them.
         area.removeFromTop (8);
         auto r2 = area.removeFromTop (24);
         levelLabel.setBounds (r2.removeFromLeft (100));
@@ -388,9 +390,6 @@ public:
         crossoverBox.setBounds (r2.removeFromLeft (90));
         r2.removeFromLeft (12);
         subInvertToggle.setBounds (r2.removeFromLeft (96));
-        r2.removeFromLeft (16);
-        displayLabel.setBounds (r2.removeFromLeft (36));
-        displayBox.setBounds (r2.removeFromLeft (150));
 
         area.removeFromTop (8);
         constexpr int rowH = 26;
@@ -422,7 +421,19 @@ public:
             rows[i]->setBounds (col.removeFromTop (rowH).reduced (0, 2));
         }
 
+        // What the plot below shows — kept directly above it.
         area.removeFromTop (8);
+        auto rD = area.removeFromTop (24);
+        previewLabel.setBounds (rD.removeFromLeft (56));
+        previewBox.setBounds (rD.removeFromLeft (110));
+        rD.removeFromLeft (16);
+        displayLabel.setBounds (rD.removeFromLeft (36));
+        displayBox.setBounds (rD.removeFromLeft (150));
+        rD.removeFromLeft (16);
+        levelRefLabel.setBounds (rD.removeFromLeft (40));
+        levelRefBox.setBounds (rD.removeFromLeft (110));
+
+        area.removeFromTop (6);
         plot.setBounds (area);
         irPlot.setBounds (area);    // same slot; View selector swaps them
     }
@@ -523,11 +534,12 @@ private:
         addAndMakeVisible (l);
     }
 
+    // The curves are sampled over the plot's current frequency window, so
+    // zooming in keeps full resolution instead of stretching the full-range
+    // grid (the plot calls back through onViewChanged when it moves).
     void buildFreqGrid()
     {
-        freqs.resize (numPoints);
-        for (int p = 0; p < numPoints; ++p)
-            freqs[(size_t) p] = fMin * std::pow (fMax / fMin, (float) p / (float) (numPoints - 1));
+        freqs = TransferFunctionPlot::freqGridFor (plot.getViewLowHz(), plot.getViewHighHz());
     }
 
     // The calibration selected by micCalSourceBox: global, the folder-embedded
@@ -1117,9 +1129,6 @@ private:
         refreshIrIfVisible();   // every data/design change funnels through here
     }
 
-    static constexpr int numPoints = 400;
-    static constexpr float fMin = 20.0f, fMax = 20000.0f;
-
     // Disables every control that would otherwise touch an engine (directly,
     // or via the shared forEachEngine fan-out) while a background batch is
     // running, so no engine is ever read/written from two threads at once;
@@ -1127,6 +1136,9 @@ private:
     void setBusy (bool busy)
     {
         progressBar.setVisible (busy);
+        // The plot is a bare view, not in the enable/disable list below: freeze
+        // its zoom/pan so onViewChanged cannot ask for a re-sample mid-batch.
+        plot.setInteractionEnabled (! busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
                         &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
                         &micCalSourceBox, &levelRefBox, &displayBox, &tfBox })
