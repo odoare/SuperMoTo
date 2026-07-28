@@ -3,10 +3,12 @@
     MeasurementEngine.h
 
     Part 2 of SuperMoTo: loudspeaker / system measurement. Sends a stimulus
-    (band limited white noise or logarithmic sweep, 10 Hz .. 20 kHz) to each
-    selected channel in turn while recording the measurement microphone on a
-    selected input. Each measurement is a stereo file with channel 1 = sent
-    signal and channel 2 = recorded signal.
+    (band limited white noise, or a SYNCHRONIZED logarithmic sweep — Novak et
+    al. JAES 2015, f1*L integer so deconvolution separates the harmonic IRs
+    with true phase — 10 Hz .. 20 kHz) to each selected channel in turn while
+    recording the measurement microphone on a selected input. Each measurement
+    is a stereo file with channel 1 = sent signal and channel 2 = recorded
+    signal; measurement.xml records the sweep identity (f1, f2, L) per run.
 
     Three modes (MeasureMode):
       dryOutput  – stimulus straight to an output (raw speaker, to design FIRs),
@@ -31,6 +33,7 @@
 
 #include <JuceHeader.h>
 #include "MatrixEngine.h"     // pulls fxme::FirFilter; fxme::Biquad via module umbrella
+#include <map>
 
 namespace smt
 {
@@ -51,6 +54,14 @@ public:
         float durationS = 10.0f;                            // 5 .. 30
         float levelDb = -12.0f;
         juce::String folder;                                // destination folder
+        juce::String generalComment;                        // whole folder; rewritten
+                                                            // at each manifest save
+        juce::String runComment;                            // this run only, one line
+        juce::String micCalName;                            // mic correction curve in
+        juce::String micCalText;                            //   effect: name + raw cal
+                                                            //   text for the manifest
+        bool  splCalibrated = false;                        // SPL-meter calibration:
+        float splOffsetDb = 0.0f;                           //   dB SPL = dBFS + offset
         int subChannel = -1;                                // 0-based; -1 = none.
                                                             // Only meaningful for dry/FIR
                                                             // modes (fullSystem's toggled
@@ -90,6 +101,10 @@ private:
 
     float nextStimulusSample();
 
+    // Stimulus band, shared by the sweep parameters, the noise band-limiting
+    // and the manifest (the analysis side reads them back from there).
+    static constexpr double sweepF1Hz = 10.0, sweepF2Hz = 20000.0;
+
     double sr = 44100.0;
 
     Settings settings;
@@ -121,6 +136,44 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeasurementEngine)
 };
 
+/** Per-run metadata recorded in measurement.xml, mapped back to each capture
+    file by readMeasurementFolderInfo(). */
+struct MeasurementRunInfo
+{
+    juce::String mode;              // "dry" / "fir" / "system"
+    juce::String signal;            // "sweep" / "noise"
+    float durationS = 0.0f;         // stimulus length (excl. tail)
+    float levelDb   = 0.0f;         // stimulus level
+    double sweepF1 = 0.0;           // sweep identity (0 when not a sweep):
+    double sweepF2 = 0.0;           //   phase(t) = 2*pi*f1*L*(exp(t/L) - 1)
+    double sweepL  = 0.0;           //   L in seconds
+    bool  splCalibrated = false;    // SPL cal in effect for that run
+    float splOffsetDb   = 0.0f;     //   dB SPL = dBFS + offset
+    juce::String micCalName;        // mic cal in effect for that run (name only)
+};
+
+/** Folder-level metadata read back from a measurement folder's
+    measurement.xml: the general comment, the embedded calibration data
+    (Analysis / Group analysis divide the mic curve out of the measurements,
+    the SPL offset maps plot levels to true dB SPL) and each capture file's
+    run parameters (the sweep identity enables deconvolution-based analysis).
+    Everything is default/empty when the folder has no manifest. */
+struct MeasurementFolderInfo
+{
+    bool manifestFound = false;
+    juce::String generalComment;
+    juce::String micCalName;        // embedded mic correction curve: display
+    juce::String micCalText;        //   name + verbatim cal-file text (feed to
+                                    //   MicCalibration::loadFromText)
+    bool  splCalibrated = false;    // folder-level SPL calibration:
+    float splOffsetDb   = 0.0f;     //   dB SPL = dBFS + offset
+    std::map<juce::String, MeasurementRunInfo> fileRuns;    // wav name -> its run
+
+    bool hasMicCal() const noexcept { return micCalText.isNotEmpty(); }
+};
+
+MeasurementFolderInfo readMeasurementFolderInfo (const juce::File& folder);
+
 /** Reads back a folder written by MeasurementEngine: which channels were
     measured — from the machine-readable measurement.xml manifest, falling
     back to parsing readme_measurement.md's "Channels:"/"Sub channel:" lines
@@ -139,10 +192,17 @@ struct MeasurementFolderContents
 
     std::vector<Channel> speakers;      // ascending channel number, sub excluded
     Channel sub;                        // sub.channelNumber == -1 if none
+    MeasurementFolderInfo info;         // manifest metadata (cal, comments, runs)
     bool ok = false;
     juce::String error;                 // set when !ok
 };
 
 MeasurementFolderContents scanMeasurementFolder (const juce::File& folder);
+
+/** The general (whole-folder) comment stored in a folder's measurement.xml,
+    empty when there is none. Used by the GUI to pre-fill its comment entry
+    when the measurement folder changes, so an existing folder's comment is
+    carried over (and not silently wiped) by the next run's manifest save. */
+juce::String readMeasurementGeneralComment (const juce::File& folder);
 
 } // namespace smt

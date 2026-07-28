@@ -135,6 +135,26 @@ target_link_libraries(SuperMoToMicCalTests PRIVATE
 set_target_properties(SuperMoToMicCalTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME miccal COMMAND SuperMoToMicCalTests)
 
+# ── Offline test of the synchronized swept-sine logic (fxme, Novak 2015) ─────
+juce_add_console_app(SuperMoToSweepTests PRODUCT_NAME "SuperMoToSweepTests")
+target_sources(SuperMoToSweepTests PRIVATE
+    Tests/SweepTest.cpp
+)
+juce_generate_juce_header(SuperMoToSweepTests)
+target_include_directories(SuperMoToSweepTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
+target_compile_definitions(SuperMoToSweepTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(SuperMoToSweepTests PRIVATE
+    juce::juce_audio_basics juce::juce_core juce::juce_data_structures
+    juce::juce_dsp juce::juce_events
+    juce::juce_recommended_config_flags
+)
+set_target_properties(SuperMoToSweepTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME sweep COMMAND SuperMoToSweepTests)
+
 target_link_libraries(SuperMoTo
     PRIVATE
         juce::juce_audio_basics

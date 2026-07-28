@@ -10,6 +10,7 @@
 
 #include "MeasurementEngine.h"
 #include <algorithm>
+#include <cmath>
 
 namespace smt
 {
@@ -98,19 +99,29 @@ bool MeasurementEngine::start (const Settings& s)
         positions.push_back (maxPos + 1);
     }
 
-    stimulusSamples = (int) (settings.durationS * sr);
+    // Log sweep parameters (f1 = sweepF1Hz, f2 = sweepF2Hz):
+    //   phase(t) = K * (exp(t/L) - 1),  K = 2*pi*f1*L,
+    // with L QUANTIZED so f1*L is an integer — the synchronized swept-sine
+    // of Novak et al. (JAES 2015). That makes the harmonic impulse responses
+    // separate with true phase when the recording is deconvolved by the
+    // sweep's analytic inverse (the sweep sounds the same; only its exact
+    // duration moves slightly off the requested one).
+    const double T = (double) settings.durationS;
+    sweepL = fxme::SynchronizedSweep::synchronizedL (sweepF1Hz, sweepF2Hz, T);
+    sweepK = 2.0 * juce::MathConstants<double>::pi * sweepF1Hz * sweepL;
+
+    // Sweep runs use the exact synchronized duration L*ln(f2/f1); noise runs
+    // keep the requested duration.
+    const double actualT = settings.signalType == SignalType::logSweep
+                               ? sweepL * std::log (sweepF2Hz / sweepF1Hz)
+                               : T;
+    stimulusSamples = (int) std::llround (actualT * sr);
     totalSamples    = stimulusSamples + (int) (tailSeconds * sr);
     capture.setSize (2, totalSamples);
 
-    // Log sweep parameters (f1 = 10 Hz, f2 = 20 kHz):
-    //   phase(t) = K * (exp(t/L) - 1),  L = T/ln(f2/f1),  K = 2*pi*f1*L
-    const double f1 = 10.0, f2 = 20000.0, T = (double) settings.durationS;
-    sweepL = T / std::log (f2 / f1);
-    sweepK = 2.0 * juce::MathConstants<double>::pi * f1 * sweepL;
-
-    // Band-limit the white noise to 10 Hz .. 20 kHz.
-    noiseHp.c = fxme::BiquadCoeffs::highpass (sr, 10.0f, 0.707f);
-    noiseLp.c = fxme::BiquadCoeffs::lowpass (sr, juce::jmin (20000.0f, (float) (0.45 * sr)), 0.707f);
+    // Band-limit the white noise to the same band.
+    noiseHp.c = fxme::BiquadCoeffs::highpass (sr, (float) sweepF1Hz, 0.707f);
+    noiseLp.c = fxme::BiquadCoeffs::lowpass (sr, juce::jmin ((float) sweepF2Hz, (float) (0.45 * sr)), 0.707f);
 
     currentChannel = 0;
     startCurrentOutput();
@@ -346,6 +357,33 @@ void MeasurementEngine::writeManifests() const
 
     const auto now = juce::Time::getCurrentTime();
 
+    // Prior manifest, reused below both to carry the run log over and to keep
+    // the folder's calibration record when this run was made without one.
+    const auto priorXml = juce::parseXML (xmlFile);
+    const bool priorValid = priorXml != nullptr
+                         && priorXml->hasTagName ("SuperMoToMeasurements");
+
+    // Calibration in effect: what this run was made with, or — when absent —
+    // what the previous manifest recorded (one physical mic per folder, so a
+    // run made with the calibration not loaded shouldn't erase it).
+    juce::String micCalName = settings.micCalName;
+    juce::String micCalText = settings.micCalText;
+    bool  splCalibrated = settings.splCalibrated;
+    float splOffsetDb   = settings.splOffsetDb;
+
+    if (priorValid && micCalText.isEmpty())
+        if (auto* mc = priorXml->getChildByName ("MicCalibration"))
+        {
+            micCalName = mc->getStringAttribute ("name");
+            micCalText = mc->getAllSubText();
+        }
+    if (priorValid && ! splCalibrated)
+        if (auto* sc = priorXml->getChildByName ("SplCalibration"))
+        {
+            splCalibrated = true;
+            splOffsetDb = (float) sc->getDoubleAttribute ("offsetDb");
+        }
+
     // ── measurement.xml: the machine-readable manifest Group analysis's
     // folder loader reads (scanMeasurementFolder). The readme below stays
     // purely human documentation.
@@ -356,6 +394,23 @@ void MeasurementEngine::writeManifests() const
                            haveSub && settings.subChannel >= 0 ? settings.subChannel + 1 : 0);
         root.setAttribute ("positions", maxPosition);
         root.setAttribute ("lastRun", now.toISO8601 (true));
+
+        if (settings.generalComment.isNotEmpty())
+            root.createNewChildElement ("GeneralComment")
+                ->addTextElement (settings.generalComment);
+
+        // Folder-level calibration record (effective values, see above).
+        // dB SPL = dBFS + offsetDb; the MicCalibration text is the verbatim
+        // REW/miniDSP/FRD file, ready for MicCalibration::loadFromText().
+        if (splCalibrated)
+            root.createNewChildElement ("SplCalibration")
+                ->setAttribute ("offsetDb", (double) splOffsetDb);
+        if (micCalText.isNotEmpty())
+        {
+            auto* mc = root.createNewChildElement ("MicCalibration");
+            mc->setAttribute ("name", micCalName);
+            mc->addTextElement (micCalText);
+        }
 
         for (int ch : channels)
             root.createNewChildElement ("Channel")->setAttribute ("number", ch);
@@ -368,20 +423,40 @@ void MeasurementEngine::writeManifests() const
         run->setAttribute ("durationS", settings.durationS);
         run->setAttribute ("levelDb", settings.levelDb);
         run->setAttribute ("micInput", settings.micInput + 1);
+        if (settings.runComment.isNotEmpty())
+            run->setAttribute ("comment", settings.runComment);
+
+        // Sweep identity, so a deconvolution-based analysis can rebuild the
+        // exact stimulus: phase(t) = 2*pi*f1*L*(exp(t/L) - 1), L in seconds.
+        if (settings.signalType == SignalType::logSweep)
+        {
+            run->setAttribute ("sweepF1", sweepF1Hz);
+            run->setAttribute ("sweepF2", sweepF2Hz);
+            run->setAttribute ("sweepL", sweepL);
+        }
+
+        // Calibration actually in effect for THIS run (the folder-level
+        // elements above may be carried over from earlier runs).
+        if (settings.splCalibrated)
+            run->setAttribute ("splOffsetDb", (double) settings.splOffsetDb);
+        if (settings.micCalName.isNotEmpty())
+            run->setAttribute ("micCal", settings.micCalName);
+
         for (auto& f : filesWrittenThisRun)
             run->createNewChildElement ("File")->setAttribute ("name", f.getFileName());
 
         // Preserve prior runs' log entries beneath the new one.
-        if (auto prior = juce::parseXML (xmlFile))
-            if (prior->hasTagName (root.getTagName()))
-                for (auto* priorRun : prior->getChildWithTagNameIterator ("Run"))
-                    root.addChildElement (new juce::XmlElement (*priorRun));
+        if (priorValid)
+            for (auto* priorRun : priorXml->getChildWithTagNameIterator ("Run"))
+                root.addChildElement (new juce::XmlElement (*priorRun));
 
         root.writeTo (xmlFile);
     }
 
     juce::String out;
     out << "# SuperMoTo measurement folder\n\n";
+    if (settings.generalComment.isNotEmpty())
+        out << settings.generalComment.trim() << "\n\n";
     out << "Channels: ";
     for (size_t i = 0; i < channels.size(); ++i)
         out << (i > 0 ? ", " : "") << channels[i];
@@ -390,17 +465,28 @@ void MeasurementEngine::writeManifests() const
         << (haveSub && settings.subChannel >= 0 ? juce::String (settings.subChannel + 1) : juce::String ("none"))
         << "\n";
     out << "Positions so far: " << maxPosition << "\n";
+    if (splCalibrated)
+        out << "SPL calibration: 0 dBFS = " << juce::String (splOffsetDb, 1) << " dB SPL\n";
+    if (micCalText.isNotEmpty())
+        out << "Mic calibration: " << micCalName << " (embedded in measurement.xml)\n";
     out << "Last run: " << now.toString (true, true) << "\n\n";
     out << "## Measurement log\n\n";
 
     // New run entry, most recent first.
     out << "### " << now.toString (true, true) << "\n\n";
+    if (settings.runComment.isNotEmpty())
+        out << "- Comment: " << settings.runComment << "\n";
     out << "- Mode: " << (full ? "Full system"
                           : settings.mode == MeasureMode::outputFir ? "Output + FIR" : "Dry outputs") << "\n";
     out << "- Signal: " << (settings.signalType == SignalType::logSweep ? "Log sweep" : "White noise")
         << ", " << juce::String (settings.durationS, 0) << " s, "
         << juce::String (settings.levelDb, 1) << " dB\n";
     out << "- Mic input: " << (settings.micInput + 1) << "\n";
+    if (settings.micCalName.isNotEmpty())
+        out << "- Mic calibration: " << settings.micCalName << "\n";
+    if (settings.splCalibrated)
+        out << "- SPL calibration: 0 dBFS = "
+            << juce::String (settings.splOffsetDb, 1) << " dB SPL\n";
     out << "- Channels measured: ";
     for (int i = 0; i < (int) channelList.size(); ++i)
     {
@@ -431,9 +517,55 @@ void MeasurementEngine::writeManifests() const
     readme.replaceWithText (out);
 }
 
+MeasurementFolderInfo readMeasurementFolderInfo (const juce::File& folder)
+{
+    MeasurementFolderInfo info;
+    const auto xml = juce::parseXML (folder.getChildFile ("measurement.xml"));
+    if (xml == nullptr || ! xml->hasTagName ("SuperMoToMeasurements"))
+        return info;
+
+    info.manifestFound = true;
+
+    if (auto* c = xml->getChildByName ("GeneralComment"))
+        info.generalComment = c->getAllSubText().trim();
+    if (auto* sc = xml->getChildByName ("SplCalibration"))
+    {
+        info.splCalibrated = true;
+        info.splOffsetDb = (float) sc->getDoubleAttribute ("offsetDb");
+    }
+    if (auto* mc = xml->getChildByName ("MicCalibration"))
+    {
+        info.micCalName = mc->getStringAttribute ("name");
+        info.micCalText = mc->getAllSubText();
+    }
+
+    // Runs are stored newest first; emplace keeps the existing (most recent)
+    // entry if a filename ever reappears in an older run.
+    for (auto* run : xml->getChildWithTagNameIterator ("Run"))
+    {
+        MeasurementRunInfo r;
+        r.mode          = run->getStringAttribute ("mode");
+        r.signal        = run->getStringAttribute ("signal");
+        r.durationS     = (float) run->getDoubleAttribute ("durationS");
+        r.levelDb       = (float) run->getDoubleAttribute ("levelDb");
+        r.sweepF1       = run->getDoubleAttribute ("sweepF1");
+        r.sweepF2       = run->getDoubleAttribute ("sweepF2");
+        r.sweepL        = run->getDoubleAttribute ("sweepL");
+        r.splCalibrated = run->hasAttribute ("splOffsetDb");
+        r.splOffsetDb   = (float) run->getDoubleAttribute ("splOffsetDb");
+        r.micCalName    = run->getStringAttribute ("micCal");
+
+        for (auto* f : run->getChildWithTagNameIterator ("File"))
+            info.fileRuns.emplace (f->getStringAttribute ("name"), r);
+    }
+
+    return info;
+}
+
 MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 {
     MeasurementFolderContents result;
+    result.info = readMeasurementFolderInfo (folder);
 
     // The channel set and sub identity come from a manifest; the actual file
     // lists are always re-derived from the wavs on disk below, so a stale or
@@ -535,6 +667,11 @@ MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 
     result.ok = true;
     return result;
+}
+
+juce::String readMeasurementGeneralComment (const juce::File& folder)
+{
+    return readMeasurementFolderInfo (folder).generalComment;
 }
 
 } // namespace smt

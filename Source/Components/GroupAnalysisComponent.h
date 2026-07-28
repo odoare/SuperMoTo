@@ -44,6 +44,23 @@ public:
         micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
                                "Load it in the Measurement & Calibration pane.");
         addAndMakeVisible (micCalInfo);
+
+        // Which mic calibration is divided out: the global one (loaded in the
+        // Measurement pane), the curve embedded in a loaded measurement
+        // folder's manifest, or none. Loading a folder that carries one
+        // auto-selects "Folder".
+        micCalSourceBox.addItem ("Global mic cal", 1);
+        micCalSourceBox.addItem ("Folder mic cal", 2);
+        micCalSourceBox.addItem ("No mic cal", 3);
+        micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+        micCalSourceBox.setItemEnabled (2, false);   // until a folder provides one
+        micCalSourceBox.setTooltip ("Microphone calibration source: the global curve loaded in "
+                                    "the Measurement pane, the curve embedded in the measurement "
+                                    "folder's measurement.xml, or none.");
+        SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
+        micCalSourceBox.onChange = [this] { updateMicCalInfo(); startTimer (debounceMs); };
+        addAndMakeVisible (micCalSourceBox);
+
         updateMicCalInfo();
 
         addLabel (countLabel, "Speakers");
@@ -124,6 +141,25 @@ public:
         setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
         setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
 
+        // Transfer-function estimation method; "Sweep" auto-selects when the
+        // loaded folder's manifest carries the sweep identity. Changing it
+        // re-analyzes every loaded set (like the Welch window size).
+        addLabel (tfLabel, "TF");
+        tfBox.addItem ("Welch", 1);
+        tfBox.addItem ("Sweep (Farina)", 2);
+        tfBox.setSelectedId (1, juce::dontSendNotification);
+        tfBox.setItemEnabled (2, false);
+        tfBox.setTooltip ("Transfer-function estimation:\n"
+                          "Welch: averaged cross/auto spectra (any stimulus).\n"
+                          "Sweep (Farina): deconvolution by the synchronized sweep's analytic "
+                          "inverse (Novak et al. 2015) \xe2\x80\x94 full-band response with true "
+                          "phase in one shot, plus the harmonic-distortion curves (H2...). "
+                          "Needs the sweep parameters from the folder's measurement.xml; "
+                          "auto-selected when available.");
+        SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
+        tfBox.onChange = [this] { pushSettingsToAll(); reanalyzeAll(); };
+        addAndMakeVisible (tfBox);
+
         addLabel (rangeLabel, "Range");
         auto setupFreqBox = [this] (juce::ComboBox& box,
                                     std::initializer_list<int> presets, int def)
@@ -145,6 +181,30 @@ public:
         SuperMoToTheme::accentComboBox (previewBox, SuperMoToTheme::spectrum);
         previewBox.onChange = [this] { updatePlotPreview(); };
         addAndMakeVisible (previewBox);
+
+        // Vertical reference of the measured curves (display only — the
+        // engines' normalized math is untouched).
+        addLabel (levelRefLabel, "Level");
+        levelRefBox.addItem ("Normalized", 1);
+        levelRefBox.addItem ("Absolute dB", 2);
+        levelRefBox.addItem ("dB SPL", 3);
+        levelRefBox.setSelectedId (1, juce::dontSendNotification);
+        levelRefBox.setItemEnabled (3, false);   // needs SPL cal + run info
+        levelRefBox.setTooltip ("Level reference of the measured curves:\n"
+                                "Normalized: 0 dB = 200 Hz - 2 kHz mean of the average.\n"
+                                "Absolute dB: recorded level per unit of stimulus level "
+                                "(no normalization).\n"
+                                "dB SPL: estimated SPL during the measurement — needs an SPL "
+                                "calibration and the run's stimulus level from measurement.xml; "
+                                "exact for sweep runs, approximate for noise.\n"
+                                "The correction curve is always absolute dB.");
+        SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
+        levelRefBox.onChange = [this]
+        {
+            updatePlotPreview();
+            plot.fitVerticalToData();   // the sensible window jumps between modes
+        };
+        addAndMakeVisible (levelRefBox);
 
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -226,6 +286,28 @@ public:
         addAndMakeVisible (rowsViewport);
 
         addAndMakeVisible (plot);
+        // Re-sample the curves over the new window on zoom/pan. setBusy()
+        // freezes the plot's interaction while a background batch owns the
+        // engines, so the axis can never move without the data following.
+        plot.onViewChanged = [this] { buildFreqGrid(); updatePlotPreview(); };
+
+        // Impulse-response view (fxme::WaveformDisplay), swapped in for the
+        // frequency plot by the View selector; shows the previewed speaker's
+        // measured average IR and its correction IR at the export FIR length.
+        addLabel (displayLabel, "View");
+        displayBox.addItem ("Frequency response", 1);
+        displayBox.addItem ("Impulse response", 2);
+        displayBox.setSelectedId (1, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
+        displayBox.onChange = [this] { updateDisplayMode(); };
+        addAndMakeVisible (displayBox);
+
+        firBox.onChange = [this] { refreshIrIfVisible(); };
+
+        irPlot.setColours (SuperMoToTheme::waveformColours());
+        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
+        irPlot.setChannelNames ({ "measured", "correction" });
+        addChildComponent (irPlot);     // hidden until the View selector says so
 
         progressBar.setPercentageDisplay (true);
         addChildComponent (progressBar);   // shown only while a background batch runs
@@ -246,30 +328,38 @@ public:
     {
         auto area = getLocalBounds().reduced (14);
         auto titleRow = area.removeFromTop (26);
-        micCalInfo.setBounds (titleRow.removeFromRight (260));
+        micCalSourceBox.setBounds (titleRow.removeFromRight (130).reduced (0, 1));
+        titleRow.removeFromRight (8);
+        micCalInfo.setBounds (titleRow.removeFromRight (240));
         title.setBounds (titleRow);
         area.removeFromTop (6);
 
+        // Row 0 — the workflow, left to right: load the measurements, describe
+        // the set, compute the alignment, apply & export.
         auto r0 = area.removeFromTop (24);
+        loadFolderButton.setBounds (r0.removeFromLeft (190));
+        r0.removeFromLeft (16);
         countLabel.setBounds (r0.removeFromLeft (70));
         countBox.setBounds (r0.removeFromLeft (56));
-        r0.removeFromLeft (16);
+        r0.removeFromLeft (12);
         subEnabledToggle.setBounds (r0.removeFromLeft (56));
         r0.removeFromLeft (16);
         computeButton.setBounds (r0.removeFromLeft (150));
         r0.removeFromLeft (8);
         applyButton.setBounds (r0.removeFromLeft (170));
-        r0.removeFromLeft (8);
-        loadFolderButton.setBounds (r0.removeFromLeft (190));
         r0.removeFromLeft (16);
         progressBar.setBounds (r0.removeFromRight (160));
         r0.removeFromRight (16);
         status.setBounds (r0);
 
+        // Row 1 — how the measurements are turned into transfer functions.
         area.removeFromTop (8);
         auto r1 = area.removeFromTop (24);
         windowLabel.setBounds (r1.removeFromLeft (90));
         windowBox.setBounds (r1.removeFromLeft (90));
+        r1.removeFromLeft (12);
+        tfLabel.setBounds (r1.removeFromLeft (22));
+        tfBox.setBounds (r1.removeFromLeft (130));
         r1.removeFromLeft (16);
         smoothLabel.setBounds (r1.removeFromLeft (96));
         smoothLowBox.setBounds (r1.removeFromLeft (78));
@@ -280,10 +370,8 @@ public:
         lowFreqBox.setBounds (r1.removeFromLeft (86));
         rangeToLabel.setBounds (r1.removeFromLeft (12));
         highFreqBox.setBounds (r1.removeFromLeft (86));
-        r1.removeFromLeft (16);
-        previewLabel.setBounds (r1.removeFromLeft (56));
-        previewBox.setBounds (r1);
 
+        // Row 2 — how the correction is designed from them.
         area.removeFromTop (8);
         auto r2 = area.removeFromTop (24);
         levelLabel.setBounds (r2.removeFromLeft (100));
@@ -333,8 +421,21 @@ public:
             rows[i]->setBounds (col.removeFromTop (rowH).reduced (0, 2));
         }
 
+        // What the plot below shows — kept directly above it.
         area.removeFromTop (8);
+        auto rD = area.removeFromTop (24);
+        previewLabel.setBounds (rD.removeFromLeft (56));
+        previewBox.setBounds (rD.removeFromLeft (110));
+        rD.removeFromLeft (16);
+        displayLabel.setBounds (rD.removeFromLeft (36));
+        displayBox.setBounds (rD.removeFromLeft (150));
+        rD.removeFromLeft (16);
+        levelRefLabel.setBounds (rD.removeFromLeft (40));
+        levelRefBox.setBounds (rD.removeFromLeft (110));
+
+        area.removeFromTop (6);
         plot.setBounds (area);
+        irPlot.setBounds (area);    // same slot; View selector swaps them
     }
 
     void visibilityChanged() override
@@ -433,18 +534,35 @@ private:
         addAndMakeVisible (l);
     }
 
+    // The curves are sampled over the plot's current frequency window, so
+    // zooming in keeps full resolution instead of stretching the full-range
+    // grid (the plot calls back through onViewChanged when it moves).
     void buildFreqGrid()
     {
-        freqs.resize (numPoints);
-        for (int p = 0; p < numPoints; ++p)
-            freqs[(size_t) p] = fMin * std::pow (fMax / fMin, (float) p / (float) (numPoints - 1));
+        freqs = TransferFunctionPlot::freqGridFor (plot.getViewLowHz(), plot.getViewHighHz());
+    }
+
+    // The calibration selected by micCalSourceBox: global, the folder-embedded
+    // curve, or an always-invalid one for "none" (engines treat it as off).
+    const smt::MicCalibration& activeMicCal() const
+    {
+        static const smt::MicCalibration none;
+        switch (micCalSourceBox.getSelectedId())
+        {
+            case 2:  return folderMicCal;
+            case 3:  return none;
+            default: return smt::sharedMicCalibration();
+        }
     }
 
     void updateMicCalInfo()
     {
-        auto& cal = smt::sharedMicCalibration();
-        micCalInfo.setText (cal.isValid() ? "Mic cal: " + cal.getName()
-                                          : juce::String ("Mic cal: none"),
+        const auto& cal = activeMicCal();
+        const bool fromFolder = micCalSourceBox.getSelectedId() == 2;
+        micCalInfo.setText (cal.isValid()
+                                ? "Mic cal: " + cal.getName()
+                                    + (fromFolder ? " (folder)" : juce::String())
+                                : juce::String ("Mic cal: none"),
                             juce::dontSendNotification);
     }
 
@@ -463,8 +581,27 @@ private:
     // fitting noise up to the shared speaker range's top end.
     static constexpr float subMaxRangeHz = 300.0f;
 
+    // The sweep identity for one entry's file set, from the folder manifest
+    // (invalid — Welch fallback — for manually loaded files without one).
+    smt::AnalysisEngine::SweepInfo sweepInfoFor (const juce::Array<juce::File>& files) const
+    {
+        smt::AnalysisEngine::SweepInfo s;
+        if (files.isEmpty())
+            return s;
+        const auto it = folderInfo.fileRuns.find (files[0].getFileName());
+        if (it != folderInfo.fileRuns.end() && it->second.signal == "sweep")
+        {
+            s.f1 = it->second.sweepF1;
+            s.f2 = it->second.sweepF2;
+            s.L  = it->second.sweepL;
+        }
+        return s;
+    }
+
     void pushSettingsTo (smt::AnalysisEngine& e, bool isSub)
     {
+        e.setTfMethod (tfBox.getSelectedId() == 2 ? smt::AnalysisEngine::TfMethod::sweep
+                                                  : smt::AnalysisEngine::TfMethod::welch);
         e.setWindowSize (windowBox.getSelectedId());
         static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
                                            1.0f / 6.0f, 1.0f / 3.0f, 1.0f / 2.0f, 1.0f };
@@ -479,7 +616,7 @@ private:
         e.setAnalysisRange (lowHz, isSub ? juce::jmin (highHz, subMaxRangeHz) : highHz);
         e.setCrossoverHz (crossoverBox.getText().getFloatValue());
         e.setSubPolarityInverted (subInvertToggle.getToggleState());
-        e.setMicCalibration (smt::sharedMicCalibration());
+        e.setMicCalibration (activeMicCal());
     }
 
     void pushSettingsToAll()
@@ -504,6 +641,7 @@ private:
             const auto files = group.speaker (i).files;
             if (files.isEmpty())
                 continue;
+            group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
             jobs.push_back ([this, i, files, subFiles, haveSub]
             {
                 auto& e = *group.speaker (i).engine;
@@ -513,7 +651,10 @@ private:
             });
         }
         if (haveSub)
+        {
+            group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
             jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
+        }
 
         if (jobs.empty())
             return;
@@ -614,6 +755,7 @@ private:
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
                 pushSettingsTo (*group.speaker (i).engine, false);
+                group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
 
                 status.setText (group.speaker (i).label + ": analyzing...", juce::dontSendNotification);
                 setBusy (true);
@@ -650,6 +792,7 @@ private:
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
                 pushSettingsTo (*group.subEntry().engine, true);
+                group.subEntry().engine->setSweepInfo (sweepInfoFor (files));
 
                 status.setText ("Sub: analyzing...", juce::dontSendNotification);
                 setBusy (true);
@@ -695,8 +838,30 @@ private:
                     return;
                 }
 
+                // Adopt the folder's embedded mic calibration when it carries
+                // one (still overridable via the source selector). Kept before
+                // the pushSettingsTo calls below so the engines get it.
+                folderInfo = contents.info;
+                folderMicCal.clear();
+                const bool haveFolderCal = folderInfo.hasMicCal()
+                    && folderMicCal.loadFromText (folderInfo.micCalText, folderInfo.micCalName);
+                micCalSourceBox.setItemEnabled (2, haveFolderCal);
+                if (haveFolderCal)
+                    micCalSourceBox.setSelectedId (2, juce::dontSendNotification);
+                else if (micCalSourceBox.getSelectedId() == 2)
+                    micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+                updateMicCalInfo();
+
                 const int n = juce::jmin ((int) contents.speakers.size(),
                                           smt::SpeakerGroupAnalysis::maxSpeakers);
+
+                // Sweep runs get the Farina deconvolution automatically.
+                // Selected BEFORE the pushSettingsTo calls below, which read
+                // the method from this box.
+                const bool sweepOk = n > 0
+                    && sweepInfoFor (contents.speakers[0].files).isValid();
+                tfBox.setItemEnabled (2, sweepOk);
+                tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
                 const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
                 const auto subFiles = contents.sub.files;
 
@@ -715,12 +880,14 @@ private:
                     entry.files = c.files;
                     entry.assignedOutput = c.channelNumber - 1;
                     pushSettingsTo (*entry.engine, false);
+                    entry.engine->setSweepInfo (sweepInfoFor (c.files));
                 }
                 if (haveSub)
                 {
                     group.subEntry().files = subFiles;
                     group.subEntry().assignedOutput = contents.sub.channelNumber - 1;
                     pushSettingsTo (*group.subEntry().engine, true);
+                    group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
                 }
 
                 if (n > 0)
@@ -763,11 +930,12 @@ private:
 
                 runner.runJobs (std::move (jobs),
                     [this] (float p) { progressValue = (double) p; },
-                    [this, n, haveSub]
+                    [this, n, haveSub, haveFolderCal]
                     {
                         setBusy (false);
                         status.setText (juce::String (n) + " speaker(s)" + (haveSub ? " + sub" : "")
-                                            + " loaded from the measurement folder.",
+                                            + " loaded from the measurement folder."
+                                            + (haveFolderCal ? " Embedded mic cal applied." : ""),
                                         juce::dontSendNotification);
                         refreshRows();
                         updatePlotPreview();
@@ -824,13 +992,100 @@ private:
             });
     }
 
+    // SPL display context for one entry's file set: the dBFS -> dB SPL offset
+    // (the folder's recorded calibration, else the machine-wide one) and the
+    // entry's stimulus level from the manifest. False when either is unknown
+    // (e.g. rows loaded manually from a folder without a manifest).
+    bool getSplContext (const juce::Array<juce::File>& files,
+                        float& offsetDb, float& levelDb) const
+    {
+        if (folderInfo.splCalibrated)
+            offsetDb = folderInfo.splOffsetDb;
+        else if (smt::isSplCalibrated())
+            offsetDb = smt::getSplOffsetDb();
+        else
+            return false;
+
+        if (files.isEmpty())
+            return false;
+        const auto it = folderInfo.fileRuns.find (files[0].getFileName());
+        if (it == folderInfo.fileRuns.end())
+            return false;
+        levelDb = it->second.levelDb;
+        return true;
+    }
+
+    //==========================================================================
+    // Impulse-response view
+
+    smt::AnalysisEngine* previewedEngine() const
+    {
+        const int id = previewBox.getSelectedId();
+        return (id >= 1 && id <= group.getNumSpeakers())
+                   ? group.speaker (id - 1).engine.get()
+                   : group.subEntry().engine.get();
+    }
+
+    bool showingIr() const          { return displayBox.getSelectedId() == 2; }
+    void refreshIrIfVisible()       { if (showingIr()) updateIrPlot(); }
+
+    void updateDisplayMode()
+    {
+        plot.setVisible (! showingIr());
+        irPlot.setVisible (showingIr());
+        if (showingIr())
+            updateIrPlot();
+    }
+
+    // Renders the previewed engine's measured average and correction at the
+    // export FIR length into the waveform view. The user's zoom survives
+    // design tweaks; the view resets only when the time axis itself changes.
+    void updateIrPlot()
+    {
+        auto* eng = previewedEngine();
+        if (eng == nullptr || ! eng->hasData())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        const int N = firBox.getSelectedId();
+        const double sr = eng->getSampleRate();
+        const auto measured   = eng->renderMeasuredIR (N);
+        const auto correction = eng->renderCorrectionIR (N);
+
+        juce::AudioBuffer<float> both (2, N);
+        both.clear();
+        if (measured.getNumSamples() > 0)
+            both.copyFrom (0, 0, measured, 0, 0, juce::jmin (N, measured.getNumSamples()));
+        if (correction.getNumSamples() > 0)
+            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (N, correction.getNumSamples()));
+
+        const bool resetView = N != lastIrLength || sr != lastIrRate;
+        lastIrLength = N;
+        lastIrRate = sr;
+        if (resetView)
+            irPlot.setTimeOffset ((double) (N / 2) / sr);   // t = 0 at the IR centre
+        irPlot.setBuffer (both, sr, resetView);
+    }
+
     // Refreshes the shared plot with the currently previewed engine's curves.
     void updatePlotPreview()
     {
         const int id = previewBox.getSelectedId();
-        smt::AnalysisEngine* eng = (id >= 1 && id <= group.getNumSpeakers())
-                                       ? group.speaker (id - 1).engine.get()
-                                       : group.subEntry().engine.get();
+        const bool isSpeaker = id >= 1 && id <= group.getNumSpeakers();
+        smt::AnalysisEngine* eng = isSpeaker ? group.speaker (id - 1).engine.get()
+                                             : group.subEntry().engine.get();
+        const auto& entryFiles = isSpeaker ? group.speaker (id - 1).files
+                                           : group.subEntry().files;
+
+        // dB SPL is only offered when it can be computed for this entry.
+        float splOff = 0.0f, stimLvl = 0.0f;
+        const bool splOk = eng != nullptr && eng->hasData()
+                        && getSplContext (entryFiles, splOff, stimLvl);
+        levelRefBox.setItemEnabled (3, splOk);
+        if (! splOk && levelRefBox.getSelectedId() == 3)
+            levelRefBox.setSelectedId (1, juce::dontSendNotification);
 
         TransferFunctionPlot::Data d;
         if (eng != nullptr)
@@ -850,12 +1105,29 @@ private:
             d.subPhase        = eng->getSubPhaseDeg (freqs);
             d.hasSub          = eng->hasSub();
             d.crossoverHz     = eng->getCrossoverHz();
+            for (int i = 0; i < eng->getNumHarmonics(); ++i)
+                d.harmonicDbs.push_back (eng->getHarmonicDb (i, freqs));
+
+            // Level reference: display offset on the measured curves. dB SPL =
+            // absolute |H| + stimulus level (sine RMS, hence -3 dB) + offset.
+            switch (levelRefBox.getSelectedId())
+            {
+                case 2:
+                    d.measuredOffsetDb = eng->getReferenceDb();
+                    d.levelAxisText = "|H| (dB, absolute); correction in dB";
+                    break;
+                case 3:
+                    d.measuredOffsetDb = eng->getReferenceDb() + stimLvl - 3.0f + splOff;
+                    d.levelAxisText = "est. dB SPL during the measurement; correction in dB";
+                    break;
+                default:
+                    break;      // normalized: the plot's default wording
+            }
         }
         plot.setData (std::move (d));
-    }
 
-    static constexpr int numPoints = 400;
-    static constexpr float fMin = 20.0f, fMax = 20000.0f;
+        refreshIrIfVisible();   // every data/design change funnels through here
+    }
 
     // Disables every control that would otherwise touch an engine (directly,
     // or via the shared forEachEngine fan-out) while a background batch is
@@ -864,8 +1136,12 @@ private:
     void setBusy (bool busy)
     {
         progressBar.setVisible (busy);
+        // The plot is a bare view, not in the enable/disable list below: freeze
+        // its zoom/pan so onViewChanged cannot ask for a re-sample mid-batch.
+        plot.setInteractionEnabled (! busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
-                        &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox })
+                        &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
+                        &micCalSourceBox, &levelRefBox, &displayBox, &tfBox })
             c->setEnabled (! busy);
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
@@ -890,14 +1166,17 @@ private:
     juce::ProgressBar progressBar { progressValue };
 
     juce::Label title, micCalInfo, countLabel, status;
-    juce::ComboBox countBox;
+    juce::ComboBox countBox, micCalSourceBox;
+    smt::MicCalibration folderMicCal;       // embedded in the loaded folder
+    smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
     juce::TextButton computeButton, applyButton, loadFolderButton;
     juce::ToggleButton subEnabledToggle;
 
-    juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel;
+    juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
-    juce::ComboBox firBox, phaseBox, crossoverBox;
+    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox, tfBox;
+    juce::Label displayLabel, tfLabel;
     juce::ToggleButton subInvertToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 
@@ -907,6 +1186,9 @@ private:
     juce::Component rowsHolder;
 
     TransferFunctionPlot plot;
+    fxme::WaveformDisplay irPlot;
+    int lastIrLength = 0;
+    double lastIrRate = 0.0;
     std::vector<float> freqs;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
