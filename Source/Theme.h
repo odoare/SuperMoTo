@@ -112,6 +112,20 @@ namespace SuperMoToTheme
         return c;
     }
 
+    // Palette handed to the reusable fxme::WaveformDisplay (impulse-response
+    // and time-domain views) so its grid/labels match the spectrum plots.
+    inline fxme::WaveformDisplay::Colours waveformColours()
+    {
+        fxme::WaveformDisplay::Colours c;
+        c.plotBackground = plotBackground;
+        c.grid           = grid;
+        c.gridZero       = gridZero;
+        c.text           = text;
+        c.dimText        = dimText;
+        c.panelLine      = panelLine;
+        return c;
+    }
+
     // Palette handed to the reusable fxme::SplMeterComponent bar.
     inline fxme::SplMeterComponent::Colours splMeterColours()
     {

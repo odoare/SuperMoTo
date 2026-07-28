@@ -268,6 +268,24 @@ public:
 
         addAndMakeVisible (plot);
 
+        // Impulse-response view (fxme::WaveformDisplay), swapped in for the
+        // frequency plot by the View selector; shows the previewed speaker's
+        // measured average IR and its correction IR at the export FIR length.
+        addLabel (displayLabel, "View");
+        displayBox.addItem ("Frequency response", 1);
+        displayBox.addItem ("Impulse response", 2);
+        displayBox.setSelectedId (1, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
+        displayBox.onChange = [this] { updateDisplayMode(); };
+        addAndMakeVisible (displayBox);
+
+        firBox.onChange = [this] { refreshIrIfVisible(); };
+
+        irPlot.setColours (SuperMoToTheme::waveformColours());
+        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
+        irPlot.setChannelNames ({ "measured", "correction" });
+        addChildComponent (irPlot);     // hidden until the View selector says so
+
         progressBar.setPercentageDisplay (true);
         addChildComponent (progressBar);   // shown only while a background batch runs
 
@@ -348,6 +366,9 @@ public:
         crossoverBox.setBounds (r2.removeFromLeft (90));
         r2.removeFromLeft (12);
         subInvertToggle.setBounds (r2.removeFromLeft (96));
+        r2.removeFromLeft (16);
+        displayLabel.setBounds (r2.removeFromLeft (36));
+        displayBox.setBounds (r2.removeFromLeft (150));
 
         area.removeFromTop (8);
         constexpr int rowH = 26;
@@ -381,6 +402,7 @@ public:
 
         area.removeFromTop (8);
         plot.setBounds (area);
+        irPlot.setBounds (area);    // same slot; View selector swaps them
     }
 
     void visibilityChanged() override
@@ -924,6 +946,60 @@ private:
         return true;
     }
 
+    //==========================================================================
+    // Impulse-response view
+
+    smt::AnalysisEngine* previewedEngine() const
+    {
+        const int id = previewBox.getSelectedId();
+        return (id >= 1 && id <= group.getNumSpeakers())
+                   ? group.speaker (id - 1).engine.get()
+                   : group.subEntry().engine.get();
+    }
+
+    bool showingIr() const          { return displayBox.getSelectedId() == 2; }
+    void refreshIrIfVisible()       { if (showingIr()) updateIrPlot(); }
+
+    void updateDisplayMode()
+    {
+        plot.setVisible (! showingIr());
+        irPlot.setVisible (showingIr());
+        if (showingIr())
+            updateIrPlot();
+    }
+
+    // Renders the previewed engine's measured average and correction at the
+    // export FIR length into the waveform view. The user's zoom survives
+    // design tweaks; the view resets only when the time axis itself changes.
+    void updateIrPlot()
+    {
+        auto* eng = previewedEngine();
+        if (eng == nullptr || ! eng->hasData())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        const int N = firBox.getSelectedId();
+        const double sr = eng->getSampleRate();
+        const auto measured   = eng->renderMeasuredIR (N);
+        const auto correction = eng->renderCorrectionIR (N);
+
+        juce::AudioBuffer<float> both (2, N);
+        both.clear();
+        if (measured.getNumSamples() > 0)
+            both.copyFrom (0, 0, measured, 0, 0, juce::jmin (N, measured.getNumSamples()));
+        if (correction.getNumSamples() > 0)
+            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (N, correction.getNumSamples()));
+
+        const bool resetView = N != lastIrLength || sr != lastIrRate;
+        lastIrLength = N;
+        lastIrRate = sr;
+        if (resetView)
+            irPlot.setTimeOffset ((double) (N / 2) / sr);   // t = 0 at the IR centre
+        irPlot.setBuffer (both, sr, resetView);
+    }
+
     // Refreshes the shared plot with the currently previewed engine's curves.
     void updatePlotPreview()
     {
@@ -978,6 +1054,8 @@ private:
             }
         }
         plot.setData (std::move (d));
+
+        refreshIrIfVisible();   // every data/design change funnels through here
     }
 
     static constexpr int numPoints = 400;
@@ -992,7 +1070,7 @@ private:
         progressBar.setVisible (busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
                         &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
-                        &micCalSourceBox, &levelRefBox })
+                        &micCalSourceBox, &levelRefBox, &displayBox })
             c->setEnabled (! busy);
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
@@ -1026,7 +1104,8 @@ private:
     juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
-    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox;
+    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox;
+    juce::Label displayLabel;
     juce::ToggleButton subInvertToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 
@@ -1036,6 +1115,9 @@ private:
     juce::Component rowsHolder;
 
     TransferFunctionPlot plot;
+    fxme::WaveformDisplay irPlot;
+    int lastIrLength = 0;
+    double lastIrRate = 0.0;
     std::vector<float> freqs;
     std::unique_ptr<juce::FileChooser> fileChooser;
 

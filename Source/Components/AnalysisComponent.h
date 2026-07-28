@@ -177,7 +177,7 @@ public:
             firBox.addItem (juce::String (size), size);
         firBox.setSelectedId (4096, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (firBox, SuperMoToTheme::fir);
-        firBox.onChange = [this] { updateFirInfo(); };
+        firBox.onChange = [this] { updateFirInfo(); refreshIrIfVisible(); };
         addAndMakeVisible (firBox);
 
         // Linear/mixed-phase corrects magnitude AND phase but adds firLength/2
@@ -293,6 +293,23 @@ public:
 
         addAndMakeVisible (plot);
 
+        // Impulse-response view (fxme::WaveformDisplay), swapped in for the
+        // frequency plot by the View selector. Shows the measured average IR
+        // and the designed correction IR at the selected FIR length, t = 0 on
+        // the (linear-phase) centre.
+        addLabel (displayLabel, "View");
+        displayBox.addItem ("Frequency response", 1);
+        displayBox.addItem ("Impulse response", 2);
+        displayBox.setSelectedId (1, juce::dontSendNotification);
+        SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
+        displayBox.onChange = [this] { updateDisplayMode(); };
+        addAndMakeVisible (displayBox);
+
+        irPlot.setColours (SuperMoToTheme::waveformColours());
+        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
+        irPlot.setChannelNames ({ "measured", "correction" });
+        addChildComponent (irPlot);     // hidden until the View selector says so
+
         buildFreqGrid();
         updateFirInfo();
         updateAlignInfo();
@@ -402,6 +419,9 @@ public:
         r3.removeFromRight (16);
         loadSubButton.setBounds (r3.removeFromRight (190));
         r3.removeFromRight (16);
+        displayLabel.setBounds (r3.removeFromLeft (36));
+        displayBox.setBounds (r3.removeFromLeft (150));
+        r3.removeFromLeft (12);
         levelRefLabel.setBounds (r3.removeFromLeft (40));
         levelRefBox.setBounds (r3.removeFromLeft (110));
         r3.removeFromLeft (12);
@@ -422,6 +442,7 @@ public:
         status.setBounds (area.removeFromBottom (20));
         area.removeFromBottom (4);
         plot.setBounds (area);
+        irPlot.setBounds (area);    // same slot; View selector swaps them
     }
 
 private:
@@ -700,6 +721,54 @@ private:
         d.measuredOffsetDb = measuredOffsetDb();
         d.levelAxisText    = levelAxisText();
         plot.setData (std::move (d));
+
+        refreshIrIfVisible();   // every data/design change funnels through here
+    }
+
+    //==========================================================================
+    // Impulse-response view
+
+    bool showingIr() const          { return displayBox.getSelectedId() == 2; }
+    void refreshIrIfVisible()       { if (showingIr()) updateIrPlot(); }
+
+    void updateDisplayMode()
+    {
+        plot.setVisible (! showingIr());
+        irPlot.setVisible (showingIr());
+        if (showingIr())
+            updateIrPlot();
+    }
+
+    // Renders the measured average and the designed correction at the current
+    // FIR length into the waveform view. The user's zoom survives design
+    // tweaks; the view resets only when the time axis itself changes (FIR
+    // length or sample rate).
+    void updateIrPlot()
+    {
+        if (! analysis.hasData())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        const int N = firBox.getSelectedId();
+        const double sr = analysis.getSampleRate();
+        const auto measured   = analysis.renderMeasuredIR (N);
+        const auto correction = analysis.renderCorrectionIR (N);
+
+        juce::AudioBuffer<float> both (2, N);
+        both.clear();
+        if (measured.getNumSamples() > 0)
+            both.copyFrom (0, 0, measured, 0, 0, juce::jmin (N, measured.getNumSamples()));
+        if (correction.getNumSamples() > 0)
+            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (N, correction.getNumSamples()));
+
+        const bool resetView = N != lastIrLength || sr != lastIrRate;
+        lastIrLength = N;
+        lastIrRate = sr;
+        if (resetView)
+            irPlot.setTimeOffset ((double) (N / 2) / sr);   // t = 0 at the IR centre
+        irPlot.setBuffer (both, sr, resetView);
     }
 
     void exportMeasuredIr()
@@ -803,7 +872,8 @@ private:
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
-    juce::ComboBox micCalSourceBox, levelRefBox;
+    juce::ComboBox micCalSourceBox, levelRefBox, displayBox;
+    juce::Label displayLabel;
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
 
@@ -814,6 +884,9 @@ private:
     std::vector<float> freqs;
 
     TransferFunctionPlot plot;
+    fxme::WaveformDisplay irPlot;
+    int lastIrLength = 0;
+    double lastIrRate = 0.0;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalysisComponent)
