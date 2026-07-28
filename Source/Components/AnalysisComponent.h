@@ -146,6 +146,30 @@ public:
         addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));    // en dash
         rangeToLabel.setJustificationType (juce::Justification::centred);
 
+        // Vertical reference of the measured curves (display only — the
+        // engine's normalized math is untouched).
+        addLabel (levelRefLabel, "Level");
+        levelRefBox.addItem ("Normalized", 1);
+        levelRefBox.addItem ("Absolute dB", 2);
+        levelRefBox.addItem ("dB SPL", 3);
+        levelRefBox.setSelectedId (1, juce::dontSendNotification);
+        levelRefBox.setItemEnabled (3, false);   // needs SPL cal + run info
+        levelRefBox.setTooltip ("Level reference of the measured curves:\n"
+                                "Normalized: 0 dB = 200 Hz - 2 kHz mean of the average.\n"
+                                "Absolute dB: recorded level per unit of stimulus level "
+                                "(no normalization).\n"
+                                "dB SPL: estimated SPL during the measurement — needs an SPL "
+                                "calibration and the run's stimulus level from measurement.xml; "
+                                "exact for sweep runs, approximate for noise.\n"
+                                "The correction curve is always absolute dB.");
+        SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
+        levelRefBox.onChange = [this]
+        {
+            updatePlotData();
+            plot.fitVerticalToData();   // the sensible window jumps between modes
+        };
+        addAndMakeVisible (levelRefBox);
+
         addLabel (firLabel, "FIR length");
         // Short FIRs (few taps) are cheaper and lower-latency but can only
         // correct higher frequencies; long FIRs reach the low end. See firInfo.
@@ -378,6 +402,9 @@ public:
         r3.removeFromRight (16);
         loadSubButton.setBounds (r3.removeFromRight (190));
         r3.removeFromRight (16);
+        levelRefLabel.setBounds (r3.removeFromLeft (40));
+        levelRefBox.setBounds (r3.removeFromLeft (110));
+        r3.removeFromLeft (12);
         firInfo.setBounds (r3);
 
         // Row 4, right-aligned: the delay-correction info text (right-justified,
@@ -501,6 +528,7 @@ private:
             juce::dontSendNotification);
 
         updateFirInfo();
+        updateLevelRefChoices();
         updatePlotData();
     }
 
@@ -543,6 +571,7 @@ private:
         if (isVisible())
         {
             pushMicCalibration();
+            updateLevelRefChoices();    // the SPL cal may have changed too
             updatePlotData();
         }
     }
@@ -591,6 +620,65 @@ private:
         updatePlotData();
     }
 
+    // SPL display context: the dBFS -> dB SPL offset (the folder's recorded
+    // calibration, else the machine-wide one) and the loaded run's stimulus
+    // level from the manifest. False when either is unknown.
+    bool getSplContext (float& offsetDb, float& levelDb) const
+    {
+        if (folderInfo.splCalibrated)
+            offsetDb = folderInfo.splOffsetDb;
+        else if (smt::isSplCalibrated())
+            offsetDb = smt::getSplOffsetDb();
+        else
+            return false;
+
+        if (loadedFiles.isEmpty())
+            return false;
+        const auto it = folderInfo.fileRuns.find (loadedFiles[0].getFileName());
+        if (it == folderInfo.fileRuns.end())
+            return false;
+        levelDb = it->second.levelDb;
+        return true;
+    }
+
+    // Display offset for the measured curves per the Level selector. dB SPL:
+    // absolute |H| + stimulus level (sine RMS, hence -3 dB) + dBFS->SPL offset
+    // = the SPL each frequency actually played at during the sweep.
+    float measuredOffsetDb() const
+    {
+        const int mode = levelRefBox.getSelectedId();
+        if (mode == 2)
+            return analysis.getReferenceDb();
+        if (mode == 3)
+        {
+            float off = 0.0f, lvl = 0.0f;
+            if (getSplContext (off, lvl))
+                return analysis.getReferenceDb() + lvl - 3.0f + off;
+        }
+        return 0.0f;
+    }
+
+    juce::String levelAxisText() const
+    {
+        switch (levelRefBox.getSelectedId())
+        {
+            case 2:  return "|H| (dB, absolute); correction in dB";
+            case 3:  return "est. dB SPL during the measurement; correction in dB";
+            default: return {};     // the plot's normalized wording
+        }
+    }
+
+    // dB SPL is only offered when it can actually be computed; falls back to
+    // Normalized when the selected mode just became unavailable.
+    void updateLevelRefChoices()
+    {
+        float off = 0.0f, lvl = 0.0f;
+        const bool splOk = analysis.hasData() && getSplContext (off, lvl);
+        levelRefBox.setItemEnabled (3, splOk);
+        if (! splOk && levelRefBox.getSelectedId() == 3)
+            levelRefBox.setSelectedId (1, juce::dontSendNotification);
+    }
+
     void updatePlotData()
     {
         TransferFunctionPlot::Data d;
@@ -609,6 +697,8 @@ private:
         d.subPhase        = analysis.getSubPhaseDeg (freqs);
         d.hasSub          = analysis.hasSub();
         d.crossoverHz     = analysis.getCrossoverHz();
+        d.measuredOffsetDb = measuredOffsetDb();
+        d.levelAxisText    = levelAxisText();
         plot.setData (std::move (d));
     }
 
@@ -706,14 +796,14 @@ private:
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
     juce::Label micCalInfo;
-    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel;
+    juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel, levelRefLabel;
     juce::Label alignLabel, alignInfo;
     fxme::FxmeSlider boostSlider, alignSlider;
     float recommendedAlignMs = 0.0f;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
-    juce::ComboBox micCalSourceBox;
+    juce::ComboBox micCalSourceBox, levelRefBox;
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
 

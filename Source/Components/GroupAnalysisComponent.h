@@ -163,6 +163,30 @@ public:
         previewBox.onChange = [this] { updatePlotPreview(); };
         addAndMakeVisible (previewBox);
 
+        // Vertical reference of the measured curves (display only — the
+        // engines' normalized math is untouched).
+        addLabel (levelRefLabel, "Level");
+        levelRefBox.addItem ("Normalized", 1);
+        levelRefBox.addItem ("Absolute dB", 2);
+        levelRefBox.addItem ("dB SPL", 3);
+        levelRefBox.setSelectedId (1, juce::dontSendNotification);
+        levelRefBox.setItemEnabled (3, false);   // needs SPL cal + run info
+        levelRefBox.setTooltip ("Level reference of the measured curves:\n"
+                                "Normalized: 0 dB = 200 Hz - 2 kHz mean of the average.\n"
+                                "Absolute dB: recorded level per unit of stimulus level "
+                                "(no normalization).\n"
+                                "dB SPL: estimated SPL during the measurement — needs an SPL "
+                                "calibration and the run's stimulus level from measurement.xml; "
+                                "exact for sweep runs, approximate for noise.\n"
+                                "The correction curve is always absolute dB.");
+        SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
+        levelRefBox.onChange = [this]
+        {
+            updatePlotPreview();
+            plot.fitVerticalToData();   // the sensible window jumps between modes
+        };
+        addAndMakeVisible (levelRefBox);
+
         addLabel (levelLabel, "Correction level");
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         levelSlider.setRange (0.0, 1.0, 0.01);
@@ -301,7 +325,10 @@ public:
         highFreqBox.setBounds (r1.removeFromLeft (86));
         r1.removeFromLeft (16);
         previewLabel.setBounds (r1.removeFromLeft (56));
-        previewBox.setBounds (r1);
+        previewBox.setBounds (r1.removeFromLeft (110));
+        r1.removeFromLeft (16);
+        levelRefLabel.setBounds (r1.removeFromLeft (40));
+        levelRefBox.setBounds (r1.removeFromLeft (110));
 
         area.removeFromTop (8);
         auto r2 = area.removeFromTop (24);
@@ -874,13 +901,46 @@ private:
             });
     }
 
+    // SPL display context for one entry's file set: the dBFS -> dB SPL offset
+    // (the folder's recorded calibration, else the machine-wide one) and the
+    // entry's stimulus level from the manifest. False when either is unknown
+    // (e.g. rows loaded manually from a folder without a manifest).
+    bool getSplContext (const juce::Array<juce::File>& files,
+                        float& offsetDb, float& levelDb) const
+    {
+        if (folderInfo.splCalibrated)
+            offsetDb = folderInfo.splOffsetDb;
+        else if (smt::isSplCalibrated())
+            offsetDb = smt::getSplOffsetDb();
+        else
+            return false;
+
+        if (files.isEmpty())
+            return false;
+        const auto it = folderInfo.fileRuns.find (files[0].getFileName());
+        if (it == folderInfo.fileRuns.end())
+            return false;
+        levelDb = it->second.levelDb;
+        return true;
+    }
+
     // Refreshes the shared plot with the currently previewed engine's curves.
     void updatePlotPreview()
     {
         const int id = previewBox.getSelectedId();
-        smt::AnalysisEngine* eng = (id >= 1 && id <= group.getNumSpeakers())
-                                       ? group.speaker (id - 1).engine.get()
-                                       : group.subEntry().engine.get();
+        const bool isSpeaker = id >= 1 && id <= group.getNumSpeakers();
+        smt::AnalysisEngine* eng = isSpeaker ? group.speaker (id - 1).engine.get()
+                                             : group.subEntry().engine.get();
+        const auto& entryFiles = isSpeaker ? group.speaker (id - 1).files
+                                           : group.subEntry().files;
+
+        // dB SPL is only offered when it can be computed for this entry.
+        float splOff = 0.0f, stimLvl = 0.0f;
+        const bool splOk = eng != nullptr && eng->hasData()
+                        && getSplContext (entryFiles, splOff, stimLvl);
+        levelRefBox.setItemEnabled (3, splOk);
+        if (! splOk && levelRefBox.getSelectedId() == 3)
+            levelRefBox.setSelectedId (1, juce::dontSendNotification);
 
         TransferFunctionPlot::Data d;
         if (eng != nullptr)
@@ -900,6 +960,22 @@ private:
             d.subPhase        = eng->getSubPhaseDeg (freqs);
             d.hasSub          = eng->hasSub();
             d.crossoverHz     = eng->getCrossoverHz();
+
+            // Level reference: display offset on the measured curves. dB SPL =
+            // absolute |H| + stimulus level (sine RMS, hence -3 dB) + offset.
+            switch (levelRefBox.getSelectedId())
+            {
+                case 2:
+                    d.measuredOffsetDb = eng->getReferenceDb();
+                    d.levelAxisText = "|H| (dB, absolute); correction in dB";
+                    break;
+                case 3:
+                    d.measuredOffsetDb = eng->getReferenceDb() + stimLvl - 3.0f + splOff;
+                    d.levelAxisText = "est. dB SPL during the measurement; correction in dB";
+                    break;
+                default:
+                    break;      // normalized: the plot's default wording
+            }
         }
         plot.setData (std::move (d));
     }
@@ -916,7 +992,7 @@ private:
         progressBar.setVisible (busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
                         &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
-                        &micCalSourceBox })
+                        &micCalSourceBox, &levelRefBox })
             c->setEnabled (! busy);
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
@@ -947,10 +1023,10 @@ private:
     juce::TextButton computeButton, applyButton, loadFolderButton;
     juce::ToggleButton subEnabledToggle;
 
-    juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel;
+    juce::Label windowLabel, smoothLabel, rangeLabel, rangeToLabel, previewLabel, levelRefLabel;
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
-    juce::ComboBox firBox, phaseBox, crossoverBox;
+    juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox;
     juce::ToggleButton subInvertToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 

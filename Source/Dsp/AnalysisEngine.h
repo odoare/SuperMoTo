@@ -74,6 +74,17 @@ public:
         Returns -120 with no data. */
     float getBandLevelDb (float lowHz, float highHz) const;
 
+    /** The mid-band reference level, in dB: 20*log10 of the 200 Hz .. 2 kHz
+        mean magnitude of the smoothed average, i.e. the 0 dB line the plot
+        getters normalize to. Add it back to a normalized plot value to get
+        the absolute |H| in dB (recorded level per unit of stimulus level).
+        0 with no data. */
+    float getReferenceDb() const noexcept
+    {
+        return curves.empty() ? 0.0f
+             : juce::Decibels::gainToDecibels ((float) referenceGain, -120.0f);
+    }
+
     //==========================================================================
     // Optional subwoofer integration (phase-only alignment). A second set of
     // measurements taken at the SAME positions as the main set (paired by load

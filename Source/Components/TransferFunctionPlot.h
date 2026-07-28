@@ -23,6 +23,7 @@
 #include <JuceHeader.h>
 #include "../Theme.h"
 #include <cmath>
+#include <limits>
 #include <vector>
 
 class TransferFunctionPlot : public juce::Component
@@ -36,6 +37,17 @@ public:
         std::vector<float> subDb, subPhase;
         bool hasSub = false;
         float crossoverHz = 80.0f;
+
+        /** Display offset (dB) added to the MEASURED-family curves (curves,
+            average, corrected, sub) — the correction stays absolute dB. The
+            owner uses it to switch between the engine's normalized view and
+            absolute / dB SPL level references without touching the engine. */
+        float measuredOffsetDb = 0.0f;
+
+        /** Replaces the magnitude panel's default axis description ("0 dB =
+            mid-band mean...") when non-empty — set it whenever
+            measuredOffsetDb changes the meaning of the axis. */
+        juce::String levelAxisText;
     };
 
     TransferFunctionPlot()
@@ -48,6 +60,50 @@ public:
     {
         data = std::move (d);
         repaint();
+    }
+
+    /** Fits the vertical dB window to the current data (in display units,
+        i.e. including Data::measuredOffsetDb), padded out to 10 dB steps,
+        and makes the result the new double-click default view. Falls back
+        to -30..+30 dB with no data. Call after switching level references,
+        where the sensible window jumps (e.g. 0-centred -> ~85 dB SPL). */
+    void fitVerticalToData()
+    {
+        float lo = std::numeric_limits<float>::max();
+        float hi = std::numeric_limits<float>::lowest();
+        auto scan = [&] (const std::vector<float>& dbs, float off)
+        {
+            for (float d : dbs)
+                if (std::isfinite (d) && d > -119.0f)   // skip the engine's floor
+                {
+                    lo = std::min (lo, d + off);
+                    hi = std::max (hi, d + off);
+                }
+        };
+        const float off = data.measuredOffsetDb;
+        for (const auto& c : data.curveDbs)
+            scan (c, off);
+        scan (data.averageDb,    off);
+        scan (data.correctedDb,  off);
+        scan (data.correctionDb, 0.0f);
+        if (data.hasSub)
+            scan (data.subDb, off);
+
+        if (lo > hi)
+        {
+            lo = -30.0f;
+            hi = 30.0f;
+        }
+        else
+        {
+            lo = 10.0f * std::floor ((lo - 3.0f) / 10.0f);
+            hi = 10.0f * std::ceil  ((hi + 3.0f) / 10.0f);
+        }
+        lo = juce::jlimit (dbFloor, dbCeil - dbMinSpan, lo);
+        hi = juce::jlimit (lo + dbMinSpan, dbCeil, hi);
+        defaultMinDb = lo;
+        defaultMaxDb = hi;
+        setDbWindow (lo, hi - lo);
     }
 
     //==========================================================================
@@ -88,8 +144,8 @@ public:
     {
         if (magPanelArea().contains (e.position))
         {
-            plotMinDb = -30.0f;     // default view
-            plotMaxDb = 30.0f;
+            plotMinDb = defaultMinDb;   // default view (fitVerticalToData
+            plotMaxDb = defaultMaxDb;   // updates it per level reference)
             repaint();
         }
     }
@@ -120,6 +176,7 @@ private:
     static constexpr int numPoints = 400;
     static constexpr float fMin = 20.0f, fMax = 20000.0f;
     float plotMinDb = -30.0f, plotMaxDb = 30.0f;     // adjustable vertical limits
+    float defaultMinDb = -30.0f, defaultMaxDb = 30.0f;   // double-click view
 
     void buildFreqGrid()
     {
@@ -150,7 +207,8 @@ private:
     }
 
     void drawCurve (juce::Graphics& g, const std::vector<float>& dbs,
-                    juce::Rectangle<float> r, juce::Colour colour, float thickness) const
+                    juce::Rectangle<float> r, juce::Colour colour, float thickness,
+                    float offsetDb = 0.0f) const
     {
         if (dbs.size() != freqs.size())
             return;
@@ -158,7 +216,7 @@ private:
         for (size_t p = 0; p < freqs.size(); ++p)
         {
             const float x = freqToX (freqs[p], r);
-            const float y = dbToY (dbs[p], r);
+            const float y = dbToY (dbs[p] + offsetDb, r);
             if (p == 0) path.startNewSubPath (x, y);
             else        path.lineTo (x, y);
         }
@@ -256,14 +314,17 @@ private:
             g.drawVerticalLine ((int) xc, phR.getY(), phR.getBottom());
         }
 
+        // Measured-family curves carry the level-reference offset; the
+        // correction is a filter gain and stays absolute dB.
+        const float off = data.measuredOffsetDb;
         for (const auto& c : data.curveDbs)
-            drawCurve (g, c, magR, SuperMoToTheme::curveMeasurement.withAlpha (0.55f), 1.0f);
+            drawCurve (g, c, magR, SuperMoToTheme::curveMeasurement.withAlpha (0.55f), 1.0f, off);
 
         if (data.hasSub)
-            drawCurve (g, data.subDb, magR, SuperMoToTheme::mono, 1.8f);
-        drawCurve (g, data.averageDb, magR, SuperMoToTheme::curveAverage, 2.4f);
+            drawCurve (g, data.subDb, magR, SuperMoToTheme::mono, 1.8f, off);
+        drawCurve (g, data.averageDb, magR, SuperMoToTheme::curveAverage, 2.4f, off);
         drawCurve (g, data.correctionDb, magR, SuperMoToTheme::master, 1.6f);
-        drawCurve (g, data.correctedDb, magR, SuperMoToTheme::spectrum, 1.6f);
+        drawCurve (g, data.correctedDb, magR, SuperMoToTheme::spectrum, 1.6f, off);
 
         // ── Phase panel ──────────────────────────────────────────────────────
         for (float deg = -180.0f; deg <= 180.0f; deg += 90.0f)
@@ -307,8 +368,10 @@ private:
         }
 
         g.setColour (SuperMoToTheme::dimText);
-        g.drawText (juce::String::fromUTF8 ("|H| (dB) \xe2\x80\x94 0 dB = 200 Hz\xe2\x80\x93"
-                                            "2 kHz mean of the average; correction in absolute dB"),
+        g.drawText (data.levelAxisText.isNotEmpty()
+                        ? data.levelAxisText
+                        : juce::String::fromUTF8 ("|H| (dB) \xe2\x80\x94 0 dB = 200 Hz\xe2\x80\x93"
+                                                  "2 kHz mean of the average; correction in absolute dB"),
                     (int) magR.getX(), (int) magR.getBottom() - 14,
                     (int) magR.getWidth() - 6, 12, juce::Justification::centredRight);
         g.drawText (juce::String::fromUTF8 ("phase (\xc2\xb0, propagation delay removed)"),
