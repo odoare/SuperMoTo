@@ -44,6 +44,23 @@ public:
         micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
                                "Load it in the Measurement & Calibration pane.");
         addAndMakeVisible (micCalInfo);
+
+        // Which mic calibration is divided out: the global one (loaded in the
+        // Measurement pane), the curve embedded in a loaded measurement
+        // folder's manifest, or none. Loading a folder that carries one
+        // auto-selects "Folder".
+        micCalSourceBox.addItem ("Global mic cal", 1);
+        micCalSourceBox.addItem ("Folder mic cal", 2);
+        micCalSourceBox.addItem ("No mic cal", 3);
+        micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+        micCalSourceBox.setItemEnabled (2, false);   // until a folder provides one
+        micCalSourceBox.setTooltip ("Microphone calibration source: the global curve loaded in "
+                                    "the Measurement pane, the curve embedded in the measurement "
+                                    "folder's measurement.xml, or none.");
+        SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
+        micCalSourceBox.onChange = [this] { updateMicCalInfo(); startTimer (debounceMs); };
+        addAndMakeVisible (micCalSourceBox);
+
         updateMicCalInfo();
 
         addLabel (countLabel, "Speakers");
@@ -246,7 +263,9 @@ public:
     {
         auto area = getLocalBounds().reduced (14);
         auto titleRow = area.removeFromTop (26);
-        micCalInfo.setBounds (titleRow.removeFromRight (260));
+        micCalSourceBox.setBounds (titleRow.removeFromRight (130).reduced (0, 1));
+        titleRow.removeFromRight (8);
+        micCalInfo.setBounds (titleRow.removeFromRight (240));
         title.setBounds (titleRow);
         area.removeFromTop (6);
 
@@ -440,11 +459,27 @@ private:
             freqs[(size_t) p] = fMin * std::pow (fMax / fMin, (float) p / (float) (numPoints - 1));
     }
 
+    // The calibration selected by micCalSourceBox: global, the folder-embedded
+    // curve, or an always-invalid one for "none" (engines treat it as off).
+    const smt::MicCalibration& activeMicCal() const
+    {
+        static const smt::MicCalibration none;
+        switch (micCalSourceBox.getSelectedId())
+        {
+            case 2:  return folderMicCal;
+            case 3:  return none;
+            default: return smt::sharedMicCalibration();
+        }
+    }
+
     void updateMicCalInfo()
     {
-        auto& cal = smt::sharedMicCalibration();
-        micCalInfo.setText (cal.isValid() ? "Mic cal: " + cal.getName()
-                                          : juce::String ("Mic cal: none"),
+        const auto& cal = activeMicCal();
+        const bool fromFolder = micCalSourceBox.getSelectedId() == 2;
+        micCalInfo.setText (cal.isValid()
+                                ? "Mic cal: " + cal.getName()
+                                    + (fromFolder ? " (folder)" : juce::String())
+                                : juce::String ("Mic cal: none"),
                             juce::dontSendNotification);
     }
 
@@ -479,7 +514,7 @@ private:
         e.setAnalysisRange (lowHz, isSub ? juce::jmin (highHz, subMaxRangeHz) : highHz);
         e.setCrossoverHz (crossoverBox.getText().getFloatValue());
         e.setSubPolarityInverted (subInvertToggle.getToggleState());
-        e.setMicCalibration (smt::sharedMicCalibration());
+        e.setMicCalibration (activeMicCal());
     }
 
     void pushSettingsToAll()
@@ -695,6 +730,20 @@ private:
                     return;
                 }
 
+                // Adopt the folder's embedded mic calibration when it carries
+                // one (still overridable via the source selector). Kept before
+                // the pushSettingsTo calls below so the engines get it.
+                folderInfo = contents.info;
+                folderMicCal.clear();
+                const bool haveFolderCal = folderInfo.hasMicCal()
+                    && folderMicCal.loadFromText (folderInfo.micCalText, folderInfo.micCalName);
+                micCalSourceBox.setItemEnabled (2, haveFolderCal);
+                if (haveFolderCal)
+                    micCalSourceBox.setSelectedId (2, juce::dontSendNotification);
+                else if (micCalSourceBox.getSelectedId() == 2)
+                    micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+                updateMicCalInfo();
+
                 const int n = juce::jmin ((int) contents.speakers.size(),
                                           smt::SpeakerGroupAnalysis::maxSpeakers);
                 const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
@@ -763,11 +812,12 @@ private:
 
                 runner.runJobs (std::move (jobs),
                     [this] (float p) { progressValue = (double) p; },
-                    [this, n, haveSub]
+                    [this, n, haveSub, haveFolderCal]
                     {
                         setBusy (false);
                         status.setText (juce::String (n) + " speaker(s)" + (haveSub ? " + sub" : "")
-                                            + " loaded from the measurement folder.",
+                                            + " loaded from the measurement folder."
+                                            + (haveFolderCal ? " Embedded mic cal applied." : ""),
                                         juce::dontSendNotification);
                         refreshRows();
                         updatePlotPreview();
@@ -865,7 +915,8 @@ private:
     {
         progressBar.setVisible (busy);
         for (auto* c : { &countBox, &windowBox, &smoothLowBox, &smoothHighBox,
-                        &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox })
+                        &lowFreqBox, &highFreqBox, &previewBox, &firBox, &phaseBox, &crossoverBox,
+                        &micCalSourceBox })
             c->setEnabled (! busy);
         for (auto* b : { &computeButton, &applyButton, &loadFolderButton })
             b->setEnabled (! busy);
@@ -890,7 +941,9 @@ private:
     juce::ProgressBar progressBar { progressValue };
 
     juce::Label title, micCalInfo, countLabel, status;
-    juce::ComboBox countBox;
+    juce::ComboBox countBox, micCalSourceBox;
+    smt::MicCalibration folderMicCal;       // embedded in the loaded folder
+    smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
     juce::TextButton computeButton, applyButton, loadFolderButton;
     juce::ToggleButton subEnabledToggle;
 

@@ -42,6 +42,22 @@ public:
         micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
                                "Load it in the Measurement & Calibration pane.");
         addAndMakeVisible (micCalInfo);
+
+        // Which mic calibration is divided out: the global one (loaded in the
+        // Measurement pane), the curve embedded in the measurements' folder
+        // manifest (measurement.xml, found next to the loaded files), or none.
+        micCalSourceBox.addItem ("Global mic cal", 1);
+        micCalSourceBox.addItem ("Folder mic cal", 2);
+        micCalSourceBox.addItem ("No mic cal", 3);
+        micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+        micCalSourceBox.setItemEnabled (2, false);   // until loaded files provide one
+        micCalSourceBox.setTooltip ("Microphone calibration source: the global curve loaded in "
+                                    "the Measurement pane, the curve embedded in the loaded "
+                                    "files' measurement.xml, or none.");
+        SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
+        micCalSourceBox.onChange = [this] { pushMicCalibration(); updatePlotData(); };
+        addAndMakeVisible (micCalSourceBox);
+
         updateMicCalInfo();
 
         loadButton.setButtonText ("Load measurements...");
@@ -297,7 +313,9 @@ public:
     {
         auto area = getLocalBounds().reduced (14);
         auto titleRow = area.removeFromTop (26);
-        micCalInfo.setBounds (titleRow.removeFromRight (260));
+        micCalSourceBox.setBounds (titleRow.removeFromRight (130).reduced (0, 1));
+        titleRow.removeFromRight (8);
+        micCalInfo.setBounds (titleRow.removeFromRight (240));
         title.setBounds (titleRow.withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
@@ -413,6 +431,21 @@ private:
                     return;
                 loadedFiles = fc.getResults();
                 smt::setLastBrowseDir (loadedFiles[0]);
+
+                // A measurement folder carries its metadata (mic cal, SPL cal,
+                // per-file run parameters) in measurement.xml next to the wavs;
+                // adopt an embedded mic cal automatically (still overridable
+                // via the source selector).
+                folderInfo = smt::readMeasurementFolderInfo (loadedFiles[0].getParentDirectory());
+                folderMicCal.clear();
+                const bool haveFolderCal = folderInfo.hasMicCal()
+                    && folderMicCal.loadFromText (folderInfo.micCalText, folderInfo.micCalName);
+                micCalSourceBox.setItemEnabled (2, haveFolderCal);
+                if (haveFolderCal)
+                    micCalSourceBox.setSelectedId (2, juce::dontSendNotification);
+                else if (micCalSourceBox.getSelectedId() == 2)
+                    micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
+
                 analyze();
             });
     }
@@ -471,19 +504,35 @@ private:
         updatePlotData();
     }
 
-    // Push the shared (global) mic calibration into the engine and refresh the
+    // The calibration selected by micCalSourceBox: global, the folder-embedded
+    // curve, or an always-invalid one for "none" (the engine treats it as off).
+    const smt::MicCalibration& activeMicCal() const
+    {
+        static const smt::MicCalibration none;
+        switch (micCalSourceBox.getSelectedId())
+        {
+            case 2:  return folderMicCal;
+            case 3:  return none;
+            default: return smt::sharedMicCalibration();
+        }
+    }
+
+    // Push the selected mic calibration into the engine and refresh the
     // read-only reminder. The engine divides it out of the measured data.
     void pushMicCalibration()
     {
-        analysis.setMicCalibration (smt::sharedMicCalibration());
+        analysis.setMicCalibration (activeMicCal());
         updateMicCalInfo();
     }
 
     void updateMicCalInfo()
     {
-        auto& cal = smt::sharedMicCalibration();
-        micCalInfo.setText (cal.isValid() ? "Mic cal: " + cal.getName()
-                                          : juce::String ("Mic cal: none"),
+        const auto& cal = activeMicCal();
+        const bool fromFolder = micCalSourceBox.getSelectedId() == 2;
+        micCalInfo.setText (cal.isValid()
+                                ? "Mic cal: " + cal.getName()
+                                    + (fromFolder ? " (folder)" : juce::String())
+                                : juce::String ("Mic cal: none"),
                             juce::dontSendNotification);
     }
 
@@ -664,8 +713,12 @@ private:
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
+    juce::ComboBox micCalSourceBox;
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
+
+    smt::MicCalibration folderMicCal;       // embedded next to the loaded files
+    smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
 
     juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;

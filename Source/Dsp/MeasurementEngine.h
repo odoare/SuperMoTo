@@ -31,6 +31,7 @@
 
 #include <JuceHeader.h>
 #include "MatrixEngine.h"     // pulls fxme::FirFilter; fxme::Biquad via module umbrella
+#include <map>
 
 namespace smt
 {
@@ -133,6 +134,44 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeasurementEngine)
 };
 
+/** Per-run metadata recorded in measurement.xml, mapped back to each capture
+    file by readMeasurementFolderInfo(). */
+struct MeasurementRunInfo
+{
+    juce::String mode;              // "dry" / "fir" / "system"
+    juce::String signal;            // "sweep" / "noise"
+    float durationS = 0.0f;         // stimulus length (excl. tail)
+    float levelDb   = 0.0f;         // stimulus level
+    double sweepF1 = 0.0;           // sweep identity (0 when not a sweep):
+    double sweepF2 = 0.0;           //   phase(t) = 2*pi*f1*L*(exp(t/L) - 1)
+    double sweepL  = 0.0;           //   L in seconds
+    bool  splCalibrated = false;    // SPL cal in effect for that run
+    float splOffsetDb   = 0.0f;     //   dB SPL = dBFS + offset
+    juce::String micCalName;        // mic cal in effect for that run (name only)
+};
+
+/** Folder-level metadata read back from a measurement folder's
+    measurement.xml: the general comment, the embedded calibration data
+    (Analysis / Group analysis divide the mic curve out of the measurements,
+    the SPL offset maps plot levels to true dB SPL) and each capture file's
+    run parameters (the sweep identity enables deconvolution-based analysis).
+    Everything is default/empty when the folder has no manifest. */
+struct MeasurementFolderInfo
+{
+    bool manifestFound = false;
+    juce::String generalComment;
+    juce::String micCalName;        // embedded mic correction curve: display
+    juce::String micCalText;        //   name + verbatim cal-file text (feed to
+                                    //   MicCalibration::loadFromText)
+    bool  splCalibrated = false;    // folder-level SPL calibration:
+    float splOffsetDb   = 0.0f;     //   dB SPL = dBFS + offset
+    std::map<juce::String, MeasurementRunInfo> fileRuns;    // wav name -> its run
+
+    bool hasMicCal() const noexcept { return micCalText.isNotEmpty(); }
+};
+
+MeasurementFolderInfo readMeasurementFolderInfo (const juce::File& folder);
+
 /** Reads back a folder written by MeasurementEngine: which channels were
     measured — from the machine-readable measurement.xml manifest, falling
     back to parsing readme_measurement.md's "Channels:"/"Sub channel:" lines
@@ -151,6 +190,7 @@ struct MeasurementFolderContents
 
     std::vector<Channel> speakers;      // ascending channel number, sub excluded
     Channel sub;                        // sub.channelNumber == -1 if none
+    MeasurementFolderInfo info;         // manifest metadata (cal, comments, runs)
     bool ok = false;
     juce::String error;                 // set when !ok
 };

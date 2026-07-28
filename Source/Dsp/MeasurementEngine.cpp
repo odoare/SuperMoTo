@@ -506,9 +506,55 @@ void MeasurementEngine::writeManifests() const
     readme.replaceWithText (out);
 }
 
+MeasurementFolderInfo readMeasurementFolderInfo (const juce::File& folder)
+{
+    MeasurementFolderInfo info;
+    const auto xml = juce::parseXML (folder.getChildFile ("measurement.xml"));
+    if (xml == nullptr || ! xml->hasTagName ("SuperMoToMeasurements"))
+        return info;
+
+    info.manifestFound = true;
+
+    if (auto* c = xml->getChildByName ("GeneralComment"))
+        info.generalComment = c->getAllSubText().trim();
+    if (auto* sc = xml->getChildByName ("SplCalibration"))
+    {
+        info.splCalibrated = true;
+        info.splOffsetDb = (float) sc->getDoubleAttribute ("offsetDb");
+    }
+    if (auto* mc = xml->getChildByName ("MicCalibration"))
+    {
+        info.micCalName = mc->getStringAttribute ("name");
+        info.micCalText = mc->getAllSubText();
+    }
+
+    // Runs are stored newest first; emplace keeps the existing (most recent)
+    // entry if a filename ever reappears in an older run.
+    for (auto* run : xml->getChildWithTagNameIterator ("Run"))
+    {
+        MeasurementRunInfo r;
+        r.mode          = run->getStringAttribute ("mode");
+        r.signal        = run->getStringAttribute ("signal");
+        r.durationS     = (float) run->getDoubleAttribute ("durationS");
+        r.levelDb       = (float) run->getDoubleAttribute ("levelDb");
+        r.sweepF1       = run->getDoubleAttribute ("sweepF1");
+        r.sweepF2       = run->getDoubleAttribute ("sweepF2");
+        r.sweepL        = run->getDoubleAttribute ("sweepL");
+        r.splCalibrated = run->hasAttribute ("splOffsetDb");
+        r.splOffsetDb   = (float) run->getDoubleAttribute ("splOffsetDb");
+        r.micCalName    = run->getStringAttribute ("micCal");
+
+        for (auto* f : run->getChildWithTagNameIterator ("File"))
+            info.fileRuns.emplace (f->getStringAttribute ("name"), r);
+    }
+
+    return info;
+}
+
 MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 {
     MeasurementFolderContents result;
+    result.info = readMeasurementFolderInfo (folder);
 
     // The channel set and sub identity come from a manifest; the actual file
     // lists are always re-derived from the wavs on disk below, so a stale or
@@ -614,11 +660,7 @@ MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 
 juce::String readMeasurementGeneralComment (const juce::File& folder)
 {
-    if (auto xml = juce::parseXML (folder.getChildFile ("measurement.xml")))
-        if (xml->hasTagName ("SuperMoToMeasurements"))
-            if (auto* comment = xml->getChildByName ("GeneralComment"))
-                return comment->getAllSubText().trim();
-    return {};
+    return readMeasurementFolderInfo (folder).generalComment;
 }
 
 } // namespace smt
