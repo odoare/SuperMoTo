@@ -473,12 +473,15 @@ private:
 
         addLabel (splRefLabel, "Measured dB SPL");
         addNumberEntry (splRef, 0.0, 140.0, 0.1, 85.0, " dB");
-        // On entry, snapshot the current dBFS so dB SPL = dBFS + offset.
+        // On entry, snapshot the current dBFS so dB SPL = dBFS + offset. The
+        // calibration is persisted (AppSettings) so it survives closing the
+        // editor and is written into the measurement manifests.
         splRef.onValueChange = [this]
         {
             const float dbFs = processor.splMeter.getRmsDbFs();
             splOffset = (float) splRef.getValue() - dbFs;
             splCalibrated = dbFs > -119.0f;
+            smt::setSplCalibration (splOffset, splCalibrated);
             updateSplInfo();
         };
 
@@ -676,6 +679,16 @@ private:
         refreshGeneralComment();    // a hand-typed path may not have lost focus yet
         s.generalComment = generalComment;
         s.runComment = runCommentEditor.getText().trim();
+
+        // Calibration in effect, recorded in the manifests.
+        s.splCalibrated = splCalibrated;
+        s.splOffsetDb = splOffset;
+        auto& cal = smt::sharedMicCalibration();
+        if (cal.isValid())
+        {
+            s.micCalName = cal.getName();
+            s.micCalText = cal.getRawText();
+        }
         s.subChannel = (s.mode == smt::MeasureMode::fullSystem || ! subEnabledToggle.getToggleState())
                            ? -1 : (subChannelBox.getSelectedId() - 2);
 
@@ -752,8 +765,9 @@ private:
     juce::Slider sineAmp, sineFreq, noiseAmp, splRef;
     fxme::SplMeterComponent meter;
     fxme::SpectrumDisplay spectrum;
-    float splOffset = 0.0f;
-    bool  splCalibrated = false;
+    // SPL calibration, restored from the persisted machine-wide value.
+    float splOffset = smt::getSplOffsetDb();
+    bool  splCalibrated = smt::isSplCalibrated();
 
     double progressValue = 0.0;
     juce::ProgressBar progress { progressValue };

@@ -52,6 +52,11 @@ public:
     bool hasPhase() const noexcept      { return phaseAvailable; }
     int  getNumPoints() const noexcept  { return (int) points.size(); }
     juce::String getName() const        { return name; }
+
+    /** The raw calibration text this curve was parsed from (file or text
+        source), kept verbatim so it can be embedded in measurement manifests
+        and read back with loadFromText(). Empty when invalid. */
+    juce::String getRawText() const     { return rawText; }
     float getMinFreqHz() const noexcept { return isValid() ? points.front().freqHz : 0.0f; }
     float getMaxFreqHz() const noexcept { return isValid() ? points.back().freqHz  : 0.0f; }
 
@@ -82,6 +87,7 @@ private:
     std::vector<Point> points;          // sorted by frequency; phase unwrapped
     bool phaseAvailable = false;
     juce::String name;                  // source file name (for display)
+    juce::String rawText;               // verbatim source text (for embedding)
 
     JUCE_LEAK_DETECTOR (MicCalibration)
 };

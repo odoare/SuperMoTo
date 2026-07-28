@@ -54,6 +54,11 @@ public:
         juce::String generalComment;                        // whole folder; rewritten
                                                             // at each manifest save
         juce::String runComment;                            // this run only, one line
+        juce::String micCalName;                            // mic correction curve in
+        juce::String micCalText;                            //   effect: name + raw cal
+                                                            //   text for the manifest
+        bool  splCalibrated = false;                        // SPL-meter calibration:
+        float splOffsetDb = 0.0f;                           //   dB SPL = dBFS + offset
         int subChannel = -1;                                // 0-based; -1 = none.
                                                             // Only meaningful for dry/FIR
                                                             // modes (fullSystem's toggled
@@ -92,6 +97,10 @@ private:
     void writeManifests() const;    // measurement.xml + readme_measurement.md
 
     float nextStimulusSample();
+
+    // Stimulus band, shared by the sweep parameters, the noise band-limiting
+    // and the manifest (the analysis side reads them back from there).
+    static constexpr double sweepF1Hz = 10.0, sweepF2Hz = 20000.0;
 
     double sr = 44100.0;
 

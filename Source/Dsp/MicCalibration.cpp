@@ -20,6 +20,7 @@ void MicCalibration::clear()
     points.clear();
     phaseAvailable = false;
     name = {};
+    rawText = {};
 }
 
 bool MicCalibration::loadFromFile (const juce::File& file)
@@ -88,6 +89,7 @@ bool MicCalibration::loadFromText (const juce::String& text, const juce::String&
     points         = std::move (parsed);
     phaseAvailable = sawPhaseColumn;
     name           = sourceName;
+    rawText        = text;
     return true;
 }
 

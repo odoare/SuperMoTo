@@ -106,6 +106,34 @@ inline void setUiCollapsed (bool collapsed)
 }
 
 //==============================================================================
+// SPL-meter calibration: dB SPL = dBFS + offset, obtained by playing a tone,
+// reading a real SPL meter and typing its value. Persisted so it survives
+// closing the editor — it stays valid as long as the mic / preamp-gain /
+// interface chain is unchanged.
+
+inline bool isSplCalibrated()
+{
+    auto* s = appProperties().getUserSettings();
+    return s != nullptr && s->getBoolValue ("splCalibrated", false);
+}
+
+inline float getSplOffsetDb()
+{
+    auto* s = appProperties().getUserSettings();
+    return s != nullptr ? (float) s->getDoubleValue ("splOffsetDb", 0.0) : 0.0f;
+}
+
+inline void setSplCalibration (float offsetDb, bool calibrated)
+{
+    if (auto* s = appProperties().getUserSettings())
+    {
+        s->setValue ("splOffsetDb", offsetDb);
+        s->setValue ("splCalibrated", calibrated);
+        s->saveIfNeeded();
+    }
+}
+
+//==============================================================================
 // Measurement-microphone calibration. One physical mic, so a single shared
 // MicCalibration is kept here and used by both the live SPL/spectrum display
 // and the analysis transfer functions. The chosen file path is persisted; the
