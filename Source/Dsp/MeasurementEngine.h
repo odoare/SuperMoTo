@@ -51,6 +51,9 @@ public:
         float durationS = 10.0f;                            // 5 .. 30
         float levelDb = -12.0f;
         juce::String folder;                                // destination folder
+        juce::String generalComment;                        // whole folder; rewritten
+                                                            // at each manifest save
+        juce::String runComment;                            // this run only, one line
         int subChannel = -1;                                // 0-based; -1 = none.
                                                             // Only meaningful for dry/FIR
                                                             // modes (fullSystem's toggled
@@ -144,5 +147,11 @@ struct MeasurementFolderContents
 };
 
 MeasurementFolderContents scanMeasurementFolder (const juce::File& folder);
+
+/** The general (whole-folder) comment stored in a folder's measurement.xml,
+    empty when there is none. Used by the GUI to pre-fill its comment entry
+    when the measurement folder changes, so an existing folder's comment is
+    carried over (and not silently wiped) by the next run's manifest save. */
+juce::String readMeasurementGeneralComment (const juce::File& folder);
 
 } // namespace smt

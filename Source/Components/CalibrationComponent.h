@@ -155,11 +155,35 @@ public:
         addLabel (pathLabel, "Measurement folder");
         pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
         pathEditor.setText (smt::getLastBrowseDir().getFullPathName());
+        // A hand-typed folder may hold a manifest with a general comment:
+        // pick it up once the path entry is left.
+        pathEditor.onReturnKey = [this] { refreshGeneralComment(); };
+        pathEditor.onFocusLost = [this] { refreshGeneralComment(); };
         addAndMakeVisible (pathEditor);
 
         browseButton.setButtonText ("...");
         browseButton.onClick = [this] { browse(); };
         addAndMakeVisible (browseButton);
+
+        // Comments stored in the manifests: a general (whole-folder) comment
+        // behind a button-opened popup, and a one-line comment for the next run.
+        commentButton.setButtonText ("Folder comment...");
+        commentButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
+        commentButton.setTooltip ("General comment for this measurement folder, written to "
+                                  "measurement.xml and readme_measurement.md at the end of every "
+                                  "run \xe2\x80\x94 edit it between runs and the next save rewrites it. "
+                                  "Pre-filled from the folder's existing manifest.");
+        commentButton.onClick = [this] { editGeneralComment(); };
+        addAndMakeVisible (commentButton);
+
+        addLabel (runCommentLabel, "Run comment");
+        runCommentEditor.setColour (juce::TextEditor::backgroundColourId,
+                                    SuperMoToTheme::plotBackground.withAlpha (0.4f));
+        runCommentEditor.setTooltip ("One-line comment for the next run, logged with that run's "
+                                     "entry in the manifests.");
+        addAndMakeVisible (runCommentEditor);
+
+        refreshGeneralComment();
 
         runButton.setButtonText ("Run");
         runButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::measure.darker (0.8f));
@@ -266,6 +290,13 @@ public:
         browseButton.setBounds (r3.removeFromRight (36));
         r3.removeFromRight (6);
         pathEditor.setBounds (r3);
+
+        area.removeFromTop (8);
+        auto rC = area.removeFromTop (24);
+        commentButton.setBounds (rC.removeFromLeft (130));
+        rC.removeFromLeft (16);
+        runCommentLabel.setBounds (rC.removeFromLeft (86));
+        runCommentEditor.setBounds (rC.removeFromLeft (420));
 
         area.removeFromTop (14);
         auto r4 = area.removeFromTop (28);
@@ -547,6 +578,60 @@ private:
         status.setText ("Mic calibration cleared.", juce::dontSendNotification);
     }
 
+    // Reloads the general comment from the current folder's manifest — only
+    // when the folder actually changed, so an unsaved comment typed for the
+    // current folder survives focus churn on the path entry.
+    void refreshGeneralComment()
+    {
+        const juce::File folder (pathEditor.getText().trim());
+        if (folder == lastCommentFolder)
+            return;
+        lastCommentFolder = folder;
+        generalComment = smt::readMeasurementGeneralComment (folder);
+    }
+
+    // Popup with a multiline entry for the folder comment; edits land in
+    // generalComment as they are typed (dismiss by clicking outside), and the
+    // manifests pick it up at the end of the next run.
+    void editGeneralComment()
+    {
+        struct CommentPopup : public juce::Component
+        {
+            CommentPopup (const juce::String& initialText,
+                          std::function<void (const juce::String&)> cb)
+                : onChange (std::move (cb))
+            {
+                editor.setMultiLine (true, true);
+                editor.setReturnKeyStartsNewLine (true);
+                editor.setColour (juce::TextEditor::backgroundColourId,
+                                  SuperMoToTheme::plotBackground);
+                editor.setText (initialText, false);
+                editor.onTextChange = [this] { onChange (editor.getText()); };
+                addAndMakeVisible (editor);
+                setSize (420, 150);
+            }
+
+            void resized() override { editor.setBounds (getLocalBounds().reduced (6)); }
+
+            juce::TextEditor editor;
+            std::function<void (const juce::String&)> onChange;
+            fxme::TextEntryFocusFixer fixer { *this };  // the popup is its own window
+        };
+
+        auto popup = std::make_unique<CommentPopup> (generalComment,
+            [safe = juce::Component::SafePointer<CalibrationComponent> (this)] (const juce::String& t)
+            {
+                if (safe != nullptr)
+                    safe->generalComment = t;
+            });
+
+        auto* parent = getTopLevelComponent();
+        juce::CallOutBox::launchAsynchronously (
+            std::move (popup),
+            parent->getLocalArea (&commentButton, commentButton.getLocalBounds()),
+            parent);
+    }
+
     void browse()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
@@ -562,6 +647,7 @@ private:
                     return;
                 smt::setLastBrowseDir (f);
                 pathEditor.setText (f.getFullPathName());
+                refreshGeneralComment();
             });
     }
 
@@ -587,6 +673,9 @@ private:
         s.durationS = (float) duration.getValue();
         s.levelDb = (float) level.getValue();
         s.folder = pathEditor.getText().trim();
+        refreshGeneralComment();    // a hand-typed path may not have lost focus yet
+        s.generalComment = generalComment;
+        s.runComment = runCommentEditor.getText().trim();
         s.subChannel = (s.mode == smt::MeasureMode::fullSystem || ! subEnabledToggle.getToggleState())
                            ? -1 : (subChannelBox.getSelectedId() - 2);
 
@@ -647,6 +736,13 @@ private:
     juce::TextEditor pathEditor;
     juce::TextButton browseButton, runButton;
     bool lastModeWasFull = false;
+
+    // Manifest comments: general (whole-folder, edited in a popup) and per-run.
+    juce::TextButton commentButton;
+    juce::Label runCommentLabel;
+    juce::TextEditor runCommentEditor;
+    juce::String generalComment;
+    juce::File lastCommentFolder;       // folder generalComment was loaded for
 
     // ── SPL meter section ─────────────────────────────────────────────────────
     juce::Label splTitle, windowLabel, sineAmpLabel, sineFreqLabel, noiseAmpLabel,

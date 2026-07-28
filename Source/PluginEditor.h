@@ -116,6 +116,10 @@ private:
     fxme::PresetComponent presetPane;    // full browser (Presets page)
     fxme::PresetBarComponent presetBar;  // compact selector, top-right (expanded only)
 
+    // Reliable typing in every TextEditor under the editor (measurement folder
+    // & comments, editable combos, right-click value entry) in hosted windows.
+    fxme::TextEntryFocusFixer textEntryFixer { *this };
+
     View currentView = View::matrix;
     int editConfig = 0;
 

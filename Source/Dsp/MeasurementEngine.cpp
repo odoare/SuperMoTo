@@ -357,6 +357,10 @@ void MeasurementEngine::writeManifests() const
         root.setAttribute ("positions", maxPosition);
         root.setAttribute ("lastRun", now.toISO8601 (true));
 
+        if (settings.generalComment.isNotEmpty())
+            root.createNewChildElement ("GeneralComment")
+                ->addTextElement (settings.generalComment);
+
         for (int ch : channels)
             root.createNewChildElement ("Channel")->setAttribute ("number", ch);
 
@@ -368,6 +372,8 @@ void MeasurementEngine::writeManifests() const
         run->setAttribute ("durationS", settings.durationS);
         run->setAttribute ("levelDb", settings.levelDb);
         run->setAttribute ("micInput", settings.micInput + 1);
+        if (settings.runComment.isNotEmpty())
+            run->setAttribute ("comment", settings.runComment);
         for (auto& f : filesWrittenThisRun)
             run->createNewChildElement ("File")->setAttribute ("name", f.getFileName());
 
@@ -382,6 +388,8 @@ void MeasurementEngine::writeManifests() const
 
     juce::String out;
     out << "# SuperMoTo measurement folder\n\n";
+    if (settings.generalComment.isNotEmpty())
+        out << settings.generalComment.trim() << "\n\n";
     out << "Channels: ";
     for (size_t i = 0; i < channels.size(); ++i)
         out << (i > 0 ? ", " : "") << channels[i];
@@ -395,6 +403,8 @@ void MeasurementEngine::writeManifests() const
 
     // New run entry, most recent first.
     out << "### " << now.toString (true, true) << "\n\n";
+    if (settings.runComment.isNotEmpty())
+        out << "- Comment: " << settings.runComment << "\n";
     out << "- Mode: " << (full ? "Full system"
                           : settings.mode == MeasureMode::outputFir ? "Output + FIR" : "Dry outputs") << "\n";
     out << "- Signal: " << (settings.signalType == SignalType::logSweep ? "Log sweep" : "White noise")
@@ -535,6 +545,15 @@ MeasurementFolderContents scanMeasurementFolder (const juce::File& folder)
 
     result.ok = true;
     return result;
+}
+
+juce::String readMeasurementGeneralComment (const juce::File& folder)
+{
+    if (auto xml = juce::parseXML (folder.getChildFile ("measurement.xml")))
+        if (xml->hasTagName ("SuperMoToMeasurements"))
+            if (auto* comment = xml->getChildByName ("GeneralComment"))
+                return comment->getAllSubText().trim();
+    return {};
 }
 
 } // namespace smt
