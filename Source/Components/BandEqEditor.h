@@ -56,7 +56,7 @@ public:
             bandQ[bi].setDoubleClickReturnValue (true, 0.707);
 
             initKnob (bandGain[bi], "Gain", -24.0, 24.0, 0.1);
-            bandGain[bi].getProperties().set ("centralValue", 0.0);
+            bandGain[bi].setCentralValue (0.0);     // bipolar: arc grows from 0 dB
             bandGain[bi].setDoubleClickReturnValue (true, 0.0);
         }
 
@@ -145,7 +145,7 @@ private:
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         s.setRange (lo, hi, step);
         s.setName (name);
-        s.getProperties().set ("showLabel", true);
+        s.setShowLabel (true);
         SuperMoToTheme::accentSlider (s, accent);
         s.onValueChange = [this] { fireOnChange(); };
         addAndMakeVisible (s);
