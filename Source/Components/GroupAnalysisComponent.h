@@ -1027,8 +1027,23 @@ private:
                         // Back on the message thread: the background jobs are
                         // done, so painting the engines' data into figures is
                         // safe here (and only possible here).
-                        auto finish = [safe = juce::Component::SafePointer<GroupAnalysisComponent> (this),
-                                       dir, firLength, prefix, wantFigures, ok]
+                        //
+                        // The SafePointer is built into a named local and then
+                        // captured by copy, rather than written inline as an
+                        // init-capture (`[safe = SafePointer (this), ...]`). An
+                        // init-capture's initializer belongs to the *enclosing*
+                        // scope, and here that scope is another lambda, so the
+                        // `this` it would name is one this lambda captured rather
+                        // than a real member-function `this`. MSVC does not carry
+                        // the outer closure's captured `this` into a nested
+                        // init-capture initializer and rejects it ("'this' cannot
+                        // be implicitly captured..."), even though it is valid
+                        // C++. Capturing an ordinary local sidesteps the lookup
+                        // entirely. The project's other SafePointer init-captures
+                        // are fine because they sit directly in a member function.
+                        const juce::Component::SafePointer<GroupAnalysisComponent> safe (this);
+
+                        auto finish = [safe, dir, firLength, prefix, wantFigures, ok]
                         {
                             if (safe == nullptr)
                                 return;
