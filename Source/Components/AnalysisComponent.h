@@ -615,9 +615,9 @@ private:
 
     // The calibration selected by micCalSourceBox: global, the folder-embedded
     // curve, or an always-invalid one for "none" (the engine treats it as off).
-    const smt::MicCalibration& activeMicCal() const
+    const fxme::MicCalibration& activeMicCal() const
     {
-        static const smt::MicCalibration none;
+        static const fxme::MicCalibration none;
         switch (micCalSourceBox.getSelectedId())
         {
             case 2:  return folderMicCal;
@@ -939,7 +939,7 @@ private:
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
 
-    smt::MicCalibration folderMicCal;       // embedded next to the loaded files
+    fxme::MicCalibration folderMicCal;      // embedded next to the loaded files
     smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
 
     juce::Array<juce::File> loadedFiles;

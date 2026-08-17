@@ -34,7 +34,7 @@
 #include <cmath>
 #include "../Model/ConfigModel.h"
 #include "../Dsp/AmbisonicsDecode.h"
-#include "../Dsp/IemDecoder.h"
+#include <FxmeTools/dsp/IemDecoder.h>
 #include "../AppSettings.h"
 #include "../Theme.h"
 
@@ -707,7 +707,7 @@ private:
                 if (f == juce::File())
                     return;
                 smt::setLastBrowseDir (f);
-                const auto dec = smt::IemDecoder::fromFile (f);
+                const auto dec = fxme::IemDecoder::fromFile (f);
                 if (! dec.isValid())
                 {
                     status.setText ("IEM import failed: " + dec.error, juce::dontSendNotification);
@@ -722,7 +722,7 @@ private:
     // speaker), the per-speaker Gain folded into the frame gain, and the radius
     // gain/delay compensation on each output (each optional). Mirrors
     // applyAmbisonics but takes the matrix and layout from the file.
-    void applyIemDecoder (const smt::IemDecoder& dec)
+    void applyIemDecoder (const fxme::IemDecoder& dec)
     {
         const int target = targetBox.getSelectedId() - 1;
         if (target < 0)

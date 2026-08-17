@@ -31,7 +31,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "MicCalibration.h"
+#include <FxmeTools/dsp/MicCalibration.h>
 #include <algorithm>
 #include <complex>
 #include <limits>
@@ -203,8 +203,8 @@ public:
         IR). The mic response is divided out per bin; pass a default-constructed
         (invalid) calibration to disable. Recomputes the smoothed spectra and
         the correction. */
-    void setMicCalibration (const MicCalibration& cal);
-    const MicCalibration& getMicCalibration() const noexcept { return micCal; }
+    void setMicCalibration (const fxme::MicCalibration& cal);
+    const fxme::MicCalibration& getMicCalibration() const noexcept { return micCal; }
 
     /** Frequency band the analysis acts on. Outside [lowHz, highHz] (with a
         half-octave skirt) the correction is faded to unity and the exported
@@ -291,7 +291,7 @@ private:
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
     PhaseType phaseType = PhaseType::linear;     // rendered correction IR phase
-    MicCalibration micCal;                       // divided out of the measurements
+    fxme::MicCalibration micCal;                 // divided out of the measurements
     float smoothingLowFraction  = 1.0f / 6.0f;  // octave fraction at LF (0 = off)
     float smoothingHighFraction = 1.0f / 6.0f;  // octave fraction at HF (0 = off)
     static constexpr double smoothLowAnchorHz  = 100.0;    // <= here: lowFraction

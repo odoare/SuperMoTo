@@ -2,7 +2,7 @@
   ------------------------------------------------------------------------------
     MicCalTest.cpp
 
-    Offline check of the microphone-calibration logic (smt::MicCalibration):
+    Offline check of the microphone-calibration logic (fxme::MicCalibration):
       - parsing the standard text format (comments, whitespace/comma columns),
       - exact values at the file's points and log-frequency interpolation,
       - endpoint clamping outside the file's range,
@@ -19,7 +19,7 @@
 */
 
 #include <JuceHeader.h>
-#include "../Source/Dsp/MicCalibration.h"
+#include <FxmeTools/dsp/MicCalibration.h>
 
 static bool g_ok = true;
 
@@ -53,7 +53,7 @@ int main()
 {
     // ── 1. Load the realistic synthetic file ─────────────────────────────────
     std::cout << "Loading " << MICCAL_TEST_FILE << "\n";
-    smt::MicCalibration cal;
+    fxme::MicCalibration cal;
     check (cal.loadFromFile (juce::File (MICCAL_TEST_FILE)), "loadFromFile succeeds");
     check (cal.isValid(),                  "calibration is valid");
     check (cal.hasPhase(),                 "phase column detected");
@@ -115,7 +115,7 @@ int main()
     // ── 4. Format edge cases (inline text) ───────────────────────────────────
     // Comma separators, mixed comment markers, leading header text.
     {
-        smt::MicCalibration c;
+        fxme::MicCalibration c;
         const juce::String txt =
             "# a hash comment\n"
             "; a semicolon comment\n"
@@ -130,7 +130,7 @@ int main()
 
     // Magnitude-only file: no phase column -> hasPhase() false, zero phase.
     {
-        smt::MicCalibration c;
+        fxme::MicCalibration c;
         check (c.loadFromText ("100 1.0\n1000 -2.0\n10000 4.0\n", "magonly.txt"),
                "magnitude-only file parses");
         check (! c.hasPhase(), "no phase column reported");
@@ -146,7 +146,7 @@ int main()
     // continuous +20 deg step, so the unwrapped value at 200 Hz is +190 deg and
     // the midpoint (141.42 Hz) is +180 deg.
     {
-        smt::MicCalibration c;
+        fxme::MicCalibration c;
         check (c.loadFromText ("100 0 170\n200 0 -170\n", "wrap.txt"), "wrap file parses");
         approx (juce::radiansToDegrees (c.phaseRadAt (200.0)), 190.0f, 0.1f,
                 "phase unwrapped @ 200 Hz");
@@ -156,13 +156,13 @@ int main()
 
     // ── 5. Invalid input and the default (unloaded) object ───────────────────
     {
-        smt::MicCalibration c;
+        fxme::MicCalibration c;
         check (! c.loadFromText ("* only comments\n42\n", "bad.txt"),
                "fewer than 2 points rejected");
         check (! c.isValid(), "rejected file leaves it invalid");
     }
     {
-        smt::MicCalibration none;                 // never loaded
+        fxme::MicCalibration none;                 // never loaded
         check (! none.isValid(), "default calibration is invalid");
         approx (none.magnitudeDbAt (1000.0), 0.0f, 1.0e-6f, "default mag is 0 dB");
         const auto unity = none.correctionAt (1000.0);

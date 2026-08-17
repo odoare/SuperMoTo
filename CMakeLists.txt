@@ -108,11 +108,13 @@ juce_add_console_app(SuperMoToTests PRODUCT_NAME "SuperMoToTests")
 target_sources(SuperMoToTests PRIVATE
     Tests/AnalysisTest.cpp
     Source/Dsp/AnalysisEngine.cpp
-    Source/Dsp/MicCalibration.cpp
+    # MicCalibration lives in FxmeTools now; compiled straight from the submodule
+    # rather than linking the whole module (this target has no GUI dependencies).
+    lib/FxmeTools/FxmeTools/dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToTests)
-# Reach <FxmeTools/dsp/Biquad.h> (header-only, no link needed) without pulling
-# in the whole module.
+# Reach <FxmeTools/dsp/Biquad.h> and <FxmeTools/dsp/MicCalibration.h>
+# (header-only / compiled above) without pulling in the whole module.
 target_include_directories(SuperMoToTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
 target_compile_definitions(SuperMoToTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
@@ -131,9 +133,11 @@ add_test(NAME analysis COMMAND SuperMoToTests)
 juce_add_console_app(SuperMoToMicCalTests PRODUCT_NAME "SuperMoToMicCalTests")
 target_sources(SuperMoToMicCalTests PRIVATE
     Tests/MicCalTest.cpp
-    Source/Dsp/MicCalibration.cpp
+    lib/FxmeTools/FxmeTools/dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToMicCalTests)
+# Reach <FxmeTools/dsp/MicCalibration.h> without linking the module.
+target_include_directories(SuperMoToMicCalTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
 target_compile_definitions(SuperMoToMicCalTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0

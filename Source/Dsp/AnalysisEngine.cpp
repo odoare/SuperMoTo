@@ -181,7 +181,7 @@ void AnalysisEngine::applySmoothing()
     }
 }
 
-void AnalysisEngine::setMicCalibration (const MicCalibration& cal)
+void AnalysisEngine::setMicCalibration (const fxme::MicCalibration& cal)
 {
     // Identity check (name + validity), not a deep comparison: the shared mic
     // cal only actually changes via an explicit load/clear in the Calibration

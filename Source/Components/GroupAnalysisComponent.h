@@ -575,9 +575,9 @@ private:
 
     // The calibration selected by micCalSourceBox: global, the folder-embedded
     // curve, or an always-invalid one for "none" (engines treat it as off).
-    const smt::MicCalibration& activeMicCal() const
+    const fxme::MicCalibration& activeMicCal() const
     {
-        static const smt::MicCalibration none;
+        static const fxme::MicCalibration none;
         switch (micCalSourceBox.getSelectedId())
         {
             case 2:  return folderMicCal;
@@ -1248,7 +1248,7 @@ private:
 
     juce::Label title, micCalInfo, countLabel, status;
     juce::ComboBox countBox, micCalSourceBox;
-    smt::MicCalibration folderMicCal;       // embedded in the loaded folder
+    fxme::MicCalibration folderMicCal;      // embedded in the loaded folder
     smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
     juce::TextButton computeButton, applyButton, loadFolderButton;
     juce::ToggleButton subEnabledToggle;

@@ -20,7 +20,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "Dsp/MicCalibration.h"
+#include <FxmeTools/dsp/MicCalibration.h>
 
 namespace smt
 {
@@ -141,9 +141,9 @@ inline void setSplCalibration (float offsetDb, bool calibrated)
 
 /** The process-wide microphone calibration (loaded lazily from the stored
     path; invalid / flat when none is set). */
-inline MicCalibration& sharedMicCalibration()
+inline fxme::MicCalibration& sharedMicCalibration()
 {
-    static MicCalibration cal;
+    static fxme::MicCalibration cal;
     static const bool inited = [&]
     {
         if (auto* s = appProperties().getUserSettings())
