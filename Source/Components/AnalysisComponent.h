@@ -285,7 +285,10 @@ public:
         alignSlider.setValue (0.0, juce::dontSendNotification);
         alignSlider.setDoubleClickReturnValue (true, 0.0);
         alignSlider.setTextValueSuffix (" ms");
-        alignSlider.getProperties().set ("drawFromCentre", true);   // bipolar: fill from 0
+        // Bipolar: the fill grows from 0 ms. setCentralValue rather than the
+        // "drawFromCentre" property, which hardcodes the track's geometric
+        // midpoint and so is only right while this range stays symmetric.
+        alignSlider.setCentralValue (0.0);
         SuperMoToTheme::accentSlider (alignSlider, SuperMoToTheme::mono);
         alignSlider.onValueChange = [this]
         {
