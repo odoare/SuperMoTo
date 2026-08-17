@@ -1,5 +1,22 @@
 cmake_minimum_required(VERSION 3.22)
 
+# MUST stay before project(): that is where CMake configures the Apple toolchain
+# and reads these. project() also creates the CMAKE_OSX_DEPLOYMENT_TARGET cache
+# entry itself, so a set(... CACHE ...) placed after it is silently a no-op and
+# the deployment target falls back to the build machine's SDK. The failure is
+# invisible on an Apple Silicon runner: the bundle is arm64-only, is still named
+# "universal", installs happily, and then fails on every Intel Mac.
+#
+# 10.13, not 11.0: 11.0 excludes Catalina even with a correct x86_64 slice (the
+# plugin is skipped during the host's scan and nothing appears). The arm64 slice
+# is clamped up to 11.0 by the toolchain anyway, so a low target costs nothing.
+# The release workflow passes both as -D on the configure line as well, since a
+# command-line -D is in the cache before any line here runs.
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS deployment version")
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures")
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -10,11 +27,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 enable_testing()        # register the offline test executables with CTest
-
-if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version")
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures")
-endif()
 
 # JUCE is expected as a sibling of this repo (../JUCE, a juce-framework/JUCE
 # checkout). Shared FX-Mechanics code — GUI controls, look-and-feel, VU meters
