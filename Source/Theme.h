@@ -20,15 +20,6 @@
 
 namespace SuperMoToTheme
 {
-    inline void paintBackground (juce::Graphics& g, juce::Rectangle<float> b)
-    {
-        const auto base = juce::Colour::fromFloatRGBA (0.15f, 0.15f, 0.25f, 1.0f);
-        juce::ColourGradient grad (base.darker().darker().darker(), b.getBottomLeft(),
-                                   base, b.getTopRight(), false);
-        g.setGradientFill (grad);
-        g.fillRect (b);
-    }
-
     inline const juce::Colour panel       { 0xff20202c };
     inline const juce::Colour panelLine   { 0xff3a3a4c };
     inline const juce::Colour text        { 0xffd8d8e0 };
@@ -44,6 +35,24 @@ namespace SuperMoToTheme
     inline const juce::Colour measure     { 0xffe0586f };   // rose (calibration)
 
     inline const juce::Colour configEngage { 0xff00ffff };  // cyan: A..F engage / edit
+
+    // The lit body of a selected fxme::AccentToggle (the view and Edit A..F
+    // buttons). A brightened master rather than master itself: AccentToggle draws
+    // its "on" text in black, which is only 3.6:1 against 0xff007070 but 6.9:1
+    // against this. configEngage is already bright enough to use raw.
+    inline const juce::Colour viewSelected { master.brighter (0.5f) };
+
+    // The window backdrop, from FxmeTools so every plugin in the family shares
+    // one: near-black with only a whisper of the accent, which is what keeps a
+    // set of differently-tinted plugins looking like one product. The
+    // *Component* variant rather than paintTintedBackground because this editor
+    // fills the whole plugin window itself (there is no separate effect
+    // component below it), and its gradient runs corner to corner, so it reads
+    // the same across the whole 1100x720 to 2400x1600 resize range.
+    inline void paintBackground (juce::Graphics& g, juce::Rectangle<float> b)
+    {
+        fxme::paintComponentBackground (g, b, master);
+    }
 
     // Plots, analyzers and meters.
     inline const juce::Colour plotBackground   { 0xff000000 };   // plot / meter background

@@ -84,17 +84,20 @@ private:
     juce::OwnedArray<fxme::FxmeButton> configButtons;       // A..F (engage)
     std::unique_ptr<fxme::FxmeButton> exclusiveButton, muteButton, dimButton, monoButton;
     std::unique_ptr<fxme::FxmeSlider> levelSlider;
-    juce::TextButton collapseButton;
+    fxme::AccentToggle collapseButton;
 
     // ── Bottom control bar ───────────────────────────────────────────────────
-    juce::TextButton matrixViewButton, configToolButton, calibrationButton, analysisButton,
-                     presetsViewButton, groupAnalysisButton;
+    // fxme::AccentToggle: the house latching button. Their toggle state is driven
+    // from the application state (setView / setEditConfig / setCollapsed), not by
+    // the click, so each one has setClickingTogglesState(false) — see the ctor.
+    fxme::AccentToggle matrixViewButton, configToolButton, calibrationButton, analysisButton,
+                       presetsViewButton, groupAnalysisButton;
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;
     juce::Label insLabel, outsLabel;
     juce::ComboBox insBox, outsBox;                         // matrix size
-    juce::OwnedArray<juce::TextButton> editConfigButtons;   // which config is edited
+    juce::OwnedArray<fxme::AccentToggle> editConfigButtons; // which config is edited
     juce::Label editLabel;
     SpectrumAnalyzerComponent spectrum;
     FrameEditorComponent frameEditor;

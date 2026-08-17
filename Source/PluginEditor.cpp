@@ -90,19 +90,25 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     levelSlider->setLookAndFeel (&fxmeLookAndFeel);
     addAndMakeVisible (*levelSlider);
 
+    // The latching buttons below are all fxme::AccentToggle, but their state
+    // follows the application (which view is up, which config is edited, whether
+    // the window is collapsed) rather than the click, so each one turns off the
+    // click-latching AccentToggle enables by default and is driven by
+    // setToggleState from setView / setEditConfig / setCollapsed.
     collapseButton.setButtonText (juce::String::fromUTF8 ("\xe2\x96\xb2"));   // up triangle
-    collapseButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-    collapseButton.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::master.darker (0.6f));
+    collapseButton.setClickingTogglesState (false);
+    collapseButton.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
+                              SuperMoToTheme::panel);
     collapseButton.setTooltip ("Compact view: only the output strip");
     collapseButton.onClick = [this] { setCollapsed (! collapsed); };
     addAndMakeVisible (collapseButton);
 
-    auto initViewButton = [this] (juce::TextButton& b, const juce::String& text, View v)
+    auto initViewButton = [this] (fxme::AccentToggle& b, const juce::String& text, View v)
     {
         b.setButtonText (text);
         b.setClickingTogglesState (false);
-        b.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-        b.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::master.darker (0.6f));
+        b.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
+                     SuperMoToTheme::panel);
         b.onClick = [this, v] { setView (v); };
         addAndMakeVisible (b);
     };
@@ -167,11 +173,13 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     // The edit button of the currently displayed configuration lights up.
     for (int c = 0; c < smt::numConfigs; ++c)
     {
-        auto* b = editConfigButtons.add (new juce::TextButton (smt::configName (c)));
+        auto* b = editConfigButtons.add (new fxme::AccentToggle());
+        b->setButtonText (smt::configName (c));
         b->setClickingTogglesState (false);
-        b->setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-        b->setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::configEngage.darker (0.25f));
-        b->setColour (juce::TextButton::textColourOnId, SuperMoToTheme::configEngage);
+        // Same cyan as the A..F engage buttons in the top bar, so "edited" and
+        // "engaged" read as the same family of control.
+        b->setAccent (SuperMoToTheme::configEngage, SuperMoToTheme::text,
+                      SuperMoToTheme::panel);
         b->onClick = [this, c] { setEditConfig (c); };
         addAndMakeVisible (b);
     }
