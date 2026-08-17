@@ -30,13 +30,13 @@ public:
     explicit AnalysisComponent (SuperMoToAudioProcessor& p) : processor (p)
     {
         title.setText ("Analysis & correction design", juce::dontSendNotification);
-        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
 
         // Read-only reminder of the (global) mic calibration applied to the data;
         // it is loaded/cleared in the Measurement & Calibration pane.
-        micCalInfo.setFont (juce::Font (11.0f));
+        micCalInfo.setFont (juce::Font (juce::FontOptions (11.0f)));
         micCalInfo.setJustificationType (juce::Justification::centredRight);
         micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
@@ -223,7 +223,7 @@ public:
         };
         addAndMakeVisible (phaseBox);
 
-        firInfo.setFont (juce::Font (12.0f));
+        firInfo.setFont (juce::Font (juce::FontOptions (12.0f)));
         firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
         addAndMakeVisible (firInfo);
 
@@ -295,7 +295,7 @@ public:
         };
         addAndMakeVisible (alignSlider);
 
-        alignInfo.setFont (juce::Font (12.0f));
+        alignInfo.setFont (juce::Font (juce::FontOptions (12.0f)));
         alignInfo.setJustificationType (juce::Justification::centredRight);
         alignInfo.setColour (juce::Label::textColourId, SuperMoToTheme::mono.brighter (0.3f));
         addAndMakeVisible (alignInfo);
@@ -480,7 +480,7 @@ private:
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (12.0f));
+        l.setFont (juce::Font (juce::FontOptions (12.0f)));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
     }

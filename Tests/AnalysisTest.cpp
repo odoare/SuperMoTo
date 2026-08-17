@@ -69,15 +69,19 @@ int main()
             y[i] += 1.0e-5f * (rng.nextFloat() * 2.0f - 1.0f);
 
         juce::WavAudioFormat wav;
-        auto stream = files[fileIdx].createOutputStream();
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            wav.createWriterFor (stream.get(), sr, 2, 32, {}, 0));
+        // unique_ptr<OutputStream>, not the concrete type that createOutputStream
+        // returns: createWriterFor() binds it by reference to move ownership out.
+        std::unique_ptr<juce::OutputStream> stream = files[fileIdx].createOutputStream();
+        auto writer = wav.createWriterFor (stream,
+                                          juce::AudioFormatWriterOptions{}
+                                              .withSampleRate    (sr)
+                                              .withNumChannels   (2)
+                                              .withBitsPerSample (32));
         if (writer == nullptr)
         {
             std::cout << "FAIL: cannot write test wav\n";
             return 1;
         }
-        stream.release();
         writer->writeFromAudioSampleBuffer (buf, 0, n);
     }
 

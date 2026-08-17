@@ -574,10 +574,17 @@ private:
 
         legendHits.clear();
         int x = (int) magR.getX() + 6;
+
+        // Built once per repaint rather than once per legend entry. Kept separate
+        // from g.setFont(11.0f) below, which sets only the height and so keeps
+        // whatever style the Graphics already carries — measuring with a plain
+        // 11 px font is what this code has always done.
+        const juce::Font legendFont { juce::FontOptions (11.0f) };
+
         g.setFont (11.0f);
         for (const auto& item : items)
         {
-            const int w = (int) juce::GlyphArrangement::getStringWidth (juce::Font (11.0f), item.name) + 6;
+            const int w = (int) juce::GlyphArrangement::getStringWidth (legendFont, item.name) + 6;
             g.setColour (item.on ? item.col : item.col.withAlpha (0.3f));
             g.fillRect (x, (int) magR.getY() + 4, 10, 3);
             g.setColour (item.on ? SuperMoToTheme::text : SuperMoToTheme::dimText.withAlpha (0.6f));
@@ -617,7 +624,8 @@ private:
                        + " dB";
 
             g.setFont (11.0f);
-            const int tw = (int) juce::GlyphArrangement::getStringWidth (juce::Font (11.0f), txt) + 12;
+            const int tw = (int) juce::GlyphArrangement::getStringWidth (
+                               juce::Font (juce::FontOptions (11.0f)), txt) + 12;
             juce::Rectangle<int> box ((int) magR.getRight() - tw, (int) magR.getY() - 2, tw, 15);
             g.setColour (SuperMoToTheme::plotBackground.withAlpha (0.8f));
             g.fillRoundedRectangle (box.toFloat(), 3.0f);

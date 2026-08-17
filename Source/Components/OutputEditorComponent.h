@@ -33,7 +33,7 @@ public:
 
         title.setJustificationType (juce::Justification::centredLeft);
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
-        title.setFont (juce::Font (15.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
         addAndMakeVisible (title);
 
         firButton.setButtonText ("FIR");
@@ -71,7 +71,7 @@ public:
             addAndMakeVisible (s);
 
             l.setText (name, juce::dontSendNotification);
-            l.setFont (juce::Font (11.0f));
+            l.setFont (juce::Font (juce::FontOptions (11.0f)));
             l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
             addAndMakeVisible (l);
         };

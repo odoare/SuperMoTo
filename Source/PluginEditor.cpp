@@ -122,7 +122,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     auto initSizeBox = [this] (juce::Label& l, juce::ComboBox& b, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (12.0f));
+        l.setFont (juce::Font (juce::FontOptions (12.0f)));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
 
@@ -563,7 +563,7 @@ void SuperMoToAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawImage (logo, juce::Rectangle<float> (8.0f, 6.0f, 48.0f, 48.0f),
                      juce::RectanglePlacement::centred);
     g.setColour (SuperMoToTheme::text);
-    g.setFont (juce::Font (24.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
     g.drawText ("SuperMoTo", 62, 0, 170, top.getHeight(), juce::Justification::centredLeft);
 }
 

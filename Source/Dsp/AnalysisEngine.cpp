@@ -1016,16 +1016,22 @@ bool AnalysisEngine::exportCorrectionIR (const juce::File& file, int firLength) 
 
     file.deleteFile();
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+
+    // Must be declared as unique_ptr<OutputStream> rather than to the concrete
+    // type: createWriterFor() binds it by reference and moves ownership out only
+    // on success (so no manual release, and the stream is freed here on failure).
+    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     if (stream == nullptr)
         return false;
 
-    std::unique_ptr<juce::AudioFormatWriter> writer (
-        wav.createWriterFor (stream.get(), sampleRate, 1, 32, {}, 0));
+    auto writer = wav.createWriterFor (stream,
+                                       juce::AudioFormatWriterOptions{}
+                                           .withSampleRate    (sampleRate)
+                                           .withNumChannels   (1)
+                                           .withBitsPerSample (32));
     if (writer == nullptr)
         return false;
 
-    stream.release();
     return writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
 }
 
@@ -1037,16 +1043,22 @@ bool AnalysisEngine::exportMeasuredIR (const juce::File& file, int firLength) co
 
     file.deleteFile();
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+
+    // Must be declared as unique_ptr<OutputStream> rather than to the concrete
+    // type: createWriterFor() binds it by reference and moves ownership out only
+    // on success (so no manual release, and the stream is freed here on failure).
+    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     if (stream == nullptr)
         return false;
 
-    std::unique_ptr<juce::AudioFormatWriter> writer (
-        wav.createWriterFor (stream.get(), sampleRate, 1, 32, {}, 0));
+    auto writer = wav.createWriterFor (stream,
+                                       juce::AudioFormatWriterOptions{}
+                                           .withSampleRate    (sampleRate)
+                                           .withNumChannels   (1)
+                                           .withBitsPerSample (32));
     if (writer == nullptr)
         return false;
 
-    stream.release();
     return writer->writeFromAudioSampleBuffer (ir, 0, ir.getNumSamples());
 }
 

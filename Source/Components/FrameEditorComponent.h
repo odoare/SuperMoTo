@@ -33,7 +33,7 @@ public:
 
         title.setJustificationType (juce::Justification::centredLeft);
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
-        title.setFont (juce::Font (15.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
         addAndMakeVisible (title);
 
         auto initToggle = [this] (juce::ToggleButton& b, const juce::String& text, juce::Colour col)
@@ -56,7 +56,7 @@ public:
         addAndMakeVisible (levelSlider);
 
         levelLabel.setText ("Level", juce::dontSendNotification);
-        levelLabel.setFont (juce::Font (11.0f));
+        levelLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
         levelLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (levelLabel);
 

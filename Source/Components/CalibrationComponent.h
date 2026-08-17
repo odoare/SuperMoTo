@@ -44,7 +44,7 @@ public:
         processor.configModel.addListener (this);
 
         title.setText ("Measurement & calibration", juce::dontSendNotification);
-        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
 
@@ -58,7 +58,7 @@ public:
         // Microphone calibration (global, shared with the analysis pane). The
         // live spectrum reads it directly; here we just load / clear / show it.
         addLabel (micCalLabel, "Mic cal");
-        micCalValue.setFont (juce::Font (12.0f));
+        micCalValue.setFont (juce::Font (juce::FontOptions (12.0f)));
         micCalValue.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         micCalValue.setColour (juce::Label::backgroundColourId,
                                SuperMoToTheme::plotBackground.withAlpha (0.4f));
@@ -415,7 +415,7 @@ private:
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (12.0f));
+        l.setFont (juce::Font (juce::FontOptions (12.0f)));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
     }
@@ -436,7 +436,7 @@ private:
     void buildSplMeterControls()
     {
         splTitle.setText ("SPL meter", juce::dontSendNotification);
-        splTitle.setFont (juce::Font (14.0f, juce::Font::bold));
+        splTitle.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
         splTitle.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (splTitle);
 
@@ -491,7 +491,7 @@ private:
             updateSplInfo();
         };
 
-        splInfo.setFont (juce::Font (11.0f));
+        splInfo.setFont (juce::Font (juce::FontOptions (11.0f)));
         splInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (splInfo);
         updateSplInfo();

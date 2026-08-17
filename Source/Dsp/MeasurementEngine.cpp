@@ -282,18 +282,22 @@ void MeasurementEngine::handleAsyncUpdate()
 
     file.deleteFile();
     juce::WavAudioFormat wav;
-    std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+
+    // Must be declared as unique_ptr<OutputStream> rather than to the concrete
+    // type: createWriterFor() binds it by reference and moves ownership out only
+    // on success (so no manual release, and the stream is freed here on failure).
+    std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
     bool ok = false;
 
     if (stream != nullptr)
     {
-        std::unique_ptr<juce::AudioFormatWriter> writer (
-            wav.createWriterFor (stream.get(), sr, 2, 32, {}, 0));
+        auto writer = wav.createWriterFor (stream,
+                                           juce::AudioFormatWriterOptions{}
+                                               .withSampleRate    (sr)
+                                               .withNumChannels   (2)
+                                               .withBitsPerSample (32));
         if (writer != nullptr)
-        {
-            stream.release();       // writer owns the stream now
             ok = writer->writeFromAudioSampleBuffer (capture, 0, totalSamples);
-        }
     }
 
     if (! ok)

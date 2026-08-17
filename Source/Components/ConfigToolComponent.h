@@ -44,7 +44,7 @@ public:
     explicit ConfigToolComponent (smt::ConfigModel& m) : model (m)
     {
         title.setText ("Speaker configuration tool", juce::dontSendNotification);
-        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
 
@@ -266,7 +266,7 @@ private:
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (12.0f));
+        l.setFont (juce::Font (juce::FontOptions (12.0f)));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
     }

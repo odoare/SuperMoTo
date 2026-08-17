@@ -35,11 +35,11 @@ public:
     explicit GroupAnalysisComponent (SuperMoToAudioProcessor& p) : processor (p)
     {
         title.setText ("Group analysis \xe2\x80\x94 multi-speaker alignment", juce::dontSendNotification);
-        title.setFont (juce::Font (17.0f, juce::Font::bold));
+        title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
 
-        micCalInfo.setFont (juce::Font (11.0f));
+        micCalInfo.setFont (juce::Font (juce::FontOptions (11.0f)));
         micCalInfo.setJustificationType (juce::Justification::centredRight);
         micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
@@ -500,7 +500,7 @@ private:
     {
         SpeakerRow()
         {
-            nameLabel.setFont (juce::Font (13.0f));
+            nameLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
             nameLabel.setColour (juce::Label::textColourId, SuperMoToTheme::text);
             addAndMakeVisible (nameLabel);
 
@@ -509,16 +509,16 @@ private:
             loadButton.onClick = [this] { if (onLoad) onLoad(); };
             addAndMakeVisible (loadButton);
 
-            fileStatus.setFont (juce::Font (11.0f));
+            fileStatus.setFont (juce::Font (juce::FontOptions (11.0f)));
             fileStatus.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
             addAndMakeVisible (fileStatus);
 
-            delayReadout.setFont (juce::Font (12.0f));
+            delayReadout.setFont (juce::Font (juce::FontOptions (12.0f)));
             delayReadout.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
             delayReadout.setJustificationType (juce::Justification::centredRight);
             addAndMakeVisible (delayReadout);
 
-            trimReadout.setFont (juce::Font (12.0f));
+            trimReadout.setFont (juce::Font (juce::FontOptions (12.0f)));
             trimReadout.setColour (juce::Label::textColourId, SuperMoToTheme::master);
             trimReadout.setJustificationType (juce::Justification::centredRight);
             trimReadout.setTooltip ("Suggested level-matching trim: how much to attenuate this "
@@ -560,7 +560,7 @@ private:
     void addLabel (juce::Label& l, const juce::String& text)
     {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (12.0f));
+        l.setFont (juce::Font (juce::FontOptions (12.0f)));
         l.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
         addAndMakeVisible (l);
     }
