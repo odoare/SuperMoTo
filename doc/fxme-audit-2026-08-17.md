@@ -13,8 +13,11 @@ Olivier's call).
 Revisions:
 
 - 2026-08-17, initial audit.
-- 2026-08-17, applied S1, S1b, S2 and S3 (the macOS release fixes). Everything
-  else is still open.
+- 2026-08-17, applied S1, S1b, S2 and S3 (the macOS release fixes).
+- 2026-08-17, applied S4 (state version attribute).
+- 2026-08-17, applied S5, S6 and S7 (realtime safety). S5 touches FxmeTools and
+  needs committing there first. None of S5-S7 has been compiled yet.
+  Everything else is still open.
 
 ---
 
@@ -61,70 +64,128 @@ missing bundle each exit 1, with all three bundles reported rather than the loop
 aborting on the first). Not verified: the actual macOS build, which needs a
 runner.
 
-### State
+### State — APPLIED 2026-08-17
 
-- [ ] **S4** Add a version attribute to the saved state. **safe to apply**
-      [Source/PluginProcessor.cpp:275-284](../Source/PluginProcessor.cpp#L275-L284)
-      writes a `"SuperMoToState"` root with no version property. Nothing is
-      broken yet, but this cannot be added retroactively: every session and user
-      preset already saved is permanently unversioned. One line
-      (`root.setProperty ("version", 1, nullptr);`) plus a read in
-      `setStateInformation`.
+- [x] **S4** Add a version attribute to the saved state. **safe to apply**
+      Turned out to be more than the one line the initial audit estimated,
+      because the plugin has **two** serialization surfaces, not one: the host
+      session (`getStateInformation`, a `"SuperMoToState"` root wrapping the
+      parameters) and the preset XML files, which `PresetManager::saveUserPreset`
+      writes straight from `apvts.copyState()` without ever touching the wrapper.
+      A property on the wrapper root would have versioned sessions and left every
+      preset unversioned, and presets are the longer-lived artefact (they get
+      shared between machines and kept for years).
 
-### Realtime safety
+      The version therefore lives on `apvts.state` itself, so it travels through
+      both surfaces from one place:
+    - `currentStateVersion` / `stateVersionProperty` declared at
+      [PluginProcessor.h:82-98](../Source/PluginProcessor.h#L82-L98), with the
+      format history and the rule for bumping it.
+    - `stampStateVersion()`
+      ([PluginProcessor.cpp:216-225](../Source/PluginProcessor.cpp#L216-L225)) is
+      idempotent: it writes only when the value actually differs. That keeps it
+      from flagging the preset dirty, and removes any dependence on the order the
+      `apvts.state` listeners run in.
+    - Stamped in the constructor
+      ([PluginProcessor.cpp:45-48](../Source/PluginProcessor.cpp#L45-L48)) before
+      `PresetManager` attaches its dirty-tracking listener, so a fresh instance
+      still starts clean.
+    - Re-stamped in `restoreFromApvtsState()`
+      ([PluginProcessor.cpp:284-289](../Source/PluginProcessor.cpp#L284-L289)).
+      Necessary because `APVTS::replaceState` is a wholesale tree reseat
+      (`state = newState`), so loading an older state or one of the existing
+      unversioned factory presets drops the property; without this the next
+      preset saved from that state would be unversioned again.
+    - Read in `setStateInformation`
+      ([PluginProcessor.cpp:322-328](../Source/PluginProcessor.cpp#L322-L328))
+      before `replaceState`, and the pre-existing structural probe for the
+      original layout is now gated on `version == 0`, so a v1 state cannot pick
+      up a stale sibling `Configurations` by mistake.
+    - Also written onto the copy in `getStateInformation`
+      ([PluginProcessor.cpp:298-304](../Source/PluginProcessor.cpp#L298-L304)) so
+      a session is self-describing regardless of the live tree. Safe because
+      `copyState()` deep-copies (`state.createCopy()`), so it cannot dirty the
+      live state, and it is the same property at the same path, so a file still
+      carries exactly one version number.
 
-These two are the only findings that can produce an audible dropout in a
-shipped build, and both need a design call rather than a one-liner.
+      No behaviour change for anything already saved: an unversioned state reads
+      as 0 and takes exactly the path it takes today. The unversioned factory
+      presets in BinaryData migrate on load (stamped in memory under
+      `PresetManager`'s `suppressDirty`, so no spurious modified marker); they
+      will carry version 1 if they are ever regenerated.
 
-- [ ] **S5** `fxme::FirFilter::process` blocks the audio thread on a
+### Realtime safety — APPLIED 2026-08-17
+
+All three fixed. S5 lives in the FxmeTools submodule and must be committed there
+first. None of the three has been compiled yet.
+
+- [x] **S5** `fxme::FirFilter::process` blocks the audio thread on a
       message-thread lock. **decision (FxmeTools, shared library)**
-      [lib/FxmeTools/FxmeTools/dsp/FirFilter.h:120](../lib/FxmeTools/FxmeTools/dsp/FirFilter.h#L120)
-      takes a `juce::ScopedLock` on the audio thread. The same `CriticalSection`
-      is held by `loadFromReader`
-      ([FirFilter.h:76-81](../lib/FxmeTools/FxmeTools/dsp/FirFilter.h#L76-L81))
-      across a reader read, a `LagrangeInterpolator` resample and
-      `engine.SetImpulse`, so the header's "swapped under a short lock" is not
-      short. Loading a FIR or a preset can stall the audio callback.
-      Second, cheaper hit: `hasImpulse()`
-      ([FirFilter.h:100](../lib/FxmeTools/FxmeTools/dsp/FirFilter.h#L100)) also
-      takes the lock and is called once per output per block at
-      [Source/Dsp/MatrixEngine.cpp:266](../Source/Dsp/MatrixEngine.cpp#L266)
-      (32 acquisitions per block even with no IR loaded anywhere).
-      Minimal fix: `juce::ScopedTryLock` in `process()` (bypass the block while a
-      load is in flight) plus an atomic `hasImpulse` flag. A *decision* because
-      it edits a library every other plugin links, and because a bypassed block
-      during a load is itself a behaviour change.
+      Fixed in the submodule and API-compatible, so every other plugin picks it
+      up on its next pointer bump.
+    - `process()` now takes the lock with `juce::ScopedTryLock`
+      ([FirFilter.h:136-146](../lib/FxmeTools/FxmeTools/dsp/FirFilter.h#L136-L146))
+      and leaves the block dry if a load is in flight, instead of waiting on a
+      critical section that spans a file read, a `LagrangeInterpolator` resample
+      and a WDL engine rebuild. Loading an IR now costs a few un-convolved
+      blocks rather than a blocked callback and an xrun.
+    - `hasImpulse()` is lock-free, backed by a new `std::atomic<bool>
+      impulseLoaded`, so `MatrixEngine` polling it once per output per block (32
+      acquisitions) touches no lock at all. Signature unchanged apart from
+      gaining `noexcept`.
+    - The atomic is published *last* in `rebuildEngineImpulse()` and cleared
+      *first* in `loadSilentImpulse()`, so the lock-free fast path can never see
+      "loaded" while the engine holds no impulse.
+    - `getImpulseLength()` still takes the lock. It has no callers and is now
+      documented message-thread only.
 
-- [ ] **S6** `ConfigModel::copyAll` on the audio thread: spinlock, ~400 KB copy,
+- [x] **S6** `ConfigModel::copyAll` on the audio thread: spinlock, ~400 KB copy,
       and a possible `free()`. **decision**
-      [Source/Dsp/MatrixEngine.cpp:58](../Source/Dsp/MatrixEngine.cpp#L58) calls
-      [ConfigModel.h:222-228](../Source/Model/ConfigModel.h#L222-L228) from
-      `process()`. Three distinct problems:
-    - Priority inversion. The `juce::SpinLock` is also taken on the message
-      thread by [`getSpectrumFrames()`](../Source/Model/ConfigModel.h#L239-L250),
-      which `push_back`s into a `std::vector` (allocating while holding the lock
-      the audio thread spins on), and by
-      [`copyConfig()`](../Source/Model/ConfigModel.h#L212) which copies a full
-      32x32 config under it.
-    - `free()` on the audio thread. `dstOutputs = outputs` copy-assigns 32
-      `juce::String firPath`s
-      ([ConfigModel.h:115](../Source/Model/ConfigModel.h#L115)); releasing the
-      engine's previous reference frees the block when the refcount hits zero.
-    - Volume. The copy is all 6 configs x 32 x 32 `FrameSettings` (~400 KB), and
-      [MatrixEngine.cpp:73-77](../Source/Dsp/MatrixEngine.cpp#L73-L77) then calls
-      `applySettings` on all 6144 of them, not just the `visIns x visOuts` that
-      are actually processed.
+      All three sub-problems addressed, without introducing any hand-rolled
+      lock-free machinery (a triple-buffered snapshot was considered and rejected
+      as ~1.2 MB of extra state plus a publish/acquire race that is easy to get
+      subtly wrong, for no benefit over a try-lock here):
+    - **Priority inversion.** New `ConfigModel::tryCopyForEngine()` uses
+      `juce::SpinLock::ScopedTryLockType`. On failure `MatrixEngine` leaves
+      `lastModelVersion` untouched and keeps the settings it already has, so the
+      next block retries. The audio thread can no longer wait on a GUI edit, and
+      `restoreFromValueTree` holding the lock across a whole ValueTree parse is
+      now harmless. A GUI edit landing one buffer late is imperceptible.
+      `getSpectrumFrames()` also `reserve()`s before taking the lock, so the
+      writer side no longer calls `operator new` inside the critical section.
+    - **`free()` on the audio thread.** New `OutputAudioSettings` carries
+      everything the engine reads (gain, delay, firOn, spectrum, bands) and
+      deliberately omits `juce::String firPath`, so neither
+      `MatrixEngine::outputSettings` nor `OutputProcessor::settings` can release
+      a String reference on the audio thread. The path was never needed there:
+      `updateFirFiles()` reads it from the model on the message thread. Verified
+      by grepping every `outputSettings` use in the engine. `copyAll()` is kept
+      unchanged for `toValueTree()`, message thread only.
+    - **Volume.** The copy and the `applySettings` loop are both restricted to
+      the visible `visIns x visOuts` sub-range, which is all the engine ever
+      processes: ~24 KB and 384 frames for a default 8x8 matrix instead of
+      ~384 KB and 6144. The existing reveal-and-reset path still runs first when
+      the matrix grows, and the copy now reads the new size *before* taking the
+      lock, so a grow always converges (the size store precedes the version
+      bump, so a race just means one more pull).
 
-      Bounded (only on a version bump), but it is a spike inside the callback on
-      every GUI edit. House fix: a double-buffered snapshot published by an
-      atomic pointer, built on the message thread.
+- [x] **S7** Scratch buffers and oversized blocks. **worse than first reported**
+      The initial audit called this a low-severity allocation on a defensive
+      path. That was wrong in an important way: `inputCopy` was the *only*
+      buffer that grew. `MatrixEngine::outScratch`, `FrameProcessor::scratch` and
+      `SplMeterEngine::inScratch` are all sized for `maxBlockSize` in `prepare()`
+      and then indexed up to `n` with no check, so a host sending a longer block
+      than it declared was an **out-of-bounds write**, not merely an allocation.
 
-- [ ] **S7** `inputCopy.setSize` inside `processBlock`. Low severity.
-      [Source/PluginProcessor.cpp:145-146](../Source/PluginProcessor.cpp#L145-L146).
-      Only reached when the host exceeds the prepared block size, so it is a
-      defensive path, but `setSize` with a growing sample count allocates
-      regardless of `avoidReallocating`. Give `prepareToPlay` headroom, or clamp
-      and process in chunks.
+      Fixed by slicing rather than growing: `processBlock` records
+      `preparedBlockSize` and, for anything longer, loops over windowed
+      `juce::AudioBuffer` views into the caller's buffer, calling the new
+      `processChunk()` per slice
+      ([PluginProcessor.cpp:142-178](../Source/PluginProcessor.cpp#L142-L178)).
+      No allocation on the audio thread, no re-`prepare()` resetting every filter
+      and delay line, and every downstream buffer is guaranteed big enough. The
+      defensive `setSize` is gone, replaced by a `jassert`, and `numIn` is now
+      also clamped against the window's channel count.
 
 ---
 
@@ -379,15 +440,35 @@ compiled anything. R2 and R3 are what greps can see.
 
 ## Commit plan
 
-S1, S1b, S2 and S3 are applied and unstaged. Everything else is untouched. The
-order is submodule first, then the bumped pointer in the parent.
+S1, S1b, S2, S3 and S4 are applied and unstaged. Everything else is untouched.
+The order is submodule first, then the bumped pointer in the parent.
 
-- [ ] **0. The macOS release fix, on its own commit** (applied, ready to commit)
+- [ ] **0a. The macOS release fix, on its own commit** (applied, ready to commit)
       ```
       git add CMakeLists.txt .github/workflows/release.yml
       ```
       Worth isolating so a release note can point at it. Then re-cut any macOS
       release built before it: the previous artefacts are very likely arm64-only.
+- [ ] **0b. The state version attribute** (applied, ready to commit)
+      ```
+      git add Source/PluginProcessor.h Source/PluginProcessor.cpp
+      ```
+      Worth its own commit: it is the one change here that touches saved-state
+      semantics.
+- [ ] **0c. Realtime safety, submodule first** (applied, ready to commit)
+      ```
+      cd lib/FxmeTools
+      git add FxmeTools/dsp/FirFilter.h          # S5
+      git commit && git push                    # shared: every plugin gets this
+      cd ../..
+      git add lib/FxmeTools                      # bumped pointer
+      git add Source/Model/ConfigModel.h Source/Dsp/OutputProcessor.h \
+              Source/Dsp/MatrixEngine.h Source/Dsp/MatrixEngine.cpp   # S6
+      git add Source/PluginProcessor.h Source/PluginProcessor.cpp     # S7
+      ```
+      S6 and S7 both touch the hot path and neither has been compiled or heard
+      yet, so this is the one batch worth building and listening to before
+      committing.
 
 - [ ] **1. FxmeTools submodule** (only if S5, H4 or H5 is taken)
       ```

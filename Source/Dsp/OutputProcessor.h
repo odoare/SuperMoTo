@@ -52,8 +52,10 @@ public:
         writePos = 0;
     }
 
-    /** Audio-thread update from the model (no allocation). */
-    void applySettings (const OutputSettings& s, bool force = false)
+    /** Audio-thread update from the model. No allocation, and no juce::String:
+        OutputAudioSettings deliberately omits firPath, so this assignment cannot
+        release a String reference (and so call free()) on the audio thread. */
+    void applySettings (const OutputAudioSettings& s, bool force = false)
     {
         const bool filterChanged = force || s.bands != settings.bands;
         settings = s;
@@ -124,7 +126,7 @@ private:
     }
 
     double sr = 44100.0;
-    OutputSettings settings;
+    OutputAudioSettings settings;
 
     static constexpr int maxBiquads = numOutputBands * 2;
     fxme::Biquad biquads[maxBiquads];

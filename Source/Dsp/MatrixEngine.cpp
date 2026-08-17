@@ -53,14 +53,25 @@ void MatrixEngine::pullModelIfChanged()
     const int v = model.getVersion();
     if (v == lastModelVersion)
         return;
-    lastModelVersion = v;
 
-    model.copyAll (frameSettings, outputSettings);
-
-    // Visible/processed matrix size. Frames revealed by a grow are reset so
-    // stale delay-line content does not play back.
+    // Visible/processed matrix size, read lock-free (atomics) so the copy below
+    // knows which sub-range it needs.
     const int newIns = model.getNumIns();
     const int newOuts = model.getNumOuts();
+
+    // Try-lock. A failure means the message thread is mid-edit (or mid-restore,
+    // which holds the lock across a whole ValueTree parse). Leave
+    // lastModelVersion alone and keep processing with the settings we already
+    // have; the next block retries. Blocking here would be an xrun, and the
+    // edit is a GUI action whose effect can be one buffer late.
+    if (! model.tryCopyForEngine (newIns, newOuts, frameSettings, outputSettings))
+        return;
+
+    lastModelVersion = v;
+
+    // Frames revealed by a grow are reset so stale delay-line content does not
+    // play back. They are inside the new visible range, so the apply loop below
+    // gives them their current settings in this same pull.
     if (newIns > visIns || newOuts > visOuts)
         for (int c = 0; c < numConfigs; ++c)
             for (int i = 0; i < newIns; ++i)
@@ -70,9 +81,12 @@ void MatrixEngine::pullModelIfChanged()
     visIns = newIns;
     visOuts = newOuts;
 
+    // Visible range only: frames outside it are never processed, and their
+    // settings are not copied either (tryCopyForEngine leaves them stale on
+    // purpose). 6 x 8 x 8 in the default matrix rather than 6 x 32 x 32.
     for (int c = 0; c < numConfigs; ++c)
-        for (int i = 0; i < numChannels; ++i)
-            for (int o = 0; o < numChannels; ++o)
+        for (int i = 0; i < visIns; ++i)
+            for (int o = 0; o < visOuts; ++o)
                 frames[(size_t) c][(size_t) i][(size_t) o]
                     .applySettings (frameSettings[(size_t) c][(size_t) i][(size_t) o]);
 

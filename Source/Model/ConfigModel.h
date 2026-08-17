@@ -18,7 +18,13 @@
     exclusive mode, master level, mute/dim/mono) live in the APVTS.
 
     Threading: setters are called from the message thread. The audio engine
-    copies settings when the version counter changes, under a short lock.
+    copies the settings it needs when the version counter changes, via
+    tryCopyForEngine() — a TRY-lock, so a GUI edit or a state restore holding
+    the lock can never block the audio thread; the engine simply keeps last
+    block's settings and retries. That copy also deliberately excludes
+    OutputSettings::firPath (see OutputAudioSettings): assigning a juce::String
+    on the audio thread can free the previous buffer, and the engine never needs
+    the path. copyAll() is the full copy, message thread only (serialization).
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -105,6 +111,8 @@ struct FrameSettings
     }
 };
 
+struct OutputAudioSettings;     // defined just below OutputSettings
+
 // One physical speaker output: trim, a 2-band EQ (e.g. the bass-management
 // crossover), a time-alignment delay, an FIR correction, and an analyzer tap.
 struct OutputSettings
@@ -130,7 +138,37 @@ struct OutputSettings
         return gainDb == 0.0f && delayMs == 0.0f && ! firOn && firPath.isEmpty()
             && ! spectrum && bands == d.bands;
     }
+
+    /** The subset the audio engine needs, as plain values. Defined below. */
+    OutputAudioSettings audio() const noexcept;
 };
+
+// Everything the audio engine reads from an output, with firPath deliberately
+// left out: it is a juce::String, and copy-assigning one on the audio thread
+// releases the previous reference, which can call free(). The path is only ever
+// needed by MatrixEngine::updateFirFiles(), which runs on the message thread and
+// reads it straight from the model.
+struct OutputAudioSettings
+{
+    float gainDb   = 0.0f;
+    float delayMs  = 0.0f;
+    bool  firOn    = false;
+    bool  spectrum = false;
+    std::array<FrameBand, (size_t) numOutputBands> bands {};
+
+    bool anyBandOn() const
+    {
+        for (const auto& b : bands)
+            if (b.on)
+                return true;
+        return false;
+    }
+};
+
+inline OutputAudioSettings OutputSettings::audio() const noexcept
+{
+    return { gainDb, delayMs, firOn, spectrum, bands };
+}
 
 //==============================================================================
 class ConfigModel
@@ -218,13 +256,51 @@ public:
         bumpAndNotify();
     }
 
-    /** Copy of a whole configuration matrix, used by the engine. */
-    void copyAll (std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs>& dstFrames,
+    using FrameSettingsArray =
+        std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs>;
+
+    /** Full copy, including every hidden frame and each output's firPath.
+        MESSAGE THREAD ONLY — it copies juce::Strings. Used by toValueTree(). */
+    void copyAll (FrameSettingsArray& dstFrames,
                   std::array<OutputSettings, numChannels>& dstOutputs) const
     {
         const juce::SpinLock::ScopedLockType sl (lock);
         dstFrames = frames;
         dstOutputs = outputs;
+    }
+
+    /** Audio thread: copy what the engine needs, without ever blocking.
+        Returns false if the lock was busy (a GUI edit or a state restore is in
+        progress); the caller should keep the settings it already has and try
+        again next block, rather than waiting on a message-thread critical
+        section that may be holding a whole ValueTree parse.
+
+        Only the visible `ins` x `outs` sub-range of each configuration is
+        copied — those are the only frames the engine processes, and it keeps a
+        default 8x8 matrix at ~24 KB per pull instead of ~384 KB for all 32x32x6.
+        Frames outside the range are refreshed by the pull that follows the
+        matrix growing, before they can be processed. */
+    bool tryCopyForEngine (int ins, int outs,
+                           FrameSettingsArray& dstFrames,
+                           std::array<OutputAudioSettings, numChannels>& dstOutputs) const noexcept
+    {
+        const juce::SpinLock::ScopedTryLockType tl (lock);
+        if (! tl.isLocked())
+            return false;
+
+        const int ni = juce::jlimit (0, numChannels, ins);
+        const int no = juce::jlimit (0, numChannels, outs);
+
+        for (int c = 0; c < numConfigs; ++c)
+            for (int i = 0; i < ni; ++i)
+                for (int o = 0; o < no; ++o)
+                    dstFrames[(size_t) c][(size_t) i][(size_t) o]
+                        = frames[(size_t) c][(size_t) i][(size_t) o];
+
+        for (int o = 0; o < numChannels; ++o)
+            dstOutputs[(size_t) o] = outputs[(size_t) o].audio();
+
+        return true;
     }
 
     int getVersion() const noexcept     { return version.load(); }
@@ -238,11 +314,19 @@ public:
 
     std::vector<FrameRef> getSpectrumFrames() const
     {
-        const juce::SpinLock::ScopedLockType sl (lock);
+        // Reserve (i.e. allocate) BEFORE taking the lock. The loop is capped at
+        // maxFrameTaps, so push_back can never reallocate inside the critical
+        // section — the audio thread's try-lock should not be losing races to a
+        // GUI query that is busy calling operator new.
         std::vector<FrameRef> refs;
+        refs.reserve ((size_t) maxFrameTaps);
+
+        const int ins = numIns.load(), outs = numOuts.load();
+
+        const juce::SpinLock::ScopedLockType sl (lock);
         for (int c = 0; c < numConfigs; ++c)
-            for (int i = 0; i < numIns.load(); ++i)
-                for (int o = 0; o < numOuts.load(); ++o)
+            for (int i = 0; i < ins; ++i)
+                for (int o = 0; o < outs; ++o)
                     if (frames[(size_t) c][(size_t) i][(size_t) o].spectrum
                         && (int) refs.size() < maxFrameTaps)
                         refs.push_back ({ c, i, o });

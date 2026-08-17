@@ -115,7 +115,8 @@ void SuperMoToAudioProcessor::changeProgramName (int, const juce::String&) {}
 //==============================================================================
 void SuperMoToAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    inputCopy.setSize (smt::numChannels, samplesPerBlock);
+    preparedBlockSize = juce::jmax (1, samplesPerBlock);
+    inputCopy.setSize (smt::numChannels, preparedBlockSize);
     engine.prepare (sampleRate, samplesPerBlock);
     engine.updateFirFiles();
     measurement.prepare (sampleRate, samplesPerBlock);
@@ -144,10 +145,45 @@ void SuperMoToAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::ScopedNoDenormals noDenormals;
 
     const int n = buffer.getNumSamples();
-    const int numIn = juce::jmin (getTotalNumInputChannels(), smt::numChannels);
+    const int maxN = preparedBlockSize;
 
-    if (inputCopy.getNumSamples() < n)
-        inputCopy.setSize (smt::numChannels, n, false, false, true);
+    if (maxN <= 0)
+        return;                 // processBlock before prepareToPlay
+
+    if (n <= maxN)
+    {
+        processChunk (buffer, n);
+        return;
+    }
+
+    // A host that sends a longer block than the one it declared in
+    // prepareToPlay would otherwise overrun every scratch buffer downstream:
+    // inputCopy here, MatrixEngine::outScratch, FrameProcessor::scratch and the
+    // SPL generator's inScratch are all sized for maxN and then indexed up to n
+    // unchecked. Growing them on the fly would allocate on the audio thread (and
+    // re-preparing would reset every filter and delay line), so slice the block
+    // instead: no allocation, no state reset, no overrun.
+    const int numCh = juce::jmin (buffer.getNumChannels(), smt::numChannels);
+    float* chans[smt::numChannels];
+
+    for (int start = 0; start < n; start += maxN)
+    {
+        const int len = juce::jmin (maxN, n - start);
+
+        for (int c = 0; c < numCh; ++c)
+            chans[c] = buffer.getWritePointer (c) + start;
+
+        juce::AudioBuffer<float> window (chans, numCh, len);
+        processChunk (window, len);
+    }
+}
+
+void SuperMoToAudioProcessor::processChunk (juce::AudioBuffer<float>& buffer, int n)
+{
+    jassert (n <= inputCopy.getNumSamples());   // guaranteed by processBlock
+
+    const int numIn = juce::jmin (getTotalNumInputChannels(),
+                                  buffer.getNumChannels(), smt::numChannels);
 
     // Keep a copy of the inputs: the engine overwrites the buffer.
     for (int c = 0; c < smt::numChannels; ++c)

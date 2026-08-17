@@ -7,10 +7,11 @@
     output. Active configurations are summed (non-exclusive mode); the
     exclusive behaviour is enforced at the parameter level.
 
-    The engine pulls its settings from the ConfigModel when the model's
-    version counter changes (short spinlock, no allocation on the audio
-    thread). FIR impulse files are loaded on the message thread via
-    updateFirFiles().
+    The engine pulls its settings from the ConfigModel when the model's version
+    counter changes, with a try-lock and no allocation on the audio thread: if
+    the model is busy the pull is simply deferred to the next block, so a GUI
+    edit or a state restore can never stall the audio callback. FIR impulse
+    files are loaded on the message thread via updateFirFiles().
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -131,9 +132,13 @@ private:
     // allowed to call recomputeLatencyComp() since it mutates OutputProcessor.
     std::atomic<bool> latencyCompDirty { false };
 
-    std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frameSettings {};
-    std::array<OutputSettings, numChannels> outputSettings {};
-    std::array<juce::String, numChannels> loadedFirPaths;
+    // The engine's own copy of the model, refreshed by pullModelIfChanged().
+    // Only the visible sub-range of frameSettings is kept current (that is all
+    // the engine processes), and outputSettings carries no firPath — see
+    // ConfigModel::tryCopyForEngine.
+    ConfigModel::FrameSettingsArray frameSettings {};
+    std::array<OutputAudioSettings, numChannels> outputSettings {};
+    std::array<juce::String, numChannels> loadedFirPaths;   // message thread only
 
     juce::AudioBuffer<float> outScratch;
     int visIns = numChannels, visOuts = numChannels;   // processed matrix size

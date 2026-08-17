@@ -148,7 +148,14 @@ private:
     std::array<juce::String, smt::numChannels> lastFirPaths;   // embed diffing
     bool restoringState = false;    // silences modelChanged during a restore
 
+    // One pass of the audio path over at most preparedBlockSize samples.
+    // processBlock() slices anything longer, so every scratch buffer downstream
+    // (inputCopy, the engine's and the meters') is guaranteed big enough and
+    // nothing has to allocate or grow on the audio thread.
+    void processChunk (juce::AudioBuffer<float>& buffer, int numSamples);
+
     juce::AudioBuffer<float> inputCopy;
+    int preparedBlockSize = 0;      // samplesPerBlock from prepareToPlay
 
     //==============================================================================
     JUCE_DECLARE_WEAK_REFERENCEABLE (SuperMoToAudioProcessor)
