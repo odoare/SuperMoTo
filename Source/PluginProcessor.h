@@ -79,6 +79,25 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // State format version. Stamped on apvts.state itself rather than on the
+    // getStateInformation() wrapper root, so it travels through BOTH
+    // serialization surfaces: the host session, and the preset XML files
+    // PresetManager writes straight from apvts.copyState().
+    //
+    //   0 (absent) written before the version property existed. Could be
+    //              either the original layout ("Configurations" a sibling of
+    //              the parameters, under the wrapper root) or the current one,
+    //              so setStateInformation still tells them apart structurally.
+    //   1          "Configurations" and the per-output EmbeddedAudio FIR slots
+    //              live inside apvts.state.
+    //
+    // Bump this when the meaning of the tree changes, and add the migration in
+    // setStateInformation. A state from a *newer* version is still loaded, not
+    // refused: the tree is self-describing enough that a partial restore beats
+    // an empty one.
+    static constexpr int currentStateVersion = 1;
+    static const juce::Identifier stateVersionProperty;     // "stateVersion"
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameters();
     juce::AudioProcessorValueTreeState apvts{*this, nullptr, "Parameters", createParameters()};
 
@@ -116,6 +135,7 @@ private:
     void syncConfigToState();       // model -> "Configurations" child
     void embedChangedFirFiles();    // firPath changes -> embedded audio slots
     void restoreFromApvtsState();   // state -> model + FIR engines
+    void stampStateVersion();       // ensure apvts.state carries the version
 
     // ConfigModel::Listener — mirrors every model edit into apvts.state.
     void modelChanged() override;

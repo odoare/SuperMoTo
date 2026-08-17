@@ -31,6 +31,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+const juce::Identifier SuperMoToAudioProcessor::stateVersionProperty { "stateVersion" };
+
 //==============================================================================
 SuperMoToAudioProcessor::SuperMoToAudioProcessor()
      : AudioProcessor (BusesProperties()
@@ -40,8 +42,10 @@ SuperMoToAudioProcessor::SuperMoToAudioProcessor()
     for (int c = 0; c < smt::numConfigs; ++c)
         apvts.addParameterListener (smt::configName (c), this);
 
-    // Presets: mirror the model into apvts.state before the PresetManager
-    // attaches its dirty-tracking listener, so a fresh instance starts clean.
+    // Presets: stamp the version and mirror the model into apvts.state before
+    // the PresetManager attaches its dirty-tracking listener, so a fresh
+    // instance starts clean.
+    stampStateVersion();
     syncConfigToState();
     configModel.addListener (this);
     apvts.state.addListener (this);
@@ -209,6 +213,17 @@ juce::AudioProcessorEditor* SuperMoToAudioProcessor::createEditor()
 // children (kept in sync by modelChanged), so the parameter tree alone is the
 // whole plugin state — and so are the presets PresetManager writes from it.
 
+// Idempotent on purpose: writing only when the value actually differs means the
+// common case (a state that is already current) touches nothing, so this cannot
+// flag the preset as dirty or depend on the order the apvts.state listeners run
+// in. It writes only when migrating an older state forward, which genuinely is
+// a change to the state.
+void SuperMoToAudioProcessor::stampStateVersion()
+{
+    if ((int) apvts.state.getProperty (stateVersionProperty, 0) != currentStateVersion)
+        apvts.state.setProperty (stateVersionProperty, currentStateVersion, nullptr);
+}
+
 void SuperMoToAudioProcessor::syncConfigToState()
 {
     auto tree = configModel.toValueTree();
@@ -266,6 +281,12 @@ void SuperMoToAudioProcessor::restoreFromApvtsState()
     for (int o = 0; o < smt::numChannels; ++o)
         lastFirPaths[(size_t) o] = configModel.getOutput (o).firPath;
 
+    // replaceState() reseats the tree wholesale, so a state or preset written
+    // before versioning existed leaves apvts.state without the property. Put it
+    // back, or the next preset saved from this (now migrated) state would be
+    // unversioned again.
+    stampStateVersion();
+
     // Forced: a preset can carry a different embedded impulse under an
     // unchanged firPath.
     engine.updateFirFiles (true);
@@ -274,10 +295,18 @@ void SuperMoToAudioProcessor::restoreFromApvtsState()
 //==============================================================================
 void SuperMoToAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // The version normally rides along inside apvts.state already (stamped in
+    // the constructor and after every restore); setting it on the copy as well
+    // is idempotent and makes a saved session self-describing whatever happened
+    // to the live tree. It is the same property at the same path, so the file
+    // still carries exactly one version number.
+    auto params = apvts.copyState();
+    params.setProperty (stateVersionProperty, currentStateVersion, nullptr);
+
     // The wrapper root is kept for compatibility with pre-preset-system
     // states, which stored "Configurations" as a second child.
     juce::ValueTree root ("SuperMoToState");
-    root.addChild (apvts.copyState(), -1, nullptr);
+    root.addChild (params, -1, nullptr);
 
     juce::MemoryOutputStream mos (destData, true);
     root.writeToStream (mos);
@@ -290,15 +319,27 @@ void SuperMoToAudioProcessor::setStateInformation (const void* data, int sizeInB
         return;
 
     auto params = root.getChildWithName (apvts.state.getType());
+
+    // Read before replaceState(), while this is still unambiguously the incoming
+    // tree. 0 means the state predates the version property.
+    const int version = params.isValid()
+                            ? (int) params.getProperty (stateVersionProperty, 0)
+                            : 0;
+
     if (params.isValid())
         apvts.replaceState (params);    // valueTreeRedirected restores the
                                         // model + FIRs from the new tree
 
-    // Old-format state: "Configurations" next to the parameters instead of
-    // inside them. Restoring it re-mirrors (and re-embeds) via modelChanged.
-    auto configs = root.getChildWithName ("Configurations");
-    if (configs.isValid())
-        configModel.restoreFromValueTree (configs);
+    // Original layout: "Configurations" next to the parameters instead of inside
+    // them. Restoring it re-mirrors (and re-embeds) via modelChanged. Only ever
+    // possible in an unversioned state, so from version 1 on there is nothing to
+    // probe for and a stale sibling cannot be picked up by mistake.
+    if (version == 0)
+    {
+        auto configs = root.getChildWithName ("Configurations");
+        if (configs.isValid())
+            configModel.restoreFromValueTree (configs);
+    }
 
     juce::MessageManager::callAsync ([safeThis = juce::WeakReference<SuperMoToAudioProcessor> (this)]
     {
