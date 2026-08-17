@@ -294,7 +294,7 @@ private:
         if (ambi)
         {
             const int order = ambiOrder();
-            numSpkSlider.setRange ((double) smt::ambisonics::numHarmonics (order),
+            numSpkSlider.setRange ((double) fxme::ambi::channelsForOrder (order),
                                    (double) smt::numChannels, 1.0);
             numSpkSlider.setValue ((double) defaultSpeakerCount (order), juce::dontSendNotification);
             numSpkSlider.setDoubleClickReturnValue (true, (double) defaultSpeakerCount (order));
@@ -594,7 +594,7 @@ private:
         model.clearConfig (target);
 
         const int order = ambiOrder();
-        const int H = smt::ambisonics::numHarmonics (order);     // 4 / 9 / 16
+        const int H = fxme::ambi::channelsForOrder (order);      // 4 / 9 / 16
         const float fc = (float) crossover.getValue();
         const bool bm = bassManagement.getToggleState();
         const bool writeGain  = writeGainToggle.getToggleState();

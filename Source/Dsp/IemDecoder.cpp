@@ -9,7 +9,9 @@
 */
 
 #include "IemDecoder.h"
-#include "AmbisonicsDecode.h"     // numHarmonics, degreeForAcn, maxRe
+// Only the generic ambisonic helpers are needed here (channelsForOrder,
+// orderOfChannel, maxREGain), not this project's degrees-based adapter.
+#include <FxmeTools/dsp/Ambisonics.h>
 #include <cmath>
 
 namespace smt
@@ -47,7 +49,7 @@ IemDecoder IemDecoder::fromJSON (const juce::var& root, const juce::String& name
     const int L = matrix->size();
     const int H = row0->size();
     const int order = (int) std::lround (std::sqrt ((double) H)) - 1;
-    if (order < 1 || ambisonics::numHarmonics (order) != H)
+    if (order < 1 || fxme::ambi::channelsForOrder (order) != H)
     {
         d.error = "Matrix has " + juce::String (H) + " columns, not a square Ambisonic order.";
         return d;
@@ -79,10 +81,10 @@ IemDecoder IemDecoder::fromJSON (const juce::var& root, const juce::String& name
     // Per-column factor folding N3D->SN3D and/or max-rE into the coefficients.
     auto colFactor = [&] (int j)
     {
-        const int n = ambisonics::degreeForAcn (j);
+        const int n = fxme::ambi::orderOfChannel (j);
         double f = 1.0;
         if (n3d)   f *= std::sqrt (2.0 * (double) n + 1.0);
-        if (maxRe) f *= ambisonics::maxRe (order, n);
+        if (maxRe) f *= fxme::ambi::maxREGain (order, n);
         return f;
     };
 
