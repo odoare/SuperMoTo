@@ -250,6 +250,45 @@ involved.
    The subwoofer only ever gets its time-alignment delay — see
    [Part 4](#part-4--group-analysis-multi-speaker-alignment).
 
+## Installing
+
+Releases carry a VST3, an AU (macOS) and a standalone application for Linux,
+Windows and macOS. The macOS build is universal (Apple Silicon and Intel) and
+supports macOS 10.13 High Sierra and later.
+
+### macOS — read this first
+
+These builds are **not signed with an Apple Developer ID**. macOS therefore
+marks anything downloaded from the internet as untrusted, and a DAW skips such a
+plug-in **silently** while scanning: no error, no dialog, the plugin simply never
+appears in the list. That is not a broken build, and reinstalling will not help.
+
+Clear the quarantine flag on each installed bundle:
+
+```sh
+xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/VST3/SuperMoTo.vst3
+xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins/Components/SuperMoTo.component
+```
+
+Then rescan (or restart) the host. If you installed the standalone application
+as well:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/SuperMoTo.app
+```
+
+The `.pkg` installer is unsigned for the same reason, so double-clicking it is
+refused: right-click (or ctrl-click) the file and choose **Open**, then confirm.
+
+### Linux and Windows
+
+Copy `SuperMoTo.vst3` into the usual VST3 folder and rescan:
+
+```
+Linux     ~/.vst3/  or  /usr/lib/vst3/
+Windows   C:\Program Files\Common Files\VST3\
+```
+
 ## Building
 
 CMake based, mirroring MechanOdd. Expected sibling layout:
@@ -265,7 +304,27 @@ convolution engine — is provided by the FxmeTools submodule under `lib/`
 ```
 git submodule update --init --recursive   # FxmeTools + WDL
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake --build build -j2 --target SuperMoTo_VST3
+```
+
+Keep the job count low and name one target. A Release build links with `-flto`,
+and a full-parallelism link of every format at once needs more RAM than most
+machines have to spare. Swap the target for `SuperMoTo_Standalone` or
+`SuperMoTo_AU` as needed, or drop `--target` to build all of them if you have the
+headroom.
+
+Builds do not install themselves: copy the `.vst3` to the VST3 folder (see
+[Installing](#installing)) and make the host rescan, since it caches the module.
+
+### Tests
+
+Three offline test executables cover the analysis maths, the microphone
+calibration parser and the synchronized swept-sine. They are excluded from the
+default build, so name them:
+
+```
+cmake --build build -j2 --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests
+ctest --test-dir build
 ```
 
 Formats: VST3, AU, Standalone (fixed 32 in / 32 out discrete bus — this

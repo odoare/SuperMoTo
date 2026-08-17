@@ -40,6 +40,21 @@ jobs:
           # Build the rest (capped at 2 to stay within the runner's RAM).
           cmake --build SuperMoTo/build --config Release --parallel 2
 
+      # The three offline tests (analysis maths, mic-calibration parser,
+      # synchronized swept-sine) are EXCLUDE_FROM_ALL, so the build above does not
+      # produce them and they have to be named. They link no GUI module and no
+      # LTO, so they are cheap and run headless. ctest exits non-zero on a
+      # failure, which fails the job and blocks the release — that is the point of
+      # having them here rather than only on the developer's machine. Linux only:
+      # the code under test is platform-independent, so running it three times
+      # would only cost CI minutes.
+      - name: Build & run offline tests
+        run: |
+          set -euo pipefail
+          cmake --build SuperMoTo/build --config Release --parallel 2 \
+            --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests
+          ctest --test-dir SuperMoTo/build --output-on-failure
+
       - name: Package
         run: |
           ART=SuperMoTo/build/SuperMoTo_artefacts/Release
