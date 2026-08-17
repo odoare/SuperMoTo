@@ -46,6 +46,15 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 {
     setLookAndFeel (&fxmeLookAndFeel);
 
+    // Drop-down menus and tooltips are their own windows: they never see the
+    // combo box or the control that opened them, so they cannot pick up its
+    // colour and default to a neutral grey. This tints them (menu panel
+    // hairline, highlighted row, the tick marking the current selection, and the
+    // tooltip hairline) for every combo and every tooltip under this editor,
+    // since they all inherit this one look-and-feel. Master is the plugin's
+    // identity colour and is already what the preset components use, below.
+    fxmeLookAndFeel.setAccentColour (SuperMoToTheme::master);
+
     logo = juce::ImageCache::getFromMemory (BinaryData::logo686_png, BinaryData::logo686_pngSize);
 
     // ── Top bar ──────────────────────────────────────────────────────────────
