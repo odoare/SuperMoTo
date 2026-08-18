@@ -1101,6 +1101,16 @@ calibration is loaded, it is divided out of $H$ at this stage
 (Section~\ref{sec:miccal}, eq.~\eqref{eq:miccal}), so everything below describes
 the loudspeaker and room rather than the microphone.
 
+Two estimators are available, chosen with the \textbf{TF} selector. The
+\textbf{Welch} method described in this section works with any stimulus and is
+always available. When the measurement was made with the sweep stimulus and the
+folder's manifest records the sweep's parameters, the \textbf{synchronized
+swept-sine} method of Section~\ref{sec:sweep} is offered as well, and selected
+by default: it recovers the full-band response with true phase from a single
+sweep, and separates the harmonic-distortion products out of the linear
+estimate instead of leaving them in it. Everything after the estimate —
+smoothing, averaging, correction design, rendering — is common to both.
+
 \subsection{The $H_1$ estimator}
 A direct bin-by-bin division $Y/X$ is unusable in a room: it is dominated by
 measurement noise wherever $X$ is small, and a single FFT gives an estimate
@@ -1175,13 +1185,146 @@ advocated for room/loudspeaker correction in \cite{Toole,Mourjopoulos1994};
 correcting a single-point measurement, by contrast, tends to ``correct'' room
 nulls that do not exist elsewhere.
 
+\section{Transfer-function estimation (synchronized swept-sine)}\label{sec:sweep}
+When the measurement was made with the \textbf{Sweep} stimulus, SuperMoTo can
+estimate the transfer function by \emph{deconvolution} instead of by Welch
+averaging. The \textbf{TF} selector chooses the method; ``Sweep (Farina)''
+becomes available — and is selected automatically — as soon as the loaded
+folder's \texttt{measurement.xml} carries the sweep's identity
+(Section~\ref{sec:measfolder}). The implementation follows the
+\emph{synchronized} swept-sine formulation of Novak, Lotton and
+Simon~\cite{Novak2015}.
+
+\subsection{The synchronized sweep}\label{sec:syncsweep}
+The stimulus is the exponential (logarithmic) sweep
+\begin{equation}
+  x(t) = \sin\!\left( 2\pi f_1 L \left( e^{t/L} - 1 \right) \right),
+  \label{eq:sweep}
+\end{equation}
+from $f_1 = \SI{10}{\hertz}$ to $f_2 = \SI{20}{\kHz}$. Its instantaneous
+frequency is $f(t) = f_1 e^{t/L}$, so the sweep rate $L$ is the time the
+stimulus takes to multiply its frequency by $e$, and the sweep reaches
+frequency $f$ at
+\begin{equation}
+  t(f) = L \ln \frac{f}{f_1}.
+  \label{eq:sweeptime}
+\end{equation}
+
+What makes the sweep \emph{synchronized} is that $L$ is not taken directly from
+the requested duration $T$, but quantized so that $f_1 L$ is an integer:
+\begin{equation}
+  L = \frac{1}{f_1}\,
+      \operatorname{round}\!\left( \frac{f_1 T}{\ln (f_2/f_1)} \right).
+  \label{eq:sweepL}
+\end{equation}
+The actual sweep duration is then $L \ln (f_2/f_1)$, slightly different from
+the $T$ you asked for — the \textbf{Duration} control is a target, not an exact
+value. The sweep sounds exactly the same; the reason for the quantization
+appears in Section~\ref{sec:sweepharm}.
+
+\subsection{Deconvolution by the analytic inverse}
+The recorded response is deconvolved by the sweep's \emph{analytic} spectral
+inverse — the closed form obtained from the stationary-phase approximation of
+the sweep's spectrum~\cite{Novak2015},
+\begin{equation}
+  X^{-1}(f) = 2\sqrt{\frac{f}{L}}\;
+    \exp\!\left( -\,j\,2\pi f L
+      \left( 1 - \ln\frac{f}{f_1} \right) + j\,\frac{\pi}{4} \right).
+  \label{eq:sweepinv}
+\end{equation}
+The recording is transformed, multiplied by~\eqref{eq:sweepinv}, and
+transformed back. Because the inverse is known in closed form, nothing is
+divided by a \emph{measured} spectrum: there is no ill-conditioned denominator
+to regularise (contrast the $\varepsilon$ term in~\eqref{eq:h1}), and the whole
+band arrives in one shot with its true phase, from a single sweep rather than
+from an average over segments.
+
+\subsection{Why the harmonic orders separate}\label{sec:sweepharm}
+A distortion product of order $m$ at frequency $f$ is generated while the sweep
+is passing $f/m$. By~\eqref{eq:sweeptime} that happens
+\begin{equation}
+  \Delta t_m = L \ln m
+  \label{eq:sweepharmoffset}
+\end{equation}
+seconds \emph{before} the linear response at the same frequency. After
+deconvolution, therefore, the impulse responses of the different orders sit at
+different places on the time axis: the linear impulse response lands at the
+system's propagation delay, and the order-$m$ impulse response lands
+$L \ln m$ seconds before it, wrapping circularly towards the end of the buffer.
+
+This is where the quantization~\eqref{eq:sweepL} earns its place. With $f_1 L$
+an integer, the sweep's phase at every arrival time $\Delta t_m$ is an exact
+multiple of $2\pi$, so the harmonic impulse responses emerge not merely
+separated in time but with their \emph{true phase}. Deconvolving a recording
+whose $L$ was not quantized — a file from another tool, say — still separates
+the orders in time, but their phase relationship is lost.
+
+The practical consequence matters even if you never look at a distortion curve:
+under the Welch estimator the distortion products are simply part of the
+measured output and end up folded into the linear estimate. Deconvolution moves
+them out of the way, leaving a cleaner linear response.
+
+\subsection{What SuperMoTo does with the result}
+The deconvolution uses an FFT the next power of two at least as long as the
+recording (and never shorter than the sweep), so the wrapped harmonic responses
+land far from the linear one.
+
+\begin{itemize}[nosep]
+  \item The first $W$ samples of the deconvolved response — $W$ being the same
+        \textbf{Welch window} length as before — hold the linear impulse
+        response. They are transformed onto exactly the same $W/2+1$ bin grid
+        the Welch path produces, so \emph{everything downstream is
+        method-agnostic}: delay removal (Section~\ref{sec:spatialavg}),
+        complex spatial averaging, smoothing, correction design
+        (Section~\ref{sec:correction}) and rendering
+        (Section~\ref{sec:render}) are identical either way. Only the estimator
+        changes.
+  \item Harmonic orders \numrange{2}{5} are extracted, each centred
+        $L \ln m$ seconds before the linear peak. The extraction half-width is
+        bounded by $0.45$ times the spacing to the \emph{next} order — that
+        spacing shrinks as $L \ln\!\big(m/(m-1)\big)$ — so neighbouring orders
+        cannot leak into one another. An order is dropped when the sweep is too
+        short to separate it cleanly, which is the usual reason a short
+        measurement shows fewer distortion curves than a long one.
+  \item Across microphone positions the harmonic magnitudes are averaged in
+        \textbf{power}, not as complex quantities. Distortion phase is not
+        coherent from one position to the next, so the vector average of
+        Section~\ref{sec:spatialavg} — which is exactly what one wants for the
+        linear response — would cancel the distortion instead of measuring it.
+  \item The results appear on the plot as the \textbf{H2}\ldots\textbf{H5}
+        traces, on the same axis as the response, and follow the same
+        nth-octave smoothing and microphone calibration as the other curves.
+\end{itemize}
+
+\subsection{When it falls back to Welch}
+The sweep method needs the sweep's parameters ($f_1$, $f_2$ and, above all,
+$L$), which are read from the measurement folder's manifest. A file is
+estimated with Welch instead whenever
+
+\begin{itemize}[nosep]
+  \item the folder carries no sweep identity — files loaded by hand, a noise
+        run, or a folder recorded before the manifest stored it;
+  \item the recording is shorter than the sweep it claims to be;
+  \item the analysis window $W$ is too large for the sweep, so the harmonic
+        responses would not stay clear of the linear one.
+\end{itemize}
+
+\noindent
+The fallback is per file and silent: a set that mixes sweep and noise runs
+still analyses, each file by whichever estimator applies to it. Welch remains
+the right (and only) choice for a noise stimulus, and stays selectable for a
+sweep recording if you want to compare the two.
+
 \section{What the plot shows}
 \begin{itemize}[nosep]
   \item the \textbf{individual} smoothed transfer functions $\hat H'_n$ (thin
         lines);
   \item their complex \textbf{average} $\bar H$ (thick line);
   \item the proposed \textbf{correction} $C$;
-  \item the \textbf{corrected response} $\bar H\,C$.
+  \item the \textbf{corrected response} $\bar H\,C$;
+  \item the \textbf{harmonic-distortion} magnitudes
+        \textbf{H2}\ldots\textbf{H5}, power-averaged over the microphone
+        positions — swept-sine estimator only (Section~\ref{sec:sweep}).
 \end{itemize}
 Magnitudes are normalised to the \SIrange{200}{2000}{\hertz} mean of the
 average (so $\SI{0}{\dB}$ is the mid-band level, independent of the absolute
@@ -2325,6 +2468,11 @@ sensitivity rated as the mid-band average, \SIrange{300}{3000}{\hertz}.)
 \bibitem{MullerMassarani}
 S.~Müller and P.~Massarani, ``Transfer-function measurement with sweeps,''
 \textit{J. Audio Eng. Soc.}, vol.~49, no.~6, pp.~443--471, 2001.
+
+\bibitem{Novak2015}
+A.~Novak, P.~Lotton and L.~Simon, ``Synchronized swept-sine: theory,
+application, and implementation,'' \textit{J. Audio Eng. Soc.}, vol.~63,
+no.~10, pp.~786--798, 2015.
 
 \bibitem{Hatziantoniou2000}
 P.~D. Hatziantoniou and J.~N. Mourjopoulos, ``Generalized fractional-octave

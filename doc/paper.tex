@@ -136,8 +136,14 @@ $W$ component to a subwoofer and high-passes the speaker feeds.
 \subsection*{Acoustic measurement}
 
 The measurement view drives the plugin outputs with a band-limited
-stimulus (logarithmic sweep or white noise, 5--30\,s duration) and
-records the microphone response on one of the plugin's input channels.
+stimulus (5--30\,s duration) and records the microphone response on one
+of the plugin's input channels. The sweep stimulus is a
+\emph{synchronized} exponential sweep in the sense of
+\cite{Novak2015}: its sweep rate is quantised so that the stimulus
+phase at each harmonic arrival time is an exact multiple of $2\pi$,
+which is what allows the distortion orders to be separated with their
+true phase at analysis time (below). White noise is offered as the
+alternative stimulus.
 Each captured stereo file stores the raw stimulus on channel 1 and the
 microphone on channel 2, so the transfer function estimate at analysis
 time is always the ratio of the captured microphone signal to the sent
@@ -150,19 +156,35 @@ REW/miniDSP plain-text format are supported and are applied at analysis
 time rather than baked into the recordings, so the calibration can be
 updated without re-measuring. A run writes its files into a self-organising
 measurement folder (automatic per-channel position numbering, an optional
-subwoofer-channel tag, and a generated manifest), which the group-alignment
-mode below can subsequently load in a single step.
+subwoofer-channel tag, and a generated XML manifest recording the stimulus
+parameters of every run), which the group-alignment mode below can
+subsequently load in a single step.
 
 \subsection*{Transfer-function estimation and correction design}
 
 For each set of measurements (one speaker, multiple microphone
-positions), the plugin estimates the loudspeaker-room transfer function
-using the Welch $H_1$ estimator \cite{Welch1967}
+positions), the plugin offers two estimators for the loudspeaker-room
+transfer function. The first is the Welch $H_1$ estimator
+\cite{Welch1967}
 \begin{equation}
   \hat H(f) = \frac{\hat P_{xy}(f)}{\hat P_{xx}(f)},
 \end{equation}
 with Hann-windowed 50\,\%-overlapped segments and a user-selectable
-window length of 4096 to 262\,144 samples. Before averaging across
+window length of 4096 to 262\,144 samples; it applies to any stimulus.
+The second, available when the run's manifest identifies it as a
+synchronized sweep, deconvolves the recording by the analytic spectral
+inverse of the sweep \cite{Novak2015}, which yields the full-band
+response with true phase from a single sweep and requires no
+regularised division by a measured spectrum. Because a distortion
+product of order $m$ is emitted $L\ln m$ seconds earlier than the
+linear response at the same frequency ($L$ being the sweep rate), the
+deconvolved response separates the orders along the time axis: the
+linear impulse response is windowed out for the estimate, and orders 2
+to 5 are retained as distortion curves, power-averaged across
+positions. Under the Welch estimator those same products are instead
+folded into the linear estimate. The two methods share the entire
+downstream chain, so a set can be re-analysed either way for
+comparison. Before averaging across
 positions, the bulk propagation delay of each measurement is estimated
 from the impulse response peak and removed, so position-dependent phase
 ramps do not cancel in the spatial average. The resulting complex spatial
@@ -245,6 +267,11 @@ P.~D. Welch, ``The use of fast Fourier transform for the estimation of
 power spectra: a method based on time averaging over short, modified
 periodograms,'' \textit{IEEE Trans.\ Audio Electroacoust.},
 vol.~15, no.~2, pp.~70--73, 1967.
+
+\bibitem{Novak2015}
+A.~Novak, P.~Lotton and L.~Simon, ``Synchronized swept-sine: theory,
+application, and implementation,'' \textit{J. Audio Eng. Soc.},
+vol.~63, no.~10, pp.~786--798, 2015.
 
 \bibitem{Mourjopoulos1994}
 J.~N. Mourjopoulos, ``Digital equalization of room acoustics,''
