@@ -780,10 +780,11 @@ can later load in one step:
         (so they stay correct even if files are added or removed by hand):
         \begin{itemize}[nosep]
           \item \texttt{measurement.xml} — the \emph{machine-readable}
-                manifest: the measured channels, which one is the subwoofer,
-                the position count, and a structured log entry per run. This
-                is what Group analysis's \textbf{Load measurement
-                folder\ldots} button actually reads
+                manifest (detailed in Section~\ref{sec:manifest}): the
+                measured channels, which one is the subwoofer, the position
+                count, the folder's calibration record, and a structured log
+                entry per run. This is what Group analysis's \textbf{Load
+                measurement folder\ldots} button actually reads
                 (Section~\ref{sec:grouploadfolder}), so hand-editing or
                 reformatting the readme can never break folder loading.
           \item \texttt{readme\_measurement.md} — the same information as
@@ -801,6 +802,64 @@ can later load in one step:
         default) measures every channel as an ordinary loudspeaker, exactly as
         before this folder scheme existed.
 \end{itemize}
+
+\subsection{What the manifest records}\label{sec:manifest}
+\texttt{measurement.xml} is not merely an index of the files: it carries
+everything a later analysis needs in order to interpret them. That is what makes
+a measurement folder \textbf{self-describing} — hand it to Group analysis (or to
+a colleague, or to yourself in six months) and the analysis knows how the
+recordings were made, without you having to remember.
+
+At the folder level it holds:
+
+\begin{itemize}[nosep]
+  \item the \textbf{channels} measured and which one is the subwoofer, plus the
+        highest position number reached and the time of the last run;
+  \item the \textbf{general comment} (below);
+  \item the \textbf{SPL calibration} in effect, as the single offset relating
+        full scale to sound pressure, $\mathrm{dB\,SPL} = \mathrm{dBFS} +
+        \textit{offset}$ — this is what later allows the analysis to plot
+        estimated dB\,SPL (Section~\ref{sec:levelref});
+  \item the \textbf{microphone calibration} in effect, stored as its display
+        name plus a \emph{verbatim copy of the calibration file itself}, so the
+        folder carries its own microphone correction
+        (Section~\ref{sec:micsource}).
+\end{itemize}
+
+\noindent
+and, per run, a log entry giving the time, the mode, the stimulus (type,
+duration and level), the microphone input, the files written, the comment for
+that run, and — for a sweep — the \textbf{sweep identity} $f_1$, $f_2$ and $L$.
+That last item is what enables the synchronized swept-sine analysis of
+Section~\ref{sec:sweep}: without a recorded $L$ the deconvolution cannot
+reconstruct the stimulus, and the analysis falls back to Welch.
+
+The two calibration records are \textbf{carried over} from the previous
+manifest when a run is made without them. A folder is expected to correspond to
+one physical microphone, so measuring a few extra positions with the
+calibration file not currently loaded does not erase the folder's record of it.
+
+\subsection{Comments}\label{sec:comments}
+Two free-text fields let you record what a set of measurements actually was,
+where it will still be legible later — in both manifests, next to the files
+themselves.
+
+\begin{itemize}[nosep]
+  \item \textbf{Folder comment\ldots} opens a small editor for a general
+        comment describing the whole campaign (the room, the rig, the date, the
+        speaker positions). It is pre-filled from the folder's existing
+        manifest when you point the path at a folder that already has one, so
+        it accumulates rather than resetting; edit it between runs and the next
+        run rewrites it.
+  \item \textbf{Run comment} is a one-line note attached to the \emph{next} run
+        only, logged with that run's entry (``mic at seat, 3rd position'',
+        ``after moving the left speaker'').
+\end{itemize}
+
+\noindent
+Both are written to \texttt{measurement.xml} and reproduced in
+\texttt{readme\_measurement.md}, the latter being the copy you can read without
+any tooling.
 
 \section{The measurement microphone}\label{sec:micchoice}
 What the analysis sees is the loudspeaker and room \emph{as sampled by the
@@ -892,12 +951,14 @@ file, or none. The \texttt{Sens Factor} line encodes absolute sensitivity for
 dB\,SPL work and is ignored here — only the frequency-response curve is used.
 
 \subsection{How SuperMoTo applies it}
-Because there is only one physical microphone, the calibration is a
-\textbf{single global setting}: load it once with \textbf{Mic cal}~\ldots{} on
+Because there is normally only one physical microphone, the calibration is a
+\textbf{global setting}: load it once with \textbf{Mic cal}~\ldots{} on
 the Calibration view (it sits next to the microphone-input selector), and it is
-remembered across sessions and projects. The Analysis view shows the same
-calibration read-only (\textit{Mic cal: \ldots}) as a reminder that it is in
-effect. It is used in two places:
+remembered across sessions and projects. (A measurement folder can also carry
+its own embedded copy, which then takes precedence for that folder — see
+Section~\ref{sec:micsource}.) The analysis views show the calibration actually
+in effect read-only (\textit{Mic cal: \ldots}) as a reminder. It is used in two
+places:
 
 \begin{enumerate}[nosep]
   \item \textbf{The live spectrum display} (SPL-meter section) plots the
@@ -932,6 +993,36 @@ Two consequences are worth stressing:
         display and the analysis use the calibration. (Absolute dB\,SPL is set
         separately, Section~\ref{ch:measure}.)
 \end{itemize}
+
+\subsection{Which calibration is used: the source selector}\label{sec:micsource}
+Both analysis views carry a \textbf{mic calibration source} selector, because
+the right curve is not always the one currently loaded on the Calibration view:
+
+\begin{itemize}[nosep]
+  \item \textbf{Global mic cal} — the curve loaded on the Calibration view.
+        This is the default and is what you want while the measurements in
+        front of you were made with the microphone you are using now.
+  \item \textbf{Folder mic cal} — the curve embedded in the measurements' own
+        \texttt{measurement.xml} (Section~\ref{sec:manifest}). Offered only
+        when the loaded set actually carries one.
+  \item \textbf{No mic cal} — analyse the raw measurements, with no microphone
+        correction at all. Useful to see how much the calibration is doing, or
+        when you suspect the calibration file itself.
+\end{itemize}
+
+\noindent
+When a loaded set carries an embedded curve, \textbf{Folder} is selected
+automatically: measurements made a year ago with a different microphone are
+then analysed with \emph{that} microphone's calibration rather than with
+whatever happens to be loaded today, which is almost always what you want. You
+can override the choice at any time; changing it re-analyses the loaded set
+immediately, since the calibration is divided out at analysis time
+(eq.~\eqref{eq:miccal}) rather than baked into the recordings.
+
+Group analysis finds the manifest in the folder it loaded. The single-speaker
+Analysis view looks for one in the directory the selected files came from, so
+files picked by hand out of a proper measurement folder still get its
+calibration.
 
 \subsection{Practical recommendations}
 \begin{itemize}[nosep]
@@ -1326,10 +1417,55 @@ sweep recording if you want to compare the two.
         \textbf{H2}\ldots\textbf{H5}, power-averaged over the microphone
         positions — swept-sine estimator only (Section~\ref{sec:sweep}).
 \end{itemize}
-Magnitudes are normalised to the \SIrange{200}{2000}{\hertz} mean of the
-average (so $\SI{0}{\dB}$ is the mid-band level, independent of the absolute
+By default, magnitudes are normalised to the \SIrange{200}{2000}{\hertz} mean of
+the average (so $\SI{0}{\dB}$ is the mid-band level, independent of the absolute
 measurement gain); phase is shown as principal value with the propagation
-delay already removed.
+delay already removed. Two selectors change what the panel below the controls
+displays.
+
+\subsection{Level reference}\label{sec:levelref}
+The \textbf{Level} selector sets the vertical reference of the \emph{measured}
+curves. It is a display choice only: the correction is designed from the same
+data either way, and the correction curve itself is always shown in absolute
+\si{\dB} (it is a gain, so it has no reference to choose).
+
+\begin{itemize}[nosep]
+  \item \textbf{Normalized} — the default described above, $\SI{0}{\dB}$ at the
+        \SIrange{200}{2000}{\hertz} mean. Best for judging \emph{shape}, and the
+        only sensible choice when comparing speakers measured at different
+        gains.
+  \item \textbf{Absolute dB} — the recorded level per unit of stimulus level,
+        with no normalisation. Use it to compare the actual sensitivity of two
+        speakers, or to see how much level a correction is giving away.
+  \item \textbf{dB SPL} — the estimated sound pressure during the measurement.
+        This needs both an SPL calibration and the run's stimulus level, so it
+        is offered only when the folder's manifest supplies them
+        (Section~\ref{sec:manifest}); the option greys out otherwise. It is
+        exact for a sweep run and approximate for noise, the stimulus level
+        being defined for a sine.
+\end{itemize}
+
+\subsection{Frequency response or impulse response}\label{sec:irview}
+The \textbf{View} selector swaps the frequency plot for a \textbf{time-domain}
+view of the same speaker, showing two traces at the current \textbf{FIR length}
+$N$:
+
+\begin{itemize}[nosep]
+  \item the \textbf{measured} impulse response (the average response rendered
+        back to the time domain), and
+  \item the \textbf{correction} impulse response — precisely the filter that
+        \textbf{Export correction IR} would write.
+\end{itemize}
+
+\noindent
+Time zero is placed at the centre of the buffer, which is where a linear-phase
+correction puts its main peak (Section~\ref{sec:minphase} explains why a
+minimum-phase one instead sits at the start). This is the quickest way to see
+what the length and phase settings are really doing: whether the correction is
+ringing, whether $N$ is long enough for the correction to decay inside the
+window rather than being truncated, and how much pre-ringing a linear-phase
+filter is introducing. Changing \textbf{FIR length} or \textbf{Phase} updates
+it immediately.
 
 \section{Fractional-octave smoothing}
 A \textbf{$1/n$-octave smoothing} is applied both to the displayed curves and
@@ -1791,7 +1927,12 @@ speaker in the group (and, analysis range aside, to the sub — see below), the
 same controls described in Sections~\ref{sec:welch}--\ref{sec:render}. A
 \textbf{Preview} selector picks which speaker's (or the sub's) curves the
 single plot at the bottom shows while these are tuned; switching it never
-changes what is computed, only what is displayed.
+changes what is computed, only what is displayed. The \textbf{TF} estimator
+(Section~\ref{sec:sweep}), the mic calibration source
+(Section~\ref{sec:micsource}), and the \textbf{View} and \textbf{Level}
+display selectors (Sections~\ref{sec:irview} and~\ref{sec:levelref}) behave
+exactly as in the single-speaker Analysis view, the first two applying to every
+engine in the group and the last two following the previewed speaker.
 
 \section{Computing the alignment}\label{sec:groupalign}
 \textbf{Compute alignment} reads every loaded speaker's (and the sub's)
@@ -1884,6 +2025,33 @@ the corrected in-band level and suggested level-matching trim
 (Section~\ref{sec:grouplevel}), which output it was assigned to, and the
 exported file name (or why nothing was written, e.g.\ not measured or not
 assigned to an output).
+
+\subsection{Naming: the export prefix}\label{sec:groupprefix}
+Everything a run writes is named from the \textbf{Prefix} field:
+\texttt{<prefix>\_speaker1\_correction.wav}, \texttt{<prefix>\_report.md}, and
+so on. Leave it empty and the names have no prefix at all.
+
+The point is that several alignments can then share one folder instead of
+overwriting each other — different rooms, different speaker sets, successive
+attempts at the same rig. That matters more than tidiness: a second run into
+the same folder with no prefix replaces the first run's impulse responses,
+including ones already assigned to outputs and in use. The field is pre-filled
+from the measurement folder's name when you load one, and never overwrites a
+prefix you have typed yourself.
+
+\subsection{Figures in the report}\label{sec:groupfigures}
+With \textbf{Figures} enabled, the report embeds two plots per measured
+speaker: its frequency response (measurements, average, correction, corrected
+response, the sub curve and, for a sweep measurement, the distortion traces)
+and its impulse response (measured and correction, as the \textbf{View}
+selector shows them, Section~\ref{sec:irview}). They are rendered from the same
+display components the pane itself uses, so a figure looks exactly like what
+you saw on screen.
+
+The PNGs go into \texttt{<prefix>\_figs/} beside the report and are referenced
+relatively, so the report folder can be moved, copied or zipped and the
+markdown still resolves. Rendering adds a few seconds to a large group, which
+is why it can be switched off.
 
 \section{Background processing}
 Loading a speaker's measurement set, re-analyzing the whole group after
