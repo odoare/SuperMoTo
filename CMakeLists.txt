@@ -113,9 +113,13 @@ target_sources(SuperMoToTests PRIVATE
     lib/FxmeTools/FxmeTools/dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToTests)
-# Reach <FxmeTools/dsp/Biquad.h> and <FxmeTools/dsp/MicCalibration.h>
-# (header-only / compiled above) without pulling in the whole module.
-target_include_directories(SuperMoToTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
+# Reach <FxmeTools/dsp/MicCalibration.h> (compiled above) without pulling in
+# the whole JUCE module, and link FxmeCore for the JUCE-free half of the
+# library — <FxmeTools/dsp/Biquad.h> lives there since the core/shell split.
+# FxmeCore exports core/ as a PUBLIC include directory, so the <FxmeTools/...>
+# spelling keeps working without this target knowing which side a header is on.
+target_include_directories(SuperMoToTests PRIVATE ${FXMETOOLS_ROOT})
+target_link_libraries(SuperMoToTests PRIVATE FxmeCore)
 target_compile_definitions(SuperMoToTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -136,8 +140,10 @@ target_sources(SuperMoToMicCalTests PRIVATE
     lib/FxmeTools/FxmeTools/dsp/MicCalibration.cpp
 )
 juce_generate_juce_header(SuperMoToMicCalTests)
-# Reach <FxmeTools/dsp/MicCalibration.h> without linking the module.
-target_include_directories(SuperMoToMicCalTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
+# Reach <FxmeTools/dsp/MicCalibration.h> without linking the module; FxmeCore
+# covers whatever it pulls in from the JUCE-free half of the library.
+target_include_directories(SuperMoToMicCalTests PRIVATE ${FXMETOOLS_ROOT})
+target_link_libraries(SuperMoToMicCalTests PRIVATE FxmeCore)
 target_compile_definitions(SuperMoToMicCalTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -157,7 +163,9 @@ target_sources(SuperMoToSweepTests PRIVATE
     Tests/SweepTest.cpp
 )
 juce_generate_juce_header(SuperMoToSweepTests)
-target_include_directories(SuperMoToSweepTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib/FxmeTools)
+# <FxmeTools/dsp/SynchronizedSweep.h> is module-side; FxmeCore covers the rest.
+target_include_directories(SuperMoToSweepTests PRIVATE ${FXMETOOLS_ROOT})
+target_link_libraries(SuperMoToSweepTests PRIVATE FxmeCore)
 target_compile_definitions(SuperMoToSweepTests PRIVATE
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
