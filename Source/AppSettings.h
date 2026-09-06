@@ -70,8 +70,8 @@ inline void setLastBrowseDir (const juce::File& fileOrDir)
 }
 
 //==============================================================================
-// Interface mode: which view/panel is open and whether the editor is in
-// compact (collapsed) mode, so the editor reopens the way it was left.
+// Interface mode: which view/panel is open and how compact the editor is, so
+// it reopens the way it was left.
 
 /** Last open view, as the editor's View enum cast to int (default 0 = matrix). */
 inline int getUiView()
@@ -89,18 +89,25 @@ inline void setUiView (int view)
     }
 }
 
-/** Whether the editor was last left in compact (collapsed) mode. */
-inline bool getUiCollapsed()
+/** How compact the editor was left: 0 = full, 1 = top bar + output strip,
+    2 = mini (two control rows + output meters). Mirrors the editor's
+    Compact enum. Falls back to the older boolean "uiCollapsed" setting so a
+    window left collapsed by a previous version still reopens collapsed. */
+inline int getUiCompactMode()
 {
     auto* s = appProperties().getUserSettings();
-    return s != nullptr && s->getBoolValue ("uiCollapsed", false);
+    if (s == nullptr)
+        return 0;
+    if (s->containsKey ("uiCompactMode"))
+        return juce::jlimit (0, 2, s->getIntValue ("uiCompactMode", 0));
+    return s->getBoolValue ("uiCollapsed", false) ? 1 : 0;
 }
 
-inline void setUiCollapsed (bool collapsed)
+inline void setUiCompactMode (int mode)
 {
     if (auto* s = appProperties().getUserSettings())
     {
-        s->setValue ("uiCollapsed", collapsed);
+        s->setValue ("uiCompactMode", juce::jlimit (0, 2, mode));
         s->saveIfNeeded();
     }
 }

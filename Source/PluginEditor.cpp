@@ -22,7 +22,7 @@
 //==============================================================================
 // Width of the matrix component for a given window width (expanded layout):
 // window minus margins, right column and gap. Used to align the top bar and
-// to size the collapsed window.
+// to size the compact (strip) window.
 static int matrixWidthFor (int totalWidth)
 {
     const int mainW = totalWidth - 16;
@@ -31,9 +31,33 @@ static int matrixWidthFor (int totalWidth)
 }
 
 //==============================================================================
+// Mini layout: the logo, then two short control rows. Row 1 is the collapse
+// button, the A..F config buttons and Exclusive; row 2 is the master level, the
+// mute/dim/mono toggles and the output meters. Every size is fixed — the mini
+// window is not resizable and its width follows only the output count.
+namespace mini
+{
+    constexpr int margin    = 8;
+    constexpr int rowH      = 30;
+    constexpr int rowGap    = 4;
+    constexpr int rowsH     = 2 * rowH + rowGap;    // both control rows
+    constexpr int gap       = 6;
+    // Wide enough that the logo fills rowsH exactly: the asset is 269x227, so
+    // the width is that aspect times the height, rounded up so the fit stays
+    // limited by the height rather than the width.
+    constexpr int logoW     = 76;
+    constexpr int collapseW = 26;
+    constexpr int btnW      = 34;       // A..F
+    constexpr int toggleW   = 34;       // X / M / D / null set — one glyph each
+    constexpr int levelW    = 104;
+    constexpr int metersMinW = 56;      // keep the meter row readable at 4 outs
+}
+
+//==============================================================================
 SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
       matrix (p.configModel, p.engine),
+      outputMeters (p.configModel, p.engine),
       spectrum (p.engine),
       frameEditor (p.configModel),
       outputEditor (p.configModel, p.engine),
@@ -82,6 +106,14 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
         addAndMakeVisible (*b);
     }
 
+    // The mini layout shortens these to single glyphs, so the tooltip is the
+    // only thing left saying what they do. On the inner ToggleButton: it fills
+    // the FxmeButton wrapper, so it is what the mouse actually lands on.
+    exclusiveButton->button.setTooltip ("Exclusive: engaging a configuration releases the others");
+    muteButton->button.setTooltip ("Mute the master output");
+    dimButton->button.setTooltip ("Dim the master output");
+    monoButton->button.setTooltip ("Sum to mono (checks phase cancellation)");
+
     levelSlider = std::make_unique<fxme::FxmeSlider> (audioProcessor.apvts, "Level", "Level",
                                                       SuperMoToTheme::master);
     levelSlider->setSliderStyle (juce::Slider::LinearHorizontal);
@@ -92,16 +124,25 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 
     // The latching buttons below are all fxme::AccentToggle, but their state
     // follows the application (which view is up, which config is edited, whether
-    // the window is collapsed) rather than the click, so each one turns off the
-    // click-latching AccentToggle enables by default and is driven by
-    // setToggleState from setView / setEditConfig / setCollapsed.
+    // which compact layout is up) rather than the click, so each one turns off
+    // the click-latching AccentToggle enables by default and is driven by
+    // setToggleState from setView / setEditConfig / setCompactMode.
     collapseButton.setButtonText (juce::String::fromUTF8 ("\xe2\x96\xb2"));   // up triangle
     collapseButton.setClickingTogglesState (false);
     collapseButton.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
                               SuperMoToTheme::panel);
-    collapseButton.setTooltip ("Compact view: only the output strip");
-    collapseButton.onClick = [this] { setCollapsed (! collapsed); };
+    collapseButton.setTooltip ("Compact view: the output strip only");
+    // One button, three layouts: full -> output strip -> mini -> full.
+    collapseButton.onClick = [this]
+    {
+        setCompactMode (compactMode == Compact::off   ? Compact::strip
+                      : compactMode == Compact::strip ? Compact::mini
+                                                      : Compact::off);
+    };
     addAndMakeVisible (collapseButton);
+
+    // Hidden until the mini layout asks for it (setView).
+    addChildComponent (outputMeters);
 
     auto initViewButton = [this] (fxme::AccentToggle& b, const juce::String& text, View v)
     {
@@ -153,7 +194,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     {
         editingOutput = false;
         frameEditor.setFrame (in, out, editConfig);
-        const bool show = currentView == View::matrix && ! collapsed;
+        const bool show = currentView == View::matrix && ! isCompact();
         frameEditor.setVisible (show);
         outputEditor.setVisible (false);
     };
@@ -161,7 +202,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     {
         editingOutput = true;
         outputEditor.setOutput (out);
-        const bool show = currentView == View::matrix && ! collapsed;
+        const bool show = currentView == View::matrix && ! isCompact();
         outputEditor.setVisible (show);
         frameEditor.setVisible (false);
     };
@@ -244,8 +285,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     setResizeLimits (1100, 720, 2400, 1600);
     setSize (1280, 820);
 
-    if (smt::getUiCollapsed())
-        setCollapsed (true);
+    setCompactMode (static_cast<Compact> (juce::jlimit (0, 2, smt::getUiCompactMode())));
 }
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
@@ -260,6 +300,18 @@ void SuperMoToAudioProcessorEditor::modelChanged()
 {
     insBox.setSelectedId (audioProcessor.configModel.getNumIns(), juce::dontSendNotification);
     outsBox.setSelectedId (audioProcessor.configModel.getNumOuts(), juce::dontSendNotification);
+
+    // The mini window is exactly as wide as its meter row needs, so a change of
+    // output count (state restore, preset, matrix-size combo) has to resize it.
+    if (compactMode == Compact::mini)
+    {
+        const auto sz = miniWindowSize();
+        if (sz.x != getWidth() || sz.y != getHeight())
+        {
+            setResizeLimits (sz.x, sz.y, sz.x, sz.y);
+            setSize (sz.x, sz.y);
+        }
+    }
 }
 
 void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
@@ -288,11 +340,13 @@ void SuperMoToAudioProcessorEditor::setView (View v)
 {
     currentView = v;
     smt::setUiView (static_cast<int> (v));
-    const bool m = v == View::matrix && ! collapsed;
+    const bool m = v == View::matrix && ! isCompact();
 
-    // In collapsed mode the matrix stays visible but shrinks to its output
-    // strip; everything else goes away.
-    matrix.setVisible (m || collapsed);
+    // The strip layout keeps the matrix visible but shrunk to its output strip;
+    // the mini layout drops it entirely and shows the meter row instead.
+    // Everything else goes away in both.
+    matrix.setVisible (m || compactMode == Compact::strip);
+    outputMeters.setVisible (compactMode == Compact::mini);
     spectrum.setVisible (m);
     frameEditor.setVisible (m && ! editingOutput);
     outputEditor.setVisible (m && editingOutput);
@@ -306,14 +360,14 @@ void SuperMoToAudioProcessorEditor::setView (View v)
 
     for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton,
                      &groupAnalysisButton, &presetsViewButton })
-        b->setVisible (! collapsed);
+        b->setVisible (! isCompact());
 
-    configTool.setVisible (v == View::configTool && ! collapsed);
-    calibration.setVisible (v == View::calibration && ! collapsed);
-    analysis.setVisible (v == View::analysis && ! collapsed);
-    groupAnalysis.setVisible (v == View::groupAnalysis && ! collapsed);
-    presetPane.setVisible (v == View::presets && ! collapsed);
-    presetBar.setVisible (! collapsed);
+    configTool.setVisible (v == View::configTool && ! isCompact());
+    calibration.setVisible (v == View::calibration && ! isCompact());
+    analysis.setVisible (v == View::analysis && ! isCompact());
+    groupAnalysis.setVisible (v == View::groupAnalysis && ! isCompact());
+    presetPane.setVisible (v == View::presets && ! isCompact());
+    presetBar.setVisible (! isCompact());
 
     matrixViewButton.setToggleState (v == View::matrix, juce::dontSendNotification);
     configToolButton.setToggleState (v == View::configTool, juce::dontSendNotification);
@@ -325,7 +379,7 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     juce::String t, body;
     infoTextFor (v, t, body);
     infoButton.setInfo (t, body);
-    infoButton.setVisible (! collapsed);
+    infoButton.setVisible (! isCompact());
     layoutInfoButton();
 }
 
@@ -519,35 +573,76 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
     }
 }
 
-void SuperMoToAudioProcessorEditor::setCollapsed (bool shouldCollapse)
+juce::Point<int> SuperMoToAudioProcessorEditor::miniWindowSize() const
 {
-    if (collapsed == shouldCollapse)
+    using namespace mini;
+    const int row1 = collapseW + gap + smt::numConfigs * btnW + gap + toggleW;
+    const int row2 = levelW + gap + 3 * toggleW + gap
+                   + juce::jmax (metersMinW,
+                                 OutputMetersStrip::widthFor (audioProcessor.configModel.getNumOuts()));
+
+    return { margin + logoW + gap + juce::jmax (row1, row2) + margin,
+             margin + rowsH + margin };
+}
+
+void SuperMoToAudioProcessorEditor::setCompactMode (Compact m)
+{
+    if (compactMode == m)
         return;
-    collapsed = shouldCollapse;
-    smt::setUiCollapsed (collapsed);
 
-    collapseButton.setButtonText (juce::String::fromUTF8 (collapsed ? "\xe2\x96\xbc"      // down
-                                                                    : "\xe2\x96\xb2"));   // up
-    collapseButton.setToggleState (collapsed, juce::dontSendNotification);
-
-    if (collapsed)
+    // Capture the size to restore only on the way out of the full layout, so
+    // hopping between the two compact modes does not record a compact size.
+    if (compactMode == Compact::off)
     {
         expandedWidth = getWidth();
         expandedHeight = getHeight();
-        setView (currentView);
-
-        // Shrink to the matrix width: the strip then spans the whole window.
-        const int collapsedWidth = matrixWidthFor (expandedWidth) + 16;
-        const int collapsedHeight = 60 + MatrixComponent::outputStripH + 16;
-        setResizeLimits (collapsedWidth, collapsedHeight, collapsedWidth, collapsedHeight);
-        setSize (collapsedWidth, collapsedHeight);
     }
-    else
+
+    compactMode = m;
+    smt::setUiCompactMode (static_cast<int> (m));
+
+    // The arrow points at what the next click does: shrink further, or — from
+    // the smallest layout — go back to the full editor.
+    collapseButton.setButtonText (juce::String::fromUTF8 (m == Compact::mini ? "\xe2\x96\xbc"      // down
+                                                                             : "\xe2\x96\xb2"));   // up
+    collapseButton.setToggleState (isCompact(), juce::dontSendNotification);
+    collapseButton.setTooltip (m == Compact::off   ? "Compact view: the output strip only"
+                             : m == Compact::strip ? "Mini view: master controls and output meters"
+                                                   : "Back to the full editor");
+
+    // The mini row has no room for words. Mono becomes the empty-set sign, the
+    // usual shorthand for the cancellation the button is there to reveal; the
+    // rest are initials. Their tooltips (set in the constructor) carry the
+    // meaning either way.
+    const bool tiny = m == Compact::mini;
+    exclusiveButton->button.setButtonText (tiny ? "X" : "Exclusive");
+    muteButton->button.setButtonText      (tiny ? "M" : "Mute");
+    dimButton->button.setButtonText       (tiny ? "D" : "Dim");
+    monoButton->button.setButtonText      (tiny ? juce::String::fromUTF8 ("\xe2\x88\x85")  // empty set
+                                                : juce::String ("Mono"));
+
+    setView (currentView);      // visibility follows the mode
+
+    if (m == Compact::off)
     {
         setResizeLimits (1100, 720, 2400, 1600);
         setSize (expandedWidth, expandedHeight);
-        setView (currentView);
     }
+    else
+    {
+        // Both compact layouts are fixed-size: there is nothing in them that
+        // benefits from being stretched.
+        const auto sz = m == Compact::strip
+            ? juce::Point<int> (matrixWidthFor (expandedWidth) + 16,
+                                60 + MatrixComponent::outputStripH + 16)
+            : miniWindowSize();
+        setResizeLimits (sz.x, sz.y, sz.x, sz.y);
+        setSize (sz.x, sz.y);
+    }
+
+    // setSize is a no-op when the size happens to be unchanged (strip and mini
+    // can coincide), but the layout still has to be rebuilt for the new mode.
+    resized();
 }
 
 void SuperMoToAudioProcessorEditor::setEditConfig (int c)
@@ -565,6 +660,18 @@ void SuperMoToAudioProcessorEditor::paint (juce::Graphics& g)
 {
     SuperMoToTheme::paintBackground (g, getLocalBounds().toFloat());
 
+    // Mini layout: the logo alone, spanning both control rows. No room for the
+    // title, and the logo alone still identifies the window.
+    if (compactMode == Compact::mini)
+    {
+        if (logo.isValid())
+            g.drawImage (logo,
+                         juce::Rectangle<float> ((float) mini::margin, (float) mini::margin,
+                                                 (float) mini::logoW, (float) mini::rowsH),
+                         juce::RectanglePlacement::centred);
+        return;
+    }
+
     // Title + logo
     auto top = getLocalBounds().removeFromTop (60);
     if (logo.isValid())
@@ -579,16 +686,44 @@ void SuperMoToAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
 
+    // ── Mini: two short rows beside the logo, nothing else ───────────────────
+    if (compactMode == Compact::mini)
+    {
+        using namespace mini;
+        auto r = area.reduced (margin);
+        r.removeFromLeft (logoW + gap);         // the logo, painted in paint()
+
+        auto row1 = r.removeFromTop (rowH);
+        r.removeFromTop (rowGap);
+        auto row2 = r.removeFromTop (rowH);
+
+        collapseButton.setBounds (row1.removeFromLeft (collapseW).reduced (0, 3));
+        row1.removeFromLeft (gap);
+        for (auto* b : configButtons)
+            b->setBounds (row1.removeFromLeft (btnW));
+        row1.removeFromLeft (gap);
+        exclusiveButton->setBounds (row1.removeFromLeft (toggleW));
+
+        levelSlider->setBounds (row2.removeFromLeft (levelW).reduced (2, 4));
+        row2.removeFromLeft (gap);
+        muteButton->setBounds (row2.removeFromLeft (toggleW));
+        dimButton->setBounds (row2.removeFromLeft (toggleW));
+        monoButton->setBounds (row2.removeFromLeft (toggleW));
+        row2.removeFromLeft (gap);
+        outputMeters.setBounds (row2);
+        return;
+    }
+
     // ── Top bar ──────────────────────────────────────────────────────────────
-    // Left-packed and kept within the matrix width, so the collapsed window
+    // Left-packed and kept within the matrix width, so the strip window
     // (sized to the matrix) shows every control.
     auto top = area.removeFromTop (60).reduced (6);
     top.removeFromLeft (232);                       // logo + title
     collapseButton.setBounds (top.removeFromLeft (28).reduced (0, 14));
     top.removeFromLeft (12);
 
-    const int barRight = collapsed ? getWidth() - 8
-                                   : 8 + matrixWidthFor (getWidth());
+    const int barRight = isCompact() ? getWidth() - 8
+                                    : 8 + matrixWidthFor (getWidth());
     top.setRight (juce::jmin (top.getRight(), barRight));
 
     // Scale the control widths down proportionally when space is tight. The
@@ -612,8 +747,8 @@ void SuperMoToAudioProcessorEditor::resized()
 
     // Compact preset selector: the top-right corner, right of the Mono button
     // in the space left free by the matrix-width-clipped control bar
-    // (expanded mode only; setView hides it when collapsed).
-    if (! collapsed)
+    // (full layout only; setView hides it in both compact modes).
+    if (! isCompact())
     {
         auto barArea = getLocalBounds().removeFromTop (60).reduced (6);
         barArea.removeFromLeft (barRight + 8);
@@ -621,8 +756,8 @@ void SuperMoToAudioProcessorEditor::resized()
                                     .reduced (0, 13));
     }
 
-    // ── Collapsed: only the output strip below the top bar ───────────────────
-    if (collapsed)
+    // ── Strip: only the output strip below the top bar ───────────────────────
+    if (compactMode == Compact::strip)
     {
         matrix.setBounds (area.reduced (8, 4).removeFromTop (MatrixComponent::outputStripH));
         return;

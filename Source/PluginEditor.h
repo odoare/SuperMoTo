@@ -34,6 +34,7 @@
 #include "PluginProcessor.h"
 #include "Theme.h"
 #include "Components/MatrixComponent.h"
+#include "Components/OutputMetersStrip.h"
 // fxme::InfoButton comes via the FxmeTools module umbrella (JuceHeader.h)
 #include "Components/FrameEditorComponent.h"
 #include "Components/OutputEditorComponent.h"
@@ -63,9 +64,21 @@ private:
     void layoutInfoButton();
     static void infoTextFor (View v, juce::String& title, juce::String& body);
 
-    // Compact mode: only the top bar and the output strip stay visible and
-    // the window shrinks to match.
-    void setCollapsed (bool shouldCollapse);
+    // Compact modes, cycled by the collapse button in the top bar.
+    //   off   — the full editor.
+    //   strip — top bar plus the matrix output strip, window shrunk to the
+    //           matrix width. Everything else is hidden.
+    //   mini  — the smallest useful footprint: the config buttons up to
+    //           Exclusive on one row, then the master level, the mute/dim/mono
+    //           toggles and a row of output meters on a second.
+    enum class Compact { off, strip, mini };
+
+    void setCompactMode (Compact m);
+    bool isCompact() const noexcept     { return compactMode != Compact::off; }
+
+    /** Fixed window size of the mini layout; depends on the output count,
+        which sets how wide the meter strip has to be. */
+    juce::Point<int> miniWindowSize() const;
 
     // The matrix view follows the engaged configuration (A..F buttons); the
     // Edit buttons still allow browsing a config without engaging it.
@@ -88,13 +101,14 @@ private:
 
     // ── Bottom control bar ───────────────────────────────────────────────────
     // fxme::AccentToggle: the house latching button. Their toggle state is driven
-    // from the application state (setView / setEditConfig / setCollapsed), not by
+    // from the application state (setView / setEditConfig / setCompactMode), not by
     // the click, so each one has setClickingTogglesState(false) — see the ctor.
     fxme::AccentToggle matrixViewButton, configToolButton, calibrationButton, analysisButton,
                        presetsViewButton, groupAnalysisButton;
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;
+    OutputMetersStrip outputMeters;     // mini layout only, in place of the strip
     juce::Label insLabel, outsLabel;
     juce::ComboBox insBox, outsBox;                         // matrix size
     juce::OwnedArray<fxme::AccentToggle> editConfigButtons; // which config is edited
@@ -126,7 +140,7 @@ private:
     View currentView = View::matrix;
     int editConfig = 0;
 
-    bool collapsed = false;
+    Compact compactMode = Compact::off;
     int expandedWidth = 1280, expandedHeight = 820;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SuperMoToAudioProcessorEditor)
