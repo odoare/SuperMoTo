@@ -299,6 +299,17 @@ public:
         subRow.nameLabel.setTooltip ("Delay only \xe2\x80\x94 no correction FIR is designed for the "
                                      "subwoofer: above its passband a measurement is just noise.");
         subRow.onLoad = [this] { loadSubFiles(); };
+        subRow.setSubMode (true);
+        // Coalesced like the other shared controls: applying the trim re-derives
+        // the alignment, which re-designs every speaker's correction — far too
+        // much to do once per drag tick. The slider is the source of truth; the
+        // timer pushes its value into the group.
+        subRow.onTrimChanged = [this] (float) { startTimer (debounceMs); };
+        subRow.onUseSuggestion = [this]
+        {
+            subRow.trimSlider.setValue ((double) group.getSuggestedSubTrimMs(),
+                                        juce::sendNotificationSync);
+        };
         subRow.outputBox.onChange = [this]
         {
             group.subEntry().assignedOutput = subRow.outputBox.getSelectedId() - 2;
@@ -490,6 +501,11 @@ private:
         if (runner.isRunning())
             return;   // a background batch owns the engines right now; drop this tick
         pushSettingsToAll();
+        // A no-op when the value has not moved, so this costs nothing on the
+        // ticks raised by the other shared controls.
+        group.setSubTrimMs ((float) subRow.trimSlider.getValue());
+        updateSubTrimInfo();
+        refreshRows();
         updatePlotPreview();
     }
 
@@ -534,6 +550,67 @@ private:
             outputBox.setSelectedId (1, juce::dontSendNotification);
             SuperMoToTheme::accentComboBox (outputBox, SuperMoToTheme::fir);
             addAndMakeVisible (outputBox);
+
+            // ── Sub row only (setSubMode) ───────────────────────────────────
+            // The group's delays come from arrival times; what governs the
+            // crossover is a group delay, and the two differ by the sub's own
+            // filtering. This shifts the subwoofer against the whole group, so
+            // every speaker's assumed offset moves with it and the correction
+            // never assumes a delay other than the one applied.
+            trimLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+            trimLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+            trimLabel.setText ("Sub trim", juce::dontSendNotification);
+            trimLabel.setJustificationType (juce::Justification::centredRight);
+            addChildComponent (trimLabel);
+
+            trimSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+            trimSlider.setRange (-40.0, 40.0, 0.1);
+            trimSlider.setValue (0.0, juce::dontSendNotification);
+            trimSlider.setDoubleClickReturnValue (true, 0.0);
+            trimSlider.setTextValueSuffix (" ms");
+            // Bipolar: the fill grows from 0 ms, as on the Analysis pane's
+            // Mains-delay slider (setCentralValue rather than drawFromCentre,
+            // which would hardcode the track's geometric midpoint).
+            trimSlider.setCentralValue (0.0);
+            SuperMoToTheme::accentSlider (trimSlider, SuperMoToTheme::dim);
+            trimSlider.setTooltip ("Offset applied to the subwoofer against the rest of the "
+                                   "group. Positive delays the sub further; negative brings it "
+                                   "forward (the whole group is pushed back instead when that "
+                                   "would take the sub's delay below zero, which changes nothing "
+                                   "acoustically). Every speaker's crossover phase alignment "
+                                   "follows, so the plot updates as you drag.");
+            trimSlider.onValueChange = [this]
+            {
+                if (onTrimChanged != nullptr)
+                    onTrimChanged ((float) trimSlider.getValue());
+            };
+            addChildComponent (trimSlider);
+
+            suggestButton.setButtonText ("Use x-over");
+            suggestButton.setColour (juce::TextButton::buttonColourId,
+                                     SuperMoToTheme::mono.darker (1.4f));
+            suggestButton.setTooltip ("Set the trim from the measured crossover-band phase slope "
+                                      "instead of the arrival times. The two disagree by the "
+                                      "subwoofer's own group delay (its low-pass and box "
+                                      "alignment), which arrival times cannot see.");
+            suggestButton.onClick = [this] { if (onUseSuggestion != nullptr) onUseSuggestion(); };
+            addChildComponent (suggestButton);
+
+            suggestReadout.setFont (juce::Font (juce::FontOptions (11.0f)));
+            suggestReadout.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+            suggestReadout.setJustificationType (juce::Justification::centredLeft);
+            addChildComponent (suggestReadout);
+        }
+
+        /** Turns this row into the subwoofer row: it gains the trim control,
+            which is the group's one main-vs-sub degree of freedom. */
+        void setSubMode (bool isSub)
+        {
+            subMode = isSub;
+            for (auto* c : std::initializer_list<juce::Component*> {
+                     &trimLabel, &trimSlider, &suggestButton, &suggestReadout })
+                c->setVisible (isSub);
+            resized();
         }
 
         void resized() override
@@ -548,6 +625,21 @@ private:
             area.removeFromRight (8);
             loadButton.setBounds (area.removeFromLeft (80));
             area.removeFromLeft (8);
+
+            // The sub row is full-width below both speaker columns, so the trim
+            // takes the middle of it and the file status keeps what is left.
+            if (subMode)
+            {
+                trimLabel.setBounds (area.removeFromLeft (56));
+                area.removeFromLeft (4);
+                trimSlider.setBounds (area.removeFromLeft (180).reduced (0, 2));
+                area.removeFromLeft (6);
+                suggestButton.setBounds (area.removeFromLeft (86).reduced (0, 1));
+                area.removeFromLeft (6);
+                suggestReadout.setBounds (area.removeFromLeft (150));
+                area.removeFromLeft (8);
+            }
+
             fileStatus.setBounds (area);
         }
 
@@ -555,6 +647,14 @@ private:
         juce::TextButton loadButton;
         juce::ComboBox outputBox;
         std::function<void()> onLoad;
+
+        // Sub row only.
+        bool subMode = false;
+        juce::Label trimLabel, suggestReadout;
+        fxme::FxmeSlider trimSlider;
+        juce::TextButton suggestButton;
+        std::function<void (float)> onTrimChanged;
+        std::function<void()> onUseSuggestion;
     };
 
     void addLabel (juce::Label& l, const juce::String& text)
@@ -767,6 +867,31 @@ private:
         // No trim suggestion for the sub: its level is a crossover-balance
         // question and the matching band sits above its passband.
         subRow.outputBox.setSelectedId (s.assignedOutput + 2, juce::dontSendNotification);
+        updateSubTrimInfo();
+    }
+
+    /** The crossover-band suggestion beside the trim, and whether it can be
+        trusted at the current smoothing. Deliberately does NOT write the
+        slider: the slider is what the user set, and the group mirrors it. */
+    void updateSubTrimInfo()
+    {
+        const bool have = group.isSubEnabled() && group.subEntry().hasData();
+        subRow.trimSlider.setEnabled (have);
+        if (! have)
+        {
+            subRow.suggestButton.setEnabled (false);
+            subRow.suggestReadout.setText ({}, juce::dontSendNotification);
+            return;
+        }
+
+        const bool ok = group.isCrossoverEstimateReliable();
+        subRow.suggestButton.setEnabled (ok);
+        subRow.suggestReadout.setColour (juce::Label::textColourId,
+                                         ok ? SuperMoToTheme::dimText : SuperMoToTheme::mute);
+        subRow.suggestReadout.setText (
+            ok ? "x-over: " + juce::String (group.getSuggestedSubTrimMs(), 1) + " ms"
+               : "x-over estimate unreliable at this smoothing",
+            juce::dontSendNotification);
     }
 
     void loadSpeakerFiles (int i)
@@ -906,6 +1031,10 @@ private:
                 // the folder has one, clear it when it doesn't.
                 subEnabledToggle.setToggleState (haveSub, juce::dontSendNotification);
                 group.setSubEnabled (haveSub);
+
+                // A trim from a previous set means nothing for this one.
+                subRow.trimSlider.setValue (0.0, juce::dontSendNotification);
+                group.setSubTrimMs (0.0f);
 
                 // Assign files/output/settings before growing the row count, so
                 // the row refresh that setNumSpeakers() triggers already shows
@@ -1253,6 +1382,9 @@ private:
         const bool subControlsEnabled = ! busy && subEnabledToggle.getToggleState();
         subRow.loadButton.setEnabled (subControlsEnabled);
         subRow.outputBox.setEnabled (subControlsEnabled);
+        subRow.trimSlider.setEnabled (subControlsEnabled);
+        subRow.suggestButton.setEnabled (subControlsEnabled
+                                         && group.isCrossoverEstimateReliable());
     }
 
     SuperMoToAudioProcessor& processor;

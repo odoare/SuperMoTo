@@ -40,6 +40,8 @@
 #include "AnalysisEngine.h"
 #include "MatrixEngine.h"
 #include "../Model/ConfigModel.h"
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -71,6 +73,11 @@ public:
         float alignedDelayMs = 0.0f;   // set by computeAlignment()
         float bandLevelDb = 0.0f;      // in-band corrected level, set by computeAlignment()
         float suggestedTrimDb = 0.0f;  // <= 0, relative to the quietest speaker
+        // Crossover-band main-vs-sub offset from this speaker's own phase slope
+        // (AnalysisEngine::estimateMainSubOffsetMs). A different measurement
+        // from alignedDelayMs, not a refinement of it — see
+        // doc/note_on_delay_processing. Set by computeAlignment(); 0 with no sub.
+        float crossoverOffsetMs = 0.0f;
 
         bool hasData() const noexcept { return engine->hasData(); }
     };
@@ -174,12 +181,102 @@ public:
         fn (*sub.engine, true);
     }
 
+    //==========================================================================
+    // Subwoofer trim. The group's applied delays come from arrival times; the
+    // main-vs-sub offset that actually governs summation at the crossover is a
+    // different quantity (a group delay), and the two disagree by the sub's own
+    // filter delay. This one signed control shifts the subwoofer against the
+    // whole group so the user can set that offset by ear or from the
+    // crossover-band estimate, without breaking the alignment identity below.
+    // Rationale and derivation: doc/note_on_delay_processing.
+
+    /** Extra delay given to the subwoofer, in ms. Positive pushes the sub
+        later; negative brings it forward, and when that would take its output
+        delay below zero the whole group is pushed back instead (see
+        computeAlignment) so the relative alignment is always achievable.
+        Re-derives the alignment, so the corrections follow immediately. */
+    void setSubTrimMs (float ms)
+    {
+        ms = juce::jlimit (-smt::maxDelayMs, smt::maxDelayMs, ms);
+        if (ms == subTrimMs)
+            return;
+        subTrimMs = ms;
+        computeAlignment();
+    }
+
+    float getSubTrimMs() const noexcept                 { return subTrimMs; }
+
+    /** The trim that would put every speaker's assumed main-vs-sub offset on
+        the crossover-band estimate instead of the arrival-time one. Working
+        through computeAlignment's algebra, a speaker's assumed offset is
+        T_i = (d_sub - d_i) - subTrim, so matching it to that speaker's
+        estimate tau_i needs subTrim = (d_sub - d_i) - tau_i: exactly the
+        disagreement between the two estimators. Returned as the median over
+        the loaded speakers (it should be near-constant across them, since the
+        geometric part cancels; a wide spread means one of the two estimates is
+        unreliable). Zero when there is no sub or no speaker carries one. */
+    float getSuggestedSubTrimMs() const
+    {
+        if (! subEnabled || ! sub.hasData())
+            return 0.0f;
+
+        const float dSub = sub.engine->getPropagationDelayMs();
+        std::vector<float> v;
+        v.reserve ((size_t) activeCount);
+        for (int i = 0; i < activeCount; ++i)
+        {
+            const auto& s = speakers[(size_t) i];
+            if (s.hasData() && s.engine->hasSub())
+                v.push_back ((dSub - s.engine->getPropagationDelayMs())
+                             - s.engine->estimateMainSubOffsetMs());
+        }
+        if (v.empty())
+            return 0.0f;
+
+        auto mid = v.begin() + (long) (v.size() / 2);
+        std::nth_element (v.begin(), mid, v.end());
+        return juce::jlimit (-smt::maxDelayMs, smt::maxDelayMs, *mid);
+    }
+
+    /** Whether the crossover-band estimate behind getSuggestedSubTrimMs() can
+        be trusted at the current settings. It is read off a COMPLEX-smoothed
+        average, and a smoothing window of width beta octaves at frequency f
+        rotates the phasor of a residual delay tau by about
+        2*pi*tau*beta*f*ln2 across the window; as that approaches pi the vector
+        average collapses and the phase slope becomes meaningless. Checked at
+        the top of the fit band (2 x crossover), where it is worst. */
+    bool isCrossoverEstimateReliable() const
+    {
+        if (! subEnabled || ! sub.hasData())
+            return false;
+
+        const float beta = juce::jmax (sub.engine->getSmoothingLow(),
+                                       sub.engine->getSmoothingHigh());
+        if (beta <= 0.0f)
+            return true;                    // no smoothing, nothing to collapse
+
+        const float f    = 2.0f * sub.engine->getCrossoverHz();
+        const float tau  = std::abs (getSuggestedSubTrimMs()) * 0.001f;
+        const float rot  = 2.0f * juce::MathConstants<float>::pi
+                             * tau * beta * f * std::log (2.0f);
+        return rot < 0.5f * juce::MathConstants<float>::pi;   // half the collapse point
+    }
+
+    //==========================================================================
     /** Computes each loaded entry's (speakers + sub) delay relative to the
         most-distant one — the farthest driver gets 0 ms, everything else is
         pushed back to match it, so all delays end up non-negative. Then
-        re-derives each speaker's subwoofer phase-alignment from its own
-        applied delay (AnalysisEngine::setTimeAlignMs), since that alignment
-        assumes the delay that will actually be applied physically.
+        re-derives each speaker's subwoofer phase-alignment from the delay it
+        will be given RELATIVE TO THE SUB (AnalysisEngine::setTimeAlignMs),
+        since that is what the all-pass has to leave as residual.
+
+        The relative part matters. setTimeAlignMs is the main's delay measured
+        against the subwoofer, so the value to push is a_i - a_sub, not a_i:
+        the sub receives its own bulk delay here too, and passing a_i alone
+        designs the crossover all-pass for an offset wrong by exactly a_sub —
+        zero only when the sub happens to be the most distant driver, and up to
+        a full phase inversion at the crossover when it is not. See
+        doc/note_on_delay_processing for the derivation.
 
         Also computes the LEVEL matching between the speakers (sub excluded —
         its level is a crossover-balance question, and its passband sits below
@@ -211,7 +308,20 @@ public:
         if (! any)
             return;
 
-        auto apply = [&] (Entry& e)
+        // A negative trim asks for the sub EARLIER than the group reference,
+        // which no output delay can express. Push the whole group back by the
+        // shortfall instead: the relative alignment — the only thing that
+        // matters acoustically — is identical, at the cost of a little latency.
+        const bool haveSub = subEnabled && sub.hasData();
+        float groupShift = 0.0f;
+        if (haveSub)
+        {
+            const float raw = maxDelay - sub.engine->getPropagationDelayMs() + subTrimMs;
+            if (raw < 0.0f)
+                groupShift = -raw;
+        }
+
+        auto apply = [&] (Entry& e, float extra)
         {
             if (! e.hasData())
             {
@@ -219,17 +329,29 @@ public:
                 return;
             }
             e.alignedDelayMs = juce::jlimit (0.0f, smt::maxDelayMs,
-                                             maxDelay - e.engine->getPropagationDelayMs());
+                                             maxDelay - e.engine->getPropagationDelayMs()
+                                                 + groupShift + extra);
         };
+
+        // The sub first: every speaker's assumed offset is measured against it.
+        if (haveSub)
+            apply (sub, subTrimMs);
+        else
+            sub.alignedDelayMs = 0.0f;
+
+        // Excluded from the alignment means it receives no delay, so the
+        // speakers' offsets are then measured against zero.
+        const float aSub = haveSub ? sub.alignedDelayMs : 0.0f;
+
         for (int i = 0; i < activeCount; ++i)
         {
             auto& s = speakers[(size_t) i];
-            apply (s);
+            apply (s, 0.0f);
+            s.crossoverOffsetMs = s.hasData() && s.engine->hasSub()
+                                      ? s.engine->estimateMainSubOffsetMs() : 0.0f;
             if (s.hasData() && s.engine->hasSub())
-                s.engine->setTimeAlignMs (s.alignedDelayMs);
+                s.engine->setTimeAlignMs (s.alignedDelayMs - aSub);
         }
-        if (subEnabled)
-            apply (sub);
 
         // Level matching (speakers only, see the method doc).
         float minLevel = 0.0f;
@@ -338,6 +460,10 @@ public:
                        << " Hz - " << juce::String (sub.engine->getAnalysisHighHz(), 0) << " Hz\n"
                        << "- Crossover: " << juce::String (sub.engine->getCrossoverHz(), 0) << " Hz"
                        << (sub.engine->getSubPolarityInverted() ? " (sub inverted)" : "") << "\n"
+                       << "- Sub trim: " << juce::String (subTrimMs, 2)
+                           << " ms (offset applied to the subwoofer against the group; "
+                              "the correction assumes each speaker's delay measured "
+                              "against the sub)\n"
                        << "- Phase type: "
                        << (sub.engine->getPhaseType() == AnalysisEngine::PhaseType::minimum
                                ? "Minimum phase" : "Linear phase") << "\n"
@@ -492,6 +618,7 @@ private:
     Entry sub;
     int activeCount = 2;
     bool subEnabled = true;
+    float subTrimMs = 0.0f;     // user offset on the sub's applied delay
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpeakerGroupAnalysis)
 };
