@@ -37,27 +37,24 @@
 \section*{Summary}
 %----------------------------------------------------------------------
 
-SuperMoTo is an open-source audio plugin (VST3, AU, Standalone) that
-brings the full monitoring signal chain of a professional studio into a
-single, self-contained plugin instance. From one instance it can route
-up to 32 inputs to 32 outputs through a configurable gain-and-EQ
-matrix, apply per-loudspeaker FIR correction filters derived from
-in-room acoustic measurements, phase-align a subwoofer to the corrected
-main speakers, and generate periphonic Ambisonics decoders up to third
-order for immersive listening rooms. The plugin includes built-in
-acoustic measurement tools and a transfer-function analysis and
-correction design engine, making the calibration workflow entirely
-self-contained. It is implemented in C++ using the JUCE framework and is
-licensed under the LGPL~3.0.
+SuperMoTo is an open-source audio plugin (VST3, AU, Standalone) that puts a
+studio's monitoring signal chain into one plugin instance. From that instance
+it can route up to 32 inputs to 32 outputs through a configurable gain-and-EQ
+matrix, apply per-loudspeaker FIR correction filters derived from in-room
+acoustic measurements, phase-align a subwoofer to the corrected main speakers,
+and generate periphonic Ambisonics decoders up to third order for immersive
+listening rooms. Acoustic measurement tools and a transfer-function analysis
+and correction design engine are built in, so the whole calibration workflow
+happens inside the plugin. It is implemented in C++ using the JUCE framework
+and is licensed under the LGPL~3.0.
 
 %----------------------------------------------------------------------
 \section*{Statement of need}
 %----------------------------------------------------------------------
 
-Loudspeaker monitoring is the foundation of audio production: decisions
-about balance, timbre, and spatial imagery are all made at the listening
-position, and systematic errors in what the engineer hears accumulate
-through every mix decision. In a real room, what the engineer hears is
+Decisions about balance, timbre and spatial imagery are all made at the
+listening position, so a systematic error in what the engineer hears
+accumulates through the whole mix. In a real room, what the engineer hears is
 never the loudspeaker alone but the combined response of the
 loudspeaker, the room, and any bass-management or routing in the signal
 path. Three independent classes of error contribute to this: room modes
@@ -70,8 +67,8 @@ cancellation notches and late reflections are not minimum-phase and
 cannot be inverted by any causal filter~\cite{NeelyAllen}), but the
 broad, reproducible, minimum-phase portion of the combined
 loudspeaker-room response can be usefully attenuated with a
-well-designed FIR filter, reducing coloration and improving translation
-to other playback systems.
+well-designed FIR filter, which reduces coloration and improves
+translation to other playback systems.
 
 No single open-source tool covers this workflow end to end. The
 widely-used Room EQ Wizard (REW) provides acoustic measurement and
@@ -83,13 +80,12 @@ SoundID Reference and IK Multimedia ARC focus exclusively on correction
 and do not integrate routing, bass management, or immersive audio
 decoding. High-channel routing tools and Ambisonics decoders exist as
 separate plugins but are not combined with a calibration workflow.
-SuperMoTo addresses this gap by unifying the monitoring matrix, the
-measurement engine, the correction design, the FIR convolution, and the
-Ambisonics decoder generation into one plugin instance. The combination
-is particularly useful in VR and immersive audio production
-environments, where loudspeaker arrays must be routed, time-aligned,
-individually corrected, and driven by a decoded Ambisonics signal
-simultaneously.
+SuperMoTo covers the whole workflow in one plugin instance: the monitoring
+matrix, the measurement engine, the correction design, the FIR convolution
+and the Ambisonics decoder generation. The combination matters most in VR
+and immersive audio production, where a loudspeaker array has to be routed,
+time-aligned, individually corrected and driven by a decoded Ambisonics
+signal at the same time.
 
 %----------------------------------------------------------------------
 \section*{Functionality}
@@ -128,7 +124,7 @@ $r$, the decode gain is
 \end{equation}
 where $a_n$ are the max-$r_E$ per-degree weights derived from the
 largest root of the Legendre polynomial $P_{N+1}$ \cite{ZotterFrank2019},
-improving high-frequency localisation stability. Non-equidistant
+which improves high-frequency localisation stability. Non-equidistant
 speaker rigs are compensated by per-speaker delay and trim derived from
 the inverse-square law. Bass management low-passes the omnidirectional
 $W$ component to a subwoofer and high-passes the speaker feeds.
@@ -154,11 +150,11 @@ engine including routing and all FIR filters, for end-to-end
 validation). Microphone frequency-response calibration files in the
 REW/miniDSP plain-text format are supported and are applied at analysis
 time rather than baked into the recordings, so the calibration can be
-updated without re-measuring. A run writes its files into a self-organising
-measurement folder (automatic per-channel position numbering, an optional
-subwoofer-channel tag, and a generated XML manifest recording the stimulus
-parameters of every run), which the group-alignment mode below can
-subsequently load in a single step.
+updated without re-measuring. A run writes its files into a measurement
+folder that numbers positions per channel automatically, tags an optional
+subwoofer channel and carries a generated XML manifest recording the
+stimulus parameters of every run. The group-alignment mode below loads such
+a folder in a single step.
 
 \subsection*{Transfer-function estimation and correction design}
 
@@ -231,10 +227,10 @@ into each speaker's own subwoofer phase-alignment term before its
 correction filter is finalised. The subwoofer itself is never given a
 correction filter: above its passband a broadband measurement carries
 no coherent sent/recorded content, so an inverse filter fitted there
-would be fitted to noise rather than to a real transfer function --- it
+would be fitted to noise rather than to a real transfer function; it
 contributes only its computed alignment delay. Loading, re-analysing
 and exporting a whole group run on a background thread pool with
-progress feedback, keeping the editor responsive with long,
+progress feedback, so the editor stays responsive with long,
 multi-position measurement sets across many speakers.
 
 %----------------------------------------------------------------------
@@ -247,7 +243,7 @@ uniformly-partitioned convolution engine. Continuous-integration builds
 for Linux, macOS (Apple Silicon universal binary) and Windows are
 provided by a GitHub Actions workflow triggered by version tags. The
 plugin is available in VST3, AU, and Standalone formats with a fixed
-32-in/32-out discrete channel bus, sidestepping the inconsistent
+32-in/32-out discrete channel bus, which sidesteps the inconsistent
 per-host discrete-channel-count negotiation of JUCE's AU and VST3
 wrappers; the active matrix size is an independent, user-selectable
 setting up to that count.

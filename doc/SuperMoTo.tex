@@ -68,7 +68,7 @@
 \\ \texttt{https://perso.ensta.fr/{\textasciitilde}doare}
 \\ \texttt{github.com/odoare}
 \\ FX-Mechanics}
-\date{Document version 0.1 — \today}
+\date{Document version 0.1, \today}
 
 %==============================================================================
 \begin{document}
@@ -93,8 +93,8 @@ SuperMoTo is an FX-Mechanics audio plugin (VST3, AU and Standalone) for the
   \item \textbf{analyse} those measurements and \textbf{design} the FIR
         correction curves (magnitude and phase), including phase-coherent
         \textbf{subwoofer integration};
-  \item \textbf{align and correct a whole rig at once} — several speakers
-        plus a shared subwoofer — in the \textbf{Group analysis} mode.
+  \item \textbf{align and correct a whole rig at once} (several speakers
+        plus a shared subwoofer) in the \textbf{Group analysis} mode.
 \end{itemize}
 
 The plugin is organised in four functional parts that share one engine:
@@ -107,13 +107,13 @@ the \textbf{Group analysis} view (Chapter~\ref{ch:groupanalysis}).
 What you hear at the listening position is never the loudspeaker alone: it is
 the loudspeaker \emph{convolved with the room}, sampled by the microphone (or
 your ears) at one place. Several independent mechanisms each leave their mark
-on that combined response, and they behave very differently --- which is
+on that combined response, and they behave very differently, which is
 exactly why some of them can be corrected electronically and some cannot.
 
 \subsection{The room's low-frequency modes}
 Below roughly the \textbf{Schroeder frequency} (typically \SIrange{150}{300}{\hertz}
 in a domestic-sized room), the room behaves as a small set of discrete
-resonances --- standing waves between parallel surfaces. Each \textbf{room
+resonances: standing waves between parallel surfaces. Each \textbf{room
 mode} stores energy and releases it slowly, producing large peaks and dips in
 the magnitude response (often \SI{10}{\decibel} or more) together with audible
 \textbf{ringing} (slow modal decay) in the time domain. Modes are strongly
@@ -149,24 +149,24 @@ Whether an error can be undone by a filter hinges on a single property of the
 response: whether it is \textbf{minimum-phase}.
 
 \paragraph{Physically.} A response is minimum-phase when, for its given
-magnitude, its energy arrives \emph{as early as possible} — it has the least
+magnitude, its energy arrives \emph{as early as possible}: it has the least
 phase lag and the least \emph{group delay} (the frequency-derivative of phase,
 i.e.\ the delay the response imposes near each frequency) consistent with that
 magnitude. Equivalently, both the response \emph{and its inverse} are causal and
 stable, which is exactly what makes it correctable: undoing it does not require
 predicting the future. A single loudspeaker resonance, a driver roll-off and an
-isolated low-frequency room mode are essentially minimum-phase — the magnitude
+isolated low-frequency room mode are essentially minimum-phase: the magnitude
 bump or dip and the phase rotation around it are two views of the \emph{same}
 event. What is \emph{not} minimum-phase: a pure propagation delay, a discrete
 reflection arriving after the direct sound, and the deep cancellation notch
-where two out-of-phase sources sum. These carry \textbf{excess phase} — lag
-beyond the minimum — that no stable causal filter can remove.
+where two out-of-phase sources sum. These carry \textbf{excess phase}: lag
+beyond the minimum that no stable causal filter can remove.
 
 \paragraph{Mathematically.} For a discrete linear time-invariant system with
 rational transfer function $H(z)$, minimum-phase means every pole \emph{and}
 every zero lies strictly inside the unit circle. Poles inside make $H$ causal
-and stable; zeros inside make the inverse $1/H(z)$ — whose poles are $H$'s zeros
-— causal and stable too, so $H$ can be inverted by a realisable filter. Any
+and stable; zeros inside make the inverse $1/H(z)$, whose poles are $H$'s zeros,
+causal and stable too, so $H$ can be inverted by a realisable filter. Any
 stable response factors uniquely into a minimum-phase and an all-pass part,
 \begin{equation}
   H(z) = H_{\min}(z)\,H_{\mathrm{ap}}(z),
@@ -174,9 +174,9 @@ stable response factors uniquely into a minimum-phase and an all-pass part,
   \label{eq:minap}
 \end{equation}
 where the all-pass factor $H_{\mathrm{ap}}$ (unit magnitude, so it changes only
-the phase) carries \emph{all} the excess phase — each zero $z_0$ outside the
+the phase) carries \emph{all} the excess phase: each zero $z_0$ outside the
 unit circle reflected to $1/\bar z_0$ inside. The minimum-phase factor alone
-sets the magnitude, $|H| = |H_{\min}|$, and for it — and only it — magnitude and
+sets the magnitude, $|H| = |H_{\min}|$, and for it alone magnitude and
 phase are not independent but a \textbf{Hilbert-transform pair}:
 \begin{equation}
   \arg H_{\min}(e^{j\omega})
@@ -192,8 +192,8 @@ The practical consequence sets up the next section: SuperMoTo can invert the
 magnitude exactly and flatten the minimum-phase phase; the all-pass / excess
 part and any pure delay it can only \emph{pre}-compensate with a
 \textbf{linear-phase} filter (acausal, hence latency-adding,
-Section~\ref{sec:render}); and a genuine non-minimum-phase cancellation — a zero
-on or outside the unit circle — has no stable inverse at all, so boosting into
+Section~\ref{sec:render}); and a genuine non-minimum-phase cancellation (a zero
+on or outside the unit circle) has no stable inverse at all, so boosting into
 it merely wastes headroom. This one distinction is why the spatial average, the
 boost ceiling and the frequency-dependent smoothing exist: they keep the design
 on the minimum-phase part of the response that is actually invertible.
@@ -210,14 +210,14 @@ That makes it powerful for some of the problems above and powerless for others:
         phase-align a subwoofer} with the mains so they sum coherently through
         the crossover.
   \item \textbf{Cannot do.} It cannot remove energy that arrives \emph{later}
-        than the direct sound --- a reflection is a separate event in time, so
+        than the direct sound: a reflection is a separate event in time, so
         ``correcting'' for it only pre-distorts the direct sound and the dip
         usually returns elsewhere. Deep cancellation notches are
         \emph{non-minimum-phase} and effectively non-invertible: boosting into
         them wastes headroom and excites the mode further rather than filling
         the null~\cite{NeelyAllen,Mourjopoulos1994}. And because the
         measurement is taken around one reference area, a correction is only
-        valid \emph{there} --- it cannot be flat everywhere at once~\cite{Toole}.
+        valid \emph{there}: it cannot be flat everywhere at once~\cite{Toole}.
 \end{itemize}
 
 This is why SuperMoTo derives its correction from a \textbf{spatial average} of
@@ -228,7 +228,7 @@ frequency rises (Chapter~\ref{ch:analysis}).
 
 \subsection{Treat the room first}
 Electronic correction is the \emph{last} step, not a substitute for acoustics.
-The errors it handles worst --- reflections and modal ringing --- are precisely
+The errors it handles worst (reflections and modal ringing) are precisely
 the ones that respond to physical treatment, so the most effective gains come
 \textbf{upstream}, before any filter is designed:
 
@@ -237,15 +237,15 @@ the ones that respond to physical treatment, so the most effective gains come
         walls (avoiding strong SBIR dips and the worst modal seats).
   \item \textbf{Symmetry} of the left/right setup, so the stereo image is not
         skewed by the room.
-  \item \textbf{Bass trapping} in the corners to shorten modal decay --- this
+  \item \textbf{Bass trapping} in the corners to shorten modal decay. This
         reduces ringing, which no magnitude filter can.
   \item \textbf{Broadband absorption} at the first reflection points to reduce
         comb filtering.
 \end{itemize}
 
 A well-treated room makes the residual error smoother, more minimum-phase and
-more uniform across positions --- exactly the kind of error a filter
-\emph{can} fix --- so room treatment and SuperMoTo are complementary, in that
+more uniform across positions, which is exactly the kind of error a filter
+\emph{can} fix. Room treatment and SuperMoTo are complementary, in that
 order.
 
 \section{Signal flow at a glance}
@@ -255,8 +255,8 @@ the active matrix configuration(s), passes the per-output trim and FIR
 correction, is time-aligned across outputs, and finally the master section
 (Level / Mute / Dim / Mono) is applied before the discrete outputs. The
 plugin's bus is a \textbf{fixed 32-in/32-out} discrete layout (no host
-negotiation involved); the \emph{active} matrix size — 8 by default, up to
-32 — is a separate, independent setting made with the Inputs/Outputs
+negotiation involved); the \emph{active} matrix size (8 by default, up to
+32) is a separate, independent setting made with the Inputs/Outputs
 selectors, and channels beyond it are simply left unrouted.
 
 \begin{figure}[ht]
@@ -299,7 +299,7 @@ re-aligned so loudspeakers with different FIR lengths stay time-coherent.}
   \item Bus layout: one input bus and one output bus, each
         \textbf{32 discrete channels}
         (\texttt{AudioChannelSet::discreteChannels(32)}). The plugin only
-        reports support for the exact 32-in / 32-out layout — no other
+        reports support for the exact 32-in / 32-out layout: no other
         channel count is negotiated.
   \item Plugin type: audio effect (not a synth, no MIDI).
 \end{itemize}
@@ -309,11 +309,11 @@ channel-count discovery is inconsistent (the AU wrapper only probes up to 16
 channels; VST3's channel-set/\texttt{SpeakerArrangement} mapping has no
 defined bit for more than one unnamed discrete channel), which left some
 hosts stuck offering only 8 channels when the layout was negotiable. A single
-fixed 32-channel bus sidesteps that entirely — unused channels are simply
-left disconnected in the host, and the \emph{active} matrix size (independent
+fixed 32-channel bus sidesteps that entirely: unused channels are left
+disconnected in the host, and the \emph{active} matrix size (independent
 of the bus, Section~\ref{sec:outputchain}) is what actually limits how many
 are routed. This fixed 32$\times$32 discrete layout is the key constraint for
-host compatibility — see Chapter~\ref{ch:daw}.
+host compatibility (see Chapter~\ref{ch:daw}).
 
 %==============================================================================
 \chapter{Host (DAW) compatibility}\label{ch:daw}
@@ -323,10 +323,10 @@ SuperMoTo is primarily designed and tested in \textbf{REAPER}. To host it
 usefully a DAW must satisfy two requirements:
 
 \begin{enumerate}[nosep]
-  \item \textbf{Flexible channel routing} — the ability to feed the plugin's
+  \item \textbf{Flexible channel routing}: the ability to feed the plugin's
         discrete inputs from arbitrary sources and to send its discrete
         outputs to arbitrary hardware outputs / busses.
-  \item \textbf{A monitoring (control-room) insert point} — a place to put the
+  \item \textbf{A monitoring (control-room) insert point}: a place to put the
         plugin on the path between the mix and the physical speaker outputs,
         \emph{after} the program material is mixed but \emph{before} it leaves
         for the monitors, ideally not printed into renders/bounces.
@@ -350,7 +350,7 @@ Ardour & Strong &
   \emph{Monitor Section} on the master/monitor path. A natural fit on Linux. \\
 Steinberg Nuendo / Cubase & Strong &
   The \emph{Control Room} provides a monitor insert chain with flexible
-  downmix and multi-channel busses — ideal for a post-production monitoring
+  downmix and multi-channel busses, ideal for a post-production monitoring
   matrix. Confirm the Control Room insert accepts a 32-channel plugin layout. \\
 Bitwig Studio & Possible &
   Very flexible routing and per-device chains; place the plugin on the master
@@ -370,12 +370,12 @@ tested.}
 
 \section{Hosts likely to be awkward}
 \begin{itemize}[nosep]
-  \item \textbf{Pro Tools} — plugin channel formats are constrained to named
+  \item \textbf{Pro Tools}: plugin channel formats are constrained to named
         surround layouts; an arbitrary high-count discrete insert is not the
         native model.
-  \item \textbf{Logic Pro} — surround formats are fixed and discrete
+  \item \textbf{Logic Pro}: surround formats are fixed and discrete
         32-channel routing through a monitor insert is not straightforward.
-  \item \textbf{Studio One / FL Studio / Live} — usable as generic effect
+  \item \textbf{Studio One / FL Studio / Live}: usable as generic effect
         hosts, but they lack a true control-room monitor insert, so the
         plugin would have to live on the master bus and be manually bypassed
         for exports.
@@ -418,8 +418,8 @@ The matrix is a grid of up to \textbf{32$\times$32}. The cell at row \emph{in},
 column \emph{out} is a \textbf{frame} (crosspoint): mainly a \emph{routing}
 cell (how much of input \emph{in} is sent to output \emph{out}), but it also
 carries a small EQ of its own for a config-specific tonal tweak on just that
-one route. Everything that describes the \emph{physical speaker} — trim, its
-own EQ, delay and the FIR correction — lives on the \textbf{output} instead,
+one route. Everything that describes the \emph{physical speaker} (trim, its
+own EQ, delay and the FIR correction) lives on the \textbf{output} instead,
 since output settings are global and therefore shared by all configurations
 that route into it.
 
@@ -429,7 +429,7 @@ that route into it.
   \item \textbf{Gain} (overall frame level, dB);
   \item \textbf{Phase invert} (a frequency-independent polarity flip, useful for
         e.g.\ a differential decode coefficient);
-  \item a \textbf{2-band EQ} — same band types and controls as the output's EQ
+  \item a \textbf{2-band EQ}: same band types and controls as the output's EQ
         below, applied only to this one route (before it sums into the
         output); useful for a config-specific voicing tweak without touching
         the shared output settings;
@@ -442,7 +442,7 @@ Each output is the chain applied to the summed signal of all active frames
 feeding it. Click an output cell (top strip) to edit it:
 \begin{itemize}[nosep]
   \item \textbf{Trim} (output level, dB);
-  \item a \textbf{2-band EQ} — each band can be lowpass, highpass, bandpass
+  \item a \textbf{2-band EQ}: each band can be lowpass, highpass, bandpass
         or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in
         series. This is where the \textbf{bass-management crossover} lives (a
         highpass on a main, a lowpass on the sub);
@@ -492,7 +492,7 @@ There are \textbf{6 configurations} (A..F), each a complete matrix at the
 active size (up to 32$\times$32), stored per preset. They are engaged from
 the top-bar buttons:
 \begin{itemize}[nosep]
-  \item \textbf{Exclusive} mode (default): engaging one releases the others —
+  \item \textbf{Exclusive} mode (default): engaging one releases the others,
         an instant A/B between rigs.
   \item \textbf{Non-exclusive} mode: active configurations are \emph{summed},
         so you can stack layers.
@@ -546,16 +546,16 @@ is automatic; hover to read the details.
 that already carries its own manual \textbf{Delay} first ``spends'' up to
 $L/2$ samples of it paying for its own FIR's latency, instead of that latency
 being added as \emph{extra} delay somewhere else. Only the \emph{unabsorbed}
-remainder, if any, still needs compensating on the other outputs — so a main
+remainder, if any, still needs compensating on the other outputs, so a main
 that already has slack in its Delay control needs little or no compensation
 added to the sub at all. For example: a main delayed \SI{25}{\milli\second}
 to align with a farther sub, corrected with a 1024-sample linear-phase FIR
-($L/2 \approx \SI{11.6}{ms}$ at \SI{44.1}{\kilo\hertz}) — since $25 >
+($L/2 \approx \SI{11.6}{ms}$ at \SI{44.1}{\kilo\hertz}). Since $25 >
 11.6\,\text{ms}$, the main's Delay control fully absorbs the FIR's latency
 (only $25-11.6\approx\SI{13.4}{ms}$ of it is actually applied as a real
 delay) and the sub needs \emph{no} extra compensation at all, instead of the
 $\approx\SI{11.6}{ms}$ it would have received otherwise. The relative
-alignment between main and sub is identical either way — self-absorption only
+alignment between main and sub is identical either way: self-absorption only
 lowers the overall system latency, never changes what you hear. The
 \textbf{Delay} control itself always keeps showing the value you set; only how
 much of it becomes an actual delay line changes.
@@ -588,8 +588,8 @@ The result is an ordinary configuration you can fine-tune by hand afterwards.
 \subsection{Ambisonics decoding}\label{sec:ambisonics}
 The tool also generates \textbf{periphonic (3D) Ambisonics} decoders for orders
 1--3 (Appendix~\ref{ch:ambiprimer} is a primer on the underlying theory). It
-follows the \textbf{AmbiX} convention --- channels in \textbf{ACN}
-order with \textbf{SN3D} normalisation --- and takes the B-format signal on the
+follows the \textbf{AmbiX} convention (channels in \textbf{ACN}
+order with \textbf{SN3D} normalisation) and takes the B-format signal on the
 first $(\mathrm{order}+1)^2$ inputs (4, 9 or 16 channels). Instead of one input
 per speaker, each row sets a loudspeaker's \textbf{azimuth}, \textbf{elevation}
 and \textbf{radius} (distance from the centre) and its output channel. The
@@ -612,7 +612,7 @@ scaled so an on-axis plane wave decodes to about unity. Each non-negligible
 $D[s][j]$ is written as a harmonic\,$\rightarrow$\,speaker frame, its sign
 becoming a polarity flip. With bass management enabled, the omnidirectional
 $W$ component (ACN~0) is low-passed to the subwoofer while the speaker feeds are
-high-passed --- which, summed at each output, is exactly the high-passed decoded
+high-passed, which, summed at each output, is exactly the high-passed decoded
 speaker because the filters are linear. The matrix grows to expose the B-format
 inputs and the speaker (plus sub) outputs. Refine gains, delays and per-output
 FIR corrections in the matrix afterwards.
@@ -636,8 +636,8 @@ SN3D\,/\,ACN feed on the fly:
         \textbf{Radius} (used by the radius compensation below) and its
         per-speaker \textbf{Gain} (folded into the frame gain as a trim).
 \end{itemize}
-A gain matrix cannot encode time, so the imported decoder --- exactly like the
-built-in one --- carries \emph{no} delay: the radius delay below is the only
+A gain matrix cannot encode time, so the imported decoder, exactly like the
+built-in one, carries \emph{no} delay: the radius delay below is the only
 time alignment, and it is optional.
 
 \paragraph{Radius compensation.} Ambisonic decoding assumes the speakers are
@@ -651,8 +651,8 @@ a per-speaker output \textbf{delay} and \textbf{trim}:
 with $c=\SI{343}{\metre\per\second}$. Closer speakers are thus delayed (so all
 wavefronts reach the centre together) and attenuated (inverse-distance law); the
 reference being the farthest speaker, no channel is ever boosted or asked for a
-negative delay. Each part is independently optional --- \textbf{Write radius
-gain} and \textbf{Write radius delay} --- and both apply equally to the built-in
+negative delay. Each part is independently optional (\textbf{Write radius
+gain} and \textbf{Write radius delay}), and both apply equally to the built-in
 and the imported (IEM) decoders; turning one off leaves that output property
 untouched, so an alignment or level already set (e.g.\ in the analysis pane)
 survives an Apply. The radius delay is independent of, and rides on top of, the
@@ -674,14 +674,14 @@ on the output gives an acoustic-plus-electronic arrival of
 \end{equation}
 independent of $d_k$: every measured main lands at the same time as the sub
 \emph{and} as the other mains. So a per-speaker measured alignment already
-contains the path-length (radius) term --- and more accurately than an entered
+contains the path-length (radius) term, and more accurately than an entered
 radius, since it uses the true acoustic path, references the same centroid as the
 average, and folds in the speakers' intrinsic group delay. Therefore:
 \begin{itemize}[nosep]
   \item \textbf{Measured route} (best): run the sub analysis per main and set
         each output delay to the reported value. To (re)build the decode without
         clobbering those delays, turn \textbf{Write radius delay} off before
-        Apply --- the tool then writes the decode, the crossover and the radius
+        Apply: the tool then writes the decode, the crossover and the radius
         \emph{trim} (unless \textbf{Write radius gain} is also off) but leaves
         each output's delay untouched. (Otherwise set the radii equal so the
         geometric delay is zero.)
@@ -764,22 +764,22 @@ can later load in one step:
 \begin{itemize}[nosep]
   \item Files are named automatically:
         \begin{itemize}[nosep]
-          \item \texttt{ch<channel>\_pos<N>.wav} — Dry / FIR modes;
-          \item \texttt{in<channel>\_pos<N>.wav} — System mode;
-          \item \texttt{sub\_pos<N>.wav} — whichever channel is flagged as the
+          \item \texttt{ch<channel>\_pos<N>.wav}: Dry / FIR modes;
+          \item \texttt{in<channel>\_pos<N>.wav}: System mode;
+          \item \texttt{sub\_pos<N>.wav}: whichever channel is flagged as the
                 subwoofer (see the \textbf{Sub} switch below), in any mode
                 where it applies.
         \end{itemize}
         The position number \texttt{<N>} is found automatically for each
         channel by scanning the folder for that channel's existing files and
-        incrementing — so moving the microphone and running the same channel
+        incrementing, so moving the microphone and running the same channel
         selection again adds the next position without any manual renaming,
         and channels measured together in one run stay in step across runs.
   \item After every run, SuperMoTo (re)writes \emph{two} manifests in the
         folder, both regenerated from the folder's actual contents each time
         (so they stay correct even if files are added or removed by hand):
         \begin{itemize}[nosep]
-          \item \texttt{measurement.xml} — the \emph{machine-readable}
+          \item \texttt{measurement.xml}: the \emph{machine-readable}
                 manifest (detailed in Section~\ref{sec:manifest}): the
                 measured channels, which one is the subwoofer, the position
                 count, the folder's calibration record, and a structured log
@@ -787,10 +787,10 @@ can later load in one step:
                 measurement folder\ldots} button actually reads
                 (Section~\ref{sec:grouploadfolder}), so hand-editing or
                 reformatting the readme can never break folder loading.
-          \item \texttt{readme\_measurement.md} — the same information as
+          \item \texttt{readme\_measurement.md}: the same information as
                 \emph{human-readable} documentation of the campaign (mode,
                 stimulus, duration, level, mic input, files written per run).
-                It also serves as a fallback for folders recorded before the
+                It is also the fallback for folders recorded before the
                 XML manifest existed.
         \end{itemize}
   \item The \textbf{Sub} switch turns subwoofer handling on for this
@@ -805,8 +805,8 @@ can later load in one step:
 
 \subsection{What the manifest records}\label{sec:manifest}
 \texttt{measurement.xml} is not merely an index of the files: it carries
-everything a later analysis needs in order to interpret them. That is what makes
-a measurement folder \textbf{self-describing} — hand it to Group analysis (or to
+everything a later analysis needs to interpret them. That is what makes
+a measurement folder \textbf{self-describing}: hand it to Group analysis (or to
 a colleague, or to yourself in six months) and the analysis knows how the
 recordings were made, without you having to remember.
 
@@ -818,7 +818,7 @@ At the folder level it holds:
   \item the \textbf{general comment} (below);
   \item the \textbf{SPL calibration} in effect, as the single offset relating
         full scale to sound pressure, $\mathrm{dB\,SPL} = \mathrm{dBFS} +
-        \textit{offset}$ — this is what later allows the analysis to plot
+        \textit{offset}$, which is what later allows the analysis to plot
         estimated dB\,SPL (Section~\ref{sec:levelref});
   \item the \textbf{microphone calibration} in effect, stored as its display
         name plus a \emph{verbatim copy of the calibration file itself}, so the
@@ -829,7 +829,7 @@ At the folder level it holds:
 \noindent
 and, per run, a log entry giving the time, the mode, the stimulus (type,
 duration and level), the microphone input, the files written, the comment for
-that run, and — for a sweep — the \textbf{sweep identity} $f_1$, $f_2$ and $L$.
+that run, and, for a sweep, the \textbf{sweep identity} $f_1$, $f_2$ and $L$.
 That last item is what enables the synchronized swept-sine analysis of
 Section~\ref{sec:sweep}: without a recorded $L$ the deconvolution cannot
 reconstruct the stimulus, and the analysis falls back to Welch.
@@ -841,7 +841,7 @@ calibration file not currently loaded does not erase the folder's record of it.
 
 \subsection{Comments}\label{sec:comments}
 Two free-text fields let you record what a set of measurements actually was,
-where it will still be legible later — in both manifests, next to the files
+where it will still be legible later: in both manifests, next to the files
 themselves.
 
 \begin{itemize}[nosep]
@@ -864,8 +864,8 @@ any tooling.
 \section{The measurement microphone}\label{sec:micchoice}
 What the analysis sees is the loudspeaker and room \emph{as sampled by the
 microphone}. The microphone is therefore part of the measurement chain, and the
-kind of microphone — and how well it is characterised — sets a ceiling on how
-trustworthy the resulting correction can be.
+kind of microphone, together with how well it is characterised, sets a ceiling
+on how trustworthy the resulting correction can be.
 
 \subsection{Why a measurement microphone}
 Ordinary recording microphones (cardioid vocal or instrument mics) are
@@ -881,7 +881,7 @@ neutrally as possible. A \textbf{measurement microphone} is built for this:
         quarter-inch or half-inch), for a wide, uniform high-frequency
         response with little directional colouration.
   \item \textbf{Nominally flat} magnitude response over the audio band, with
-        only small residual deviations — which a calibration file then removes
+        only small residual deviations, which a calibration file then removes
         (Section~\ref{sec:miccal}).
 \end{itemize}
 
@@ -889,7 +889,7 @@ Common, affordable choices include the USB miniDSP \textbf{UMIK-1} / UMIK-2,
 the Dayton Audio \textbf{EMM-6} (XLR) and \textbf{iMM-6}, the Behringer
 \textbf{ECM8000}, and any class~1/class~2 measurement capsule. USB models carry
 their own ADC and appear as a soundcard input; XLR models need phantom power
-and an audio interface. Either works — SuperMoTo only needs the microphone to
+and an audio interface. Either works: SuperMoTo only needs the microphone to
 arrive on one of its plugin input channels.
 
 \subsection{Orientation matters}
@@ -898,11 +898,11 @@ high-frequency response depends on the angle of arrival, so it is characterised
 for a specific \textbf{orientation}:
 
 \begin{itemize}[nosep]
-  \item \textbf{\ang{0} (on-axis)} — capsule pointed \emph{at the
+  \item \textbf{\ang{0} (on-axis)}: capsule pointed \emph{at the
         loudspeaker}. This is the orientation for the swept-speaker
         measurements SuperMoTo makes, and the one whose calibration file you
         should load.
-  \item \textbf{\ang{90} (grazing)} — capsule pointed at the ceiling,
+  \item \textbf{\ang{90} (grazing)}: capsule pointed at the ceiling,
         used for steady-state room / RTA averaging where sound arrives from
         many directions.
 \end{itemize}
@@ -926,7 +926,7 @@ octave (above \SIrange{8}{10}{\kilo\hertz}) and sometimes a few tenths of a dB
 elsewhere. The \textbf{calibration file} is the measured deviation of that
 microphone from flat. If it is not removed, the analysis attributes the
 microphone's own colouration to the loudspeaker and \emph{builds it into the
-correction} — for example, dipping the speaker's treble to compensate a rise
+correction}: dipping the speaker's treble, for example, to compensate a rise
 that exists only in the microphone. Dividing the calibration out first means the
 estimated transfer function reflects the \textbf{loudspeaker and room alone}.
 
@@ -948,14 +948,14 @@ midband). Where do the numbers come from? \textbf{Individually-measured} mics
 (e.g.\ the UMIK series) have a file keyed to the unit's serial number,
 downloaded from the vendor; cheaper mics may ship only a \emph{model-typical}
 file, or none. The \texttt{Sens Factor} line encodes absolute sensitivity for
-dB\,SPL work and is ignored here — only the frequency-response curve is used.
+dB\,SPL work and is ignored here: only the frequency-response curve is used.
 
 \subsection{How SuperMoTo applies it}
 Because there is normally only one physical microphone, the calibration is a
 \textbf{global setting}: load it once with \textbf{Mic cal}~\ldots{} on
 the Calibration view (it sits next to the microphone-input selector), and it is
 remembered across sessions and projects. (A measurement folder can also carry
-its own embedded copy, which then takes precedence for that folder — see
+its own embedded copy, which then takes precedence for that folder; see
 Section~\ref{sec:micsource}.) The analysis views show the calibration actually
 in effect read-only (\textit{Mic cal: \ldots}) as a reminder. It is used in two
 places:
@@ -981,13 +981,13 @@ interpolated in log-frequency and held flat (at the endpoint value) outside the
 file's range. When the file has no phase column, $c_{\phi}\equiv 0$ and only the
 magnitude is corrected.
 
-Two consequences are worth stressing:
+Two consequences matter in practice:
 
 \begin{itemize}[nosep]
   \item \textbf{The recorded measurement files stay raw.} The calibration is
         applied at \emph{analysis} time, not baked into the captured wavs, so
         you can change or replace the calibration (a better file, the other
-        orientation) and simply re-analyse — no need to re-measure.
+        orientation) and re-analyse; there is no need to re-measure.
   \item \textbf{The broadband SPL number is not corrected.} A single dB\,SPL
         reading cannot carry a frequency-dependent curve; only the spectrum
         display and the analysis use the calibration. (Absolute dB\,SPL is set
@@ -999,13 +999,13 @@ Both analysis views carry a \textbf{mic calibration source} selector, because
 the right curve is not always the one currently loaded on the Calibration view:
 
 \begin{itemize}[nosep]
-  \item \textbf{Global mic cal} — the curve loaded on the Calibration view.
+  \item \textbf{Global mic cal}: the curve loaded on the Calibration view.
         This is the default and is what you want while the measurements in
         front of you were made with the microphone you are using now.
-  \item \textbf{Folder mic cal} — the curve embedded in the measurements' own
+  \item \textbf{Folder mic cal}: the curve embedded in the measurements' own
         \texttt{measurement.xml} (Section~\ref{sec:manifest}). Offered only
         when the loaded set actually carries one.
-  \item \textbf{No mic cal} — analyse the raw measurements, with no microphone
+  \item \textbf{No mic cal}: analyse the raw measurements, with no microphone
         correction at all. Useful to see how much the calibration is doing, or
         when you suspect the calibration file itself.
 \end{itemize}
@@ -1033,7 +1033,7 @@ calibration.
         hides them; in the bass the capsule is essentially flat and room modes
         dominate regardless.
   \item Loading \emph{no} calibration is acceptable for broad bass correction,
-        but then any treble target inherits the microphone's error — so for
+        but then any treble target inherits the microphone's error, so for
         full-range correction a calibrated microphone is strongly advised.
   \item The calibration corrects the microphone, \emph{not} its placement: mic
         position and spatial averaging (Section~\ref{sec:spatialavg}) remain
@@ -1057,8 +1057,8 @@ the injection point of each.
 \textbf{Mode} & \textbf{What is exercised} & \textbf{File name} \\
 \midrule
 \textbf{Dry} &
-  Stimulus written straight onto the measured \emph{output} — no trim, no FIR.
-  The raw loudspeaker, as wired. The first step before designing a FIR. &
+  Stimulus written straight onto the measured \emph{output}, with no trim and
+  no FIR. The raw loudspeaker, as wired. The first step before designing a FIR. &
   \texttt{ch<output>\_pos<N>.wav} (or \texttt{sub\_pos<N>.wav}) \\
 \textbf{FIR} &
   Stimulus to the measured \emph{output} through its trim and FIR chain only,
@@ -1067,7 +1067,7 @@ the injection point of each.
 \textbf{System} &
   Stimulus injected into a plugin \emph{input} and run through the whole engine
   (matrix routing, frame EQ / crossover, output FIRs, inter-output latency
-  compensation) — the complete system as heard. Channel selection means
+  compensation), the complete system as heard. Channel selection means
   \emph{inputs} in this mode; the \textbf{Sub} switch does not apply. &
   \texttt{in<input>\_pos<N>.wav} \\
 \bottomrule
@@ -1110,7 +1110,7 @@ traverses the entire engine.}
 \label{fig:measmodes}
 \end{figure}
 
-\subsection{Dry — the raw loudspeaker}
+\subsection{Dry: the raw loudspeaker}
 The stimulus is written directly onto the selected output channel; the output
 trim and FIR are \emph{not} applied. The capture therefore characterises the
 loudspeaker and room exactly as the speaker is physically driven, with no
@@ -1119,18 +1119,18 @@ correction in the path. This is the measurement you feed to the analysis part
 output you intend to correct, at several microphone positions around the
 listening spot.
 
-\subsection{FIR — verifying the correction}
+\subsection{FIR: verifying the correction}
 The stimulus is emitted to the selected output through that output's
 \textbf{trim and FIR} only (the matrix is otherwise silent). Use it
 \emph{after} you have exported a correction IR and assigned it to the output:
 re-measuring should show a flatter response than the corresponding Dry
 capture. It is the direct before/after check on a single speaker's correction.
 
-\subsection{System — the complete monitored chain}
+\subsection{System: the complete monitored chain}
 The stimulus is injected into the selected plugin \emph{input} and run through
 the whole engine with the currently engaged configuration(s): matrix routing,
 frame EQ and bass-management crossover, the output FIRs and the inter-output
-latency compensation — exactly what you hear. The master gain is bypassed
+latency compensation: exactly what you hear. The master gain is bypassed
 (unity) during the run, so the capture level is set by the stimulus alone.
 Because the source is an input, \textbf{the channel selection chooses inputs}
 and the files are tagged \texttt{in<N>} so a System set never collides with a
@@ -1148,7 +1148,7 @@ important:
   \item in \textbf{Dry} mode that ratio is the bare speaker + room response;
   \item in \textbf{FIR} and \textbf{System} modes it already \emph{includes}
         the correction (and, for System, the full chain), so a successful
-        correction shows up directly as a flatter measured transfer function —
+        correction shows up directly as a flatter measured transfer function;
         you do not have to subtract anything by hand.
 \end{itemize}
 
@@ -1199,8 +1199,8 @@ folder's manifest records the sweep's parameters, the \textbf{synchronized
 swept-sine} method of Section~\ref{sec:sweep} is offered as well, and selected
 by default: it recovers the full-band response with true phase from a single
 sweep, and separates the harmonic-distortion products out of the linear
-estimate instead of leaving them in it. Everything after the estimate —
-smoothing, averaging, correction design, rendering — is common to both.
+estimate instead of leaving them in it. Everything after the estimate
+(smoothing, averaging, correction design, rendering) is common to both.
 
 \subsection{The $H_1$ estimator}
 A direct bin-by-bin division $Y/X$ is unusable in a room: it is dominated by
@@ -1220,8 +1220,8 @@ The transfer function is then formed as the \textbf{$H_1$ estimator}
   \label{eq:h1}
 \end{equation}
 $H_1$ is the least-squares estimator that is optimal when the noise is on the
-\emph{output} (the microphone path) — the realistic case for an acoustic
-measurement — and it rejects that noise as more segments are averaged. (Its
+\emph{output} (the microphone path), the realistic case for an acoustic
+measurement, and it rejects that noise as more segments are averaged. (Its
 companion $H_2=P_{yy}/P_{yx}$ assumes input noise; both bracket the true
 response, and they coincide only when the coherence is unity.) The derivation
 and noise properties of $H_1/H_2$ are standard material in
@@ -1246,7 +1246,7 @@ denominator of~\eqref{eq:h1}, so silent bins do not blow up.
 
 \subsection{Propagation-delay estimation and removal}
 Each microphone position is at a different distance from the speaker, so each
-$\hat H$ carries a different bulk propagation delay — a linear phase term
+$\hat H$ carries a different bulk propagation delay, a linear phase term
 $e^{-j2\pi f \tau}$. Averaging the complex responses \emph{without} removing it
 would let the position-dependent phase ramps cancel each other and destroy the
 result. The plugin therefore estimates the delay $\tau$ of each measurement
@@ -1280,7 +1280,7 @@ nulls that do not exist elsewhere.
 When the measurement was made with the \textbf{Sweep} stimulus, SuperMoTo can
 estimate the transfer function by \emph{deconvolution} instead of by Welch
 averaging. The \textbf{TF} selector chooses the method; ``Sweep (Farina)''
-becomes available — and is selected automatically — as soon as the loaded
+becomes available, and is selected automatically, as soon as the loaded
 folder's \texttt{measurement.xml} carries the sweep's identity
 (Section~\ref{sec:measfolder}). The implementation follows the
 \emph{synchronized} swept-sine formulation of Novak, Lotton and
@@ -1309,13 +1309,13 @@ the requested duration $T$, but quantized so that $f_1 L$ is an integer:
   \label{eq:sweepL}
 \end{equation}
 The actual sweep duration is then $L \ln (f_2/f_1)$, slightly different from
-the $T$ you asked for — the \textbf{Duration} control is a target, not an exact
+the $T$ you asked for: the \textbf{Duration} control is a target, not an exact
 value. The sweep sounds exactly the same; the reason for the quantization
 appears in Section~\ref{sec:sweepharm}.
 
 \subsection{Deconvolution by the analytic inverse}
 The recorded response is deconvolved by the sweep's \emph{analytic} spectral
-inverse — the closed form obtained from the stationary-phase approximation of
+inverse, the closed form obtained from the stationary-phase approximation of
 the sweep's spectrum~\cite{Novak2015},
 \begin{equation}
   X^{-1}(f) = 2\sqrt{\frac{f}{L}}\;
@@ -1347,7 +1347,7 @@ This is where the quantization~\eqref{eq:sweepL} earns its place. With $f_1 L$
 an integer, the sweep's phase at every arrival time $\Delta t_m$ is an exact
 multiple of $2\pi$, so the harmonic impulse responses emerge not merely
 separated in time but with their \emph{true phase}. Deconvolving a recording
-whose $L$ was not quantized — a file from another tool, say — still separates
+whose $L$ was not quantized (a file from another tool, say) still separates
 the orders in time, but their phase relationship is lost.
 
 The practical consequence matters even if you never look at a distortion curve:
@@ -1361,8 +1361,8 @@ recording (and never shorter than the sweep), so the wrapped harmonic responses
 land far from the linear one.
 
 \begin{itemize}[nosep]
-  \item The first $W$ samples of the deconvolved response — $W$ being the same
-        \textbf{Welch window} length as before — hold the linear impulse
+  \item The first $W$ samples of the deconvolved response (with $W$ the same
+        \textbf{Welch window} length as before) hold the linear impulse
         response. They are transformed onto exactly the same $W/2+1$ bin grid
         the Welch path produces, so \emph{everything downstream is
         method-agnostic}: delay removal (Section~\ref{sec:spatialavg}),
@@ -1372,16 +1372,16 @@ land far from the linear one.
         changes.
   \item Harmonic orders \numrange{2}{5} are extracted, each centred
         $L \ln m$ seconds before the linear peak. The extraction half-width is
-        bounded by $0.45$ times the spacing to the \emph{next} order — that
-        spacing shrinks as $L \ln\!\big(m/(m-1)\big)$ — so neighbouring orders
+        bounded by $0.45$ times the spacing to the \emph{next} order (that
+        spacing shrinks as $L \ln\!\big(m/(m-1)\big)$), so neighbouring orders
         cannot leak into one another. An order is dropped when the sweep is too
         short to separate it cleanly, which is the usual reason a short
         measurement shows fewer distortion curves than a long one.
   \item Across microphone positions the harmonic magnitudes are averaged in
         \textbf{power}, not as complex quantities. Distortion phase is not
         coherent from one position to the next, so the vector average of
-        Section~\ref{sec:spatialavg} — which is exactly what one wants for the
-        linear response — would cancel the distortion instead of measuring it.
+        Section~\ref{sec:spatialavg} (exactly what one wants for the
+        linear response) would cancel the distortion instead of measuring it.
   \item The results appear on the plot as the \textbf{H2}\ldots\textbf{H5}
         traces, on the same axis as the response, and follow the same
         nth-octave smoothing and microphone calibration as the other curves.
@@ -1393,7 +1393,7 @@ $L$), which are read from the measurement folder's manifest. A file is
 estimated with Welch instead whenever
 
 \begin{itemize}[nosep]
-  \item the folder carries no sweep identity — files loaded by hand, a noise
+  \item the folder carries no sweep identity: files loaded by hand, a noise
         run, or a folder recorded before the manifest stored it;
   \item the recording is shorter than the sweep it claims to be;
   \item the analysis window $W$ is too large for the sweep, so the harmonic
@@ -1415,7 +1415,7 @@ sweep recording if you want to compare the two.
   \item the \textbf{corrected response} $\bar H\,C$;
   \item the \textbf{harmonic-distortion} magnitudes
         \textbf{H2}\ldots\textbf{H5}, power-averaged over the microphone
-        positions — swept-sine estimator only (Section~\ref{sec:sweep}).
+        positions, swept-sine estimator only (Section~\ref{sec:sweep}).
 \end{itemize}
 By default, magnitudes are normalised to the \SIrange{200}{2000}{\hertz} mean of
 the average (so $\SI{0}{\dB}$ is the mid-band level, independent of the absolute
@@ -1430,14 +1430,14 @@ data either way, and the correction curve itself is always shown in absolute
 \si{\dB} (it is a gain, so it has no reference to choose).
 
 \begin{itemize}[nosep]
-  \item \textbf{Normalized} — the default described above, $\SI{0}{\dB}$ at the
+  \item \textbf{Normalized}: the default described above, $\SI{0}{\dB}$ at the
         \SIrange{200}{2000}{\hertz} mean. Best for judging \emph{shape}, and the
         only sensible choice when comparing speakers measured at different
         gains.
-  \item \textbf{Absolute dB} — the recorded level per unit of stimulus level,
+  \item \textbf{Absolute dB}: the recorded level per unit of stimulus level,
         with no normalisation. Use it to compare the actual sensitivity of two
         speakers, or to see how much level a correction is giving away.
-  \item \textbf{dB SPL} — the estimated sound pressure during the measurement.
+  \item \textbf{dB SPL}: the estimated sound pressure during the measurement.
         This needs both an SPL calibration and the run's stimulus level, so it
         is offered only when the folder's manifest supplies them
         (Section~\ref{sec:manifest}); the option greys out otherwise. It is
@@ -1453,7 +1453,7 @@ $N$:
 \begin{itemize}[nosep]
   \item the \textbf{measured} impulse response (the average response rendered
         back to the time domain), and
-  \item the \textbf{correction} impulse response — precisely the filter that
+  \item the \textbf{correction} impulse response, precisely the filter that
         \textbf{Export correction IR} would write.
 \end{itemize}
 
@@ -1470,7 +1470,7 @@ it immediately.
 \section{Fractional-octave smoothing}
 A \textbf{$1/n$-octave smoothing} is applied both to the displayed curves and
 to the average from which the correction is derived. It is a \textbf{complex}
-moving average — magnitude and phase together — over a logarithmic band
+moving average (magnitude and phase together) over a logarithmic band
 $[\,k/r,\;k\,r\,]$ around each bin $k$, with $r = 2^{\text{fraction}/2}$,
 evaluated in $O(n)$ with a prefix sum. Working on a constant-$Q$
 (fractional-octave) grid matches the ear's roughly logarithmic frequency
@@ -1504,18 +1504,18 @@ fractional-octave window already has: that widens the window in \si{\hertz} as
 frequency rises but keeps the \emph{octave} fraction constant; here the octave
 fraction itself varies with frequency.
 
-\subsection{Why smoothing matters — and a recommendation}\label{sec:smoothrec}
+\subsection{Why smoothing matters, and a recommendation}\label{sec:smoothrec}
 \textbf{Do not try to correct a raw or lightly-smoothed response.} An
 unsmoothed in-room measurement is full of sharp, deep nulls and peaks produced
 by reflections and standing waves. These narrow features have three properties
 that make inverting them counter-productive:
 \begin{itemize}[nosep]
-  \item they are largely \textbf{non-minimum-phase} — true cancellations that
+  \item they are largely \textbf{non-minimum-phase}: true cancellations that
         \emph{cannot} be undone by any magnitude/phase filter; attempting it
         only demands enormous boosts that the soft-knee ceiling
         (Section~\ref{sec:correction}) then has to claw back, wasting
         headroom~\cite{NeelyAllen,Mourjopoulos1994};
-  \item they are \textbf{position-dependent} — a null at the measurement point
+  \item they are \textbf{position-dependent}: a null at the measurement point
         has moved or vanished a few centimetres away, so ``filling'' it
         corrects one point while \emph{degrading} every other listening
         position;
@@ -1528,7 +1528,7 @@ smoothing setting is your primary control over how much of this fine structure
 the inverse is even allowed to see. Combined with the complex spatial
 averaging of Section~5.1 (which already cancels much of the position-dependent
 comb filtering), enough smoothing keeps the correction on the \textbf{broad,
-reproducible trends} of the loudspeaker--room response — exactly the part that
+reproducible trends} of the loudspeaker--room response, exactly the part that
 is stable across the listening area and safe to invert.
 
 \paragraph{Practical guidance.}
@@ -1541,7 +1541,7 @@ is stable across the listening area and safe to invert.
         frequencies} (broad, modal, relatively position-stable) and only
         lightly at \textbf{high frequencies}, where the response is dominated
         by direct sound plus early reflections and narrow dips should be left
-        alone — broad trends only~\cite{Toole}. A good starting point is a
+        alone; broad trends only~\cite{Toole}. A good starting point is a
         \emph{finer} LF fraction (e.g.\ 1/12--1/6~octave) with a
         \emph{coarser} HF fraction (e.g.\ 1/3--1~octave).
   \item For uniform smoothing, set both controls equal; \textbf{1/6~octave} on
@@ -1585,8 +1585,8 @@ $\kappa=\min(6,L)\,\si{\dB}$:
   \end{cases}
 \end{equation}
 The boost passes untouched up to $L-\kappa$, then saturates smoothly and
-asymptotes to $L$. Cuts ($|C|<1$) are left alone — attenuating a peak is
-always safe, only filling a null is dangerous. This is the practical form of
+asymptotes to $L$. Cuts ($|C|<1$) are left alone: attenuating a peak is
+always safe; only filling a null is dangerous. This is the practical form of
 regularised inversion discussed in~\cite{Kirkeby1999}.
 
 \paragraph{2. Low-frequency slope.}
@@ -1665,8 +1665,8 @@ without touching either magnitude.
 
 \subsection{Preserving the relative main/sub timing}
 A second measurement set (the subwoofer) is loaded, taken at the \emph{same}
-positions as the main and paired by load order. The crucial step is that each
-sub measurement is \textbf{delay-anchored on the corresponding main
+positions as the main and paired by load order. The step that matters is that
+each sub measurement is \textbf{delay-anchored on the corresponding main
 measurement's delay} rather than having its own delay estimated and removed.
 If each file were independently zeroed, the physically meaningful main-vs-sub
 arrival-time difference at each position would be discarded; anchoring keeps
@@ -1686,7 +1686,7 @@ where the alignment weight $w_x(f)$ is \textbf{1 at and below the crossover}
 and is released to 0 over one octave above it (raised cosine), so the main
 keeps its own flat-phase correction in its passband and only inherits the
 sub's phase where the two actually overlap. The renormalisation makes $A$
-strictly phase-only — \textbf{the main's magnitude correction is unchanged}.
+strictly phase-only: \textbf{the main's magnitude correction is unchanged}.
 Blending the \emph{phasors} (rather than scaling an unwrapped phase angle)
 keeps the rotation on the short arc between $1$ and $\hat s$, so $A$ applies
 only the minimal phase shift and never unwinds the sub's large accumulated
@@ -1694,7 +1694,7 @@ low-frequency phase. \textbf{Invert} negates $\bar S$ to flip the sub polarity
 if it is wired (or behaves) out of phase.
 
 \subsection{Bulk time alignment: the \emph{Mains delay} control}\label{sec:timealign}
-The sub usually lags the mains by several milliseconds — its own group delay
+The sub usually lags the mains by several milliseconds: its own group delay
 plus any extra path or processing latency. Folding that whole offset into the
 all-pass $A(f)$ would demand a long, low-frequency-heavy correction FIR. Instead
 the \textbf{Mains delay} control $t_a$ (\SI{-40}{} to \SI{40}{\milli\second})
@@ -1712,8 +1712,8 @@ corrected-phase curve visibly flattens as $t_a$ is tuned to the right value.
 
 On loading the sub set the plugin estimates the offset automatically, from a
 least-squares fit of the unwrapped, delay-anchored sub phase over
-$[\,f_c/2,\,2f_c\,]$ — the local group delay
-$\hat\tau=-\,\mathrm{d}\varphi/\mathrm{d}\omega$ — and shows it as a
+$[\,f_c/2,\,2f_c\,]$ (the local group delay
+$\hat\tau=-\,\mathrm{d}\varphi/\mathrm{d}\omega$), and shows it as a
 recommendation. It is \textbf{not} applied automatically: $t_a$ is a promise
 that the matching physical delay will be set in the matrix, so the user opts in
 by moving the slider, and the on-screen message then states the exact delay
@@ -1725,7 +1725,7 @@ manual matrix step, tick \textbf{Apply bulk delay}: \textbf{Export correction
 IR} then writes $t_a$ onto the assigned output's \textbf{delay} at the same time
 it loads the FIR, so the promised bulk delay and the residual-only correction
 land together. The value is clamped to the output's non-negative range, so a
-\emph{negative} $t_a$ (delay the sub instead) clamps to zero — in that case
+\emph{negative} $t_a$ (delay the sub instead) clamps to zero; in that case
 delay the subwoofer's output by $|t_a|$ by hand. This is the per-speaker measured
 route of Section~\ref{sec:ambisonics}: each main's exported delay equals its
 path-length term, so all mains (and the sub) arrive together at the centre.
@@ -1742,9 +1742,9 @@ the correction applied at each frequency bin is the single complex expression
          \Bigr]\; }
   \label{eq:fullfilter}
 \end{equation}
-evaluated on the Welch bin grid ($f_k = k\,f_s/W$). It is this spectrum $C(f)$
-— not an analytic filter — that Section~\ref{sec:render} resamples and inverse-
-transforms into the exported FIR. Reading~\eqref{eq:fullfilter} from the inside
+evaluated on the Welch bin grid ($f_k = k\,f_s/W$). Section~\ref{sec:render}
+resamples and inverse-transforms this spectrum $C(f)$, not an analytic filter,
+into the exported FIR. Reading~\eqref{eq:fullfilter} from the inside
 out, the operators are exactly the design steps above:
 \begin{align}
   h(f) &= \frac{\bar H_s(f)}{g_{\mathrm{ref}}}
@@ -1773,7 +1773,7 @@ out, the operators are exactly the design steps above:
 \end{align}
 Two boundary cases complete the definition: where $|h(f)|$ is negligible the
 inverse is replaced by the boost ceiling (rather than diverging), and cuts
-($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$ — only
+($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$: only
 \emph{boosts} are limited. Setting $\lambda=1$, no subwoofer ($A\equiv1$) and a
 fully open analysis band ($w\equiv1$) reduces~\eqref{eq:fullfilter} to the
 boost-limited, LF-sloped exact inverse $H_{\mathrm{hp}}\,\mathcal{B}[1/h]$.
@@ -1786,8 +1786,8 @@ correction can be rendered in two ways, selected by the \textbf{Phase} control:
 always linear-phase.
 
 \subsection{Linear- / mixed-phase rendering}
-The resampled spectrum is given a \textbf{half-length linear phase shift} —
-multiplying bin $k$ by $e^{-j\pi k}=(-1)^k$ — before the inverse FFT. Because
+The resampled spectrum is given a \textbf{half-length linear phase shift}
+(multiplying bin $k$ by $e^{-j\pi k}=(-1)^k$) before the inverse FFT. Because
 the correction is a \emph{mixed-phase} filter (it deliberately carries phase
 and all-pass content, including the subwoofer alignment, so it is not causal on
 its own), centring its energy at sample $N/2$ is what makes it realisable as an
@@ -1798,13 +1798,13 @@ standard~\cite{OppenheimSchafer}.
 The cost of centring is a constant latency of $\approx N/2$ samples on that
 output. SuperMoTo's per-output convolution uses the WDL zero-latency
 (uniformly partitioned) convolution engine~\cite{Gardner1995}, so the filter
-adds no \emph{algorithmic} block latency beyond that fixed $N/2$ offset — which
+adds no \emph{algorithmic} block latency beyond that fixed $N/2$ offset, which
 the matrix's inter-output latency compensation (Chapter~\ref{ch:matrix}) then
 absorbs automatically so all outputs stay time-aligned.
 
 \subsection{Minimum-phase rendering}\label{sec:minphase}
-When low latency matters more than phase accuracy — typically \textbf{monitoring
-while tracking} — the correction can instead be rendered as a
+When low latency matters more than phase accuracy (typically \textbf{monitoring
+while tracking}), the correction can instead be rendered as a
 \textbf{minimum-phase} filter built from its \emph{magnitude alone}. As defined
 in Section~\ref{sec:minphasedef}, a minimum-phase response is the unique causal,
 stable response whose log-magnitude and phase form a Hilbert-transform pair
@@ -1834,7 +1834,7 @@ automatically: a linear-phase IR reports $\approx N/2$, a minimum-phase IR
 reports $\approx 0$, and no special handling is needed. Note, however, that
 compensation aligns every fed output to the \emph{longest} engaged FIR, so the
 low-latency benefit is only fully realised when \emph{all} engaged outputs use
-minimum-phase (or no) FIRs — a single linear-phase FIR in the active
+minimum-phase (or no) FIRs: a single linear-phase FIR in the active
 configuration pulls the rest back up to its $N/2$ delay. The on-screen
 correction-phase plot always shows the linear-phase design target; in
 minimum-phase mode the exported filter matches the displayed \emph{magnitude}
@@ -1842,10 +1842,10 @@ but carries its minimum-phase companion instead.
 
 \section{Exporting}
 \begin{itemize}[nosep]
-  \item \textbf{Export IR} — saves the \emph{measured} response itself
+  \item \textbf{Export IR}: saves the \emph{measured} response itself
         (the delay-aligned complex average), band-limited to the analysis range
         so out-of-band room/mic noise does not leak into the file.
-  \item \textbf{Export correction IR} — renders the \emph{correction}
+  \item \textbf{Export correction IR}: renders the \emph{correction}
         $C$ (Section~\ref{sec:correction}) to a mono \SI{32}{bit}-float wav of a
         selectable FIR length and \textbf{Phase} type (Section~\ref{sec:render}),
         and can assign it directly to an output of the monitoring part. In
@@ -1871,12 +1871,12 @@ shared subwoofer) side by side, shares the correction-design settings across
 all of them, computes the relative delays that align the whole group, and
 exports every speaker's correction filter in one step.
 
-Everything the single-speaker Analysis pane can do to \emph{one} measurement
-set — Welch estimation (Section~\ref{sec:welch}), fractional-octave
-smoothing (Section~\ref{sec:varsmooth}), correction design
-(Section~\ref{sec:correction}) and FIR rendering (Section~\ref{sec:render})
-— is exactly what Group analysis runs once per speaker; nothing about the
-underlying DSP differs. What Group analysis adds is the delay computation
+Group analysis runs exactly what the single-speaker Analysis pane does to
+\emph{one} measurement set, once per speaker: Welch estimation
+(Section~\ref{sec:welch}), fractional-octave smoothing
+(Section~\ref{sec:varsmooth}), correction design (Section~\ref{sec:correction})
+and FIR rendering (Section~\ref{sec:render}). Nothing about the underlying
+DSP differs. What Group analysis adds is the delay computation
 across the whole group and the batch apply/export step.
 
 \screenshot{group-analysis-view.png}{The Group analysis view: speaker count
@@ -1890,7 +1890,7 @@ plot.}
   \item \textbf{Speakers} sets how many drivers to align (1 to 16). Each gets
         its own row: a \textbf{Load...} button (the same multi-position,
         stereo sent/recorded measurement convention as
-        Section~\ref{sec:spatialavg} — one file per microphone position, at
+        Section~\ref{sec:spatialavg}: one file per microphone position, at
         the \emph{same} positions across every speaker), a file-count /
         measured-delay read-out, and an \textbf{output} assignment combo.
   \item A \textbf{Sub} switch (top row, next to \textbf{Speakers}) turns
@@ -1913,7 +1913,7 @@ folder's \texttt{measurement.xml} manifest (falling back to parsing
 \texttt{readme\_measurement.md} for folders recorded before the XML manifest
 existed) to find which channels were
 measured and which one is the subwoofer, sets \textbf{Speakers} to match, and
-loads every speaker's (and the sub's) files — sorted by position, not by file-
+loads every speaker's (and the sub's) files, sorted by position, not by file-
 dialog order, so the main/sub pairing is always correct. Each channel's
 \textbf{output} assignment is set automatically to that same channel number.
 The \textbf{Sub} switch is set to match the folder: on if it contains a
@@ -1923,7 +1923,7 @@ subwoofer measurement, off otherwise.
 The Welch window, the low/high-frequency smoothing, the correction level, the
 max boost, the FIR length, the phase type, the analysis range, the crossover
 and the sub polarity are \textbf{shared}: one ``tone'' applied to every
-speaker in the group (and, analysis range aside, to the sub — see below), the
+speaker in the group (and, analysis range aside, to the sub; see below), the
 same controls described in Sections~\ref{sec:welch}--\ref{sec:render}. A
 \textbf{Preview} selector picks which speaker's (or the sub's) curves the
 single plot at the bottom shows while these are tuned; switching it never
@@ -1936,8 +1936,8 @@ engine in the group and the last two following the previewed speaker.
 
 \section{Computing the alignment}\label{sec:groupalign}
 \textbf{Compute alignment} reads every loaded speaker's (and the sub's)
-propagation delay — the same impulse-response-peak estimate
-Section~\ref{sec:welch} uses for a single speaker — and proposes the delay
+propagation delay (the same impulse-response-peak estimate
+Section~\ref{sec:welch} uses for a single speaker) and proposes the delay
 that time-aligns the whole group: the most-distant driver is left at
 \SI{0}{ms}, and every other driver is pushed back by the difference, so every
 proposed delay is non-negative and everyone arrives together at the
@@ -1952,18 +1952,19 @@ designed for the delay that will actually be applied, not the raw, unaligned
 one.
 
 \section{Level matching between speakers}\label{sec:grouplevel}
-Speakers of different models — or the same model driven by different
-amplifier gains — rarely play at the same level for the same input.
+Speakers of different models (or the same model driven by different
+amplifier gains) rarely play at the same level for the same input.
 \textbf{Compute alignment} therefore also derives a suggested
 \textbf{level-matching trim} per speaker, shown next to each row's delay and
 recorded in the report.
 
 The level estimate is the mean \emph{power} of each speaker's
-\emph{corrected} response — the spatially averaged transfer function
+\emph{corrected} response, over the band \textbf{\SIrange{500}{2000}{\hertz}}.
+The corrected response is the spatially averaged transfer function
 (Section~\ref{sec:spatialavg}) multiplied by its designed correction, i.e.\
-the level that speaker will actually play at once its FIR is applied — over
-the band \textbf{\SIrange{500}{2000}{\hertz}}. That mid-band restriction is
-deliberate, and is standard practice rather than a SuperMoTo invention:
+the level that speaker will actually play at once its FIR is applied. That
+mid-band restriction is deliberate, and is standard practice rather than a
+SuperMoTo invention:
 SMPTE~ST~2095-1 specifies band-limited pink noise over exactly
 \SIrange{500}{2000}{\hertz} as the calibration signal for setting channel
 levels~\cite{SMPTE2095}, and CTA-2034-A rates loudspeaker sensitivity over a
@@ -1976,7 +1977,7 @@ orientation. In between, the estimate is robust.
 
 The \textbf{quietest} speaker is the reference, so every suggested trim is
 \textbf{$\le$ \SI{0}{dB}}: attenuate the louder channels down to it, which
-preserves headroom — the same convention as the delays, where the
+preserves headroom, the same convention as the delays, where the
 most-distant driver is the one left untouched. The suggestion is
 \emph{informational only}: \textbf{Apply \& export} never writes it, so an
 intentional level offset (e.g.\ a rear-channel shelf you set by ear) is
@@ -1994,7 +1995,7 @@ Above a subwoofer's real passband, a broadband measurement (sent full-band,
 recorded through a driver that reproduces only the low end) is just noise:
 the cross-spectrum $\hat P_{xy}$ (Section~\ref{sec:welch}) has no coherent
 content there, so the ``correction'' the same math would propose above a few
-hundred hertz would be an inverse filter fitted to noise — pointless at best,
+hundred hertz would be an inverse filter fitted to noise: pointless at best,
 and a soft-knee boost (Section~\ref{sec:correction}) applied to noise at
 worst. The sub's own analysis range is therefore automatically capped at
 \SI{300}{Hz} regardless of the shared \textbf{Range} control, so even its
@@ -2012,8 +2013,8 @@ later resumes using whatever was loaded before.
 \textbf{Apply \& export...} asks for a destination folder, then for every
 speaker assigned to an output: renders and writes its correction IR
 (Section~\ref{sec:render}) into that folder, and writes the computed delay
-together with the FIR path onto that output's settings — global, exactly
-like the single-speaker Analysis pane (an output's processing is shared by
+together with the FIR path onto that output's settings, which are global,
+exactly like the single-speaker Analysis pane (an output's processing is shared by
 every configuration A--F, not per configuration,
 Section~\ref{sec:outputchain}). The sub, if assigned to an output, gets only
 its delay written (Section~\ref{sec:groupsub}).
@@ -2032,7 +2033,7 @@ Everything a run writes is named from the \textbf{Prefix} field:
 so on. Leave it empty and the names have no prefix at all.
 
 The point is that several alignments can then share one folder instead of
-overwriting each other — different rooms, different speaker sets, successive
+overwriting each other: different rooms, different speaker sets, successive
 attempts at the same rig. That matters more than tidiness: a second run into
 the same folder with no prefix replaces the first run's impulse responses,
 including ones already assigned to outputs and in use. The field is pre-filled
@@ -2069,7 +2070,7 @@ These are the short recipes; Appendix~\ref{ch:examples} works three complete
 multi-configuration setups (a studio with two pairs and a sub, a switchable
 5.1, and an Ambisonic rig) end to end.
 
-\section{A — Stereo monitoring with corrected speakers}
+\section{A: Stereo monitoring with corrected speakers}
 \begin{enumerate}[nosep]
   \item Matrix view (or Config tool $\rightarrow$ Stereo 2.0 $\rightarrow$
         Apply to A): route input 1$\rightarrow$out 1, input 2$\rightarrow$out 2.
@@ -2082,7 +2083,7 @@ multi-configuration setups (a studio with two pairs and a sub, a switchable
         response is flat.
 \end{enumerate}
 
-\section{B — 2.1 / bass-managed system with an aligned subwoofer}
+\section{B: 2.1 / bass-managed system with an aligned subwoofer}
 \begin{enumerate}[nosep]
   \item Config tool $\rightarrow$ Stereo 2.1 (or 5.1 / 7.1) $\rightarrow$ set
         the crossover $\rightarrow$ Apply.
@@ -2091,7 +2092,7 @@ multi-configuration setups (a studio with two pairs and a sub, a switchable
         main.
   \item Analysis: load the main set, then \textbf{Load sub measurements}; set
         the crossover (toggle \textbf{Invert} if the sub is wired out of
-        polarity) — the corrected-main phase is steered onto the sub's through
+        polarity): the corrected-main phase is steered onto the sub's through
         the crossover.
   \item Read the recommended \textbf{Mains delay}; raise the slider until the
         corrected-main phase flattens through the crossover, then note the
@@ -2104,22 +2105,22 @@ multi-configuration setups (a studio with two pairs and a sub, a switchable
         response should be smooth through the crossover.
 \end{enumerate}
 
-\section{C — Verifying the complete system end to end}
+\section{C: Verifying the complete system end to end}
 Calibration, \textbf{System} mode, select the plugin input your source uses.
 The stimulus runs through the engaged configuration exactly as monitored
 (routing, crossover, FIRs, latency compensation). Analysis of that capture
 shows the real in-room system response.
 
-\section{D — Multiple speaker sets / quick A/B}
+\section{D: Multiple speaker sets / quick A/B}
 Store different rigs or rooms in configurations A--F (e.g.\ A = mains,
 B = mains+sub, C = nearfields) and switch from the top bar. Use
 \textbf{Exclusive} for A/B, non-exclusive to sum. Collapse
 (\textbf{$\blacktriangle$}) to a compact output-strip-only window.
 
-\section{E — Ambisonics monitoring}
+\section{E: Ambisonics monitoring}
 \begin{enumerate}[nosep]
   \item Raise the \emph{matrix} size large enough (e.g.\ 24 in/out for order
-        3: 16 B-format inputs, 16 speakers and a sub) — the plugin bus itself
+        3: 16 B-format inputs, 16 speakers and a sub); the plugin bus itself
         is always a fixed 32 in/32 out (Section~\ref{sec:channellayout}).
   \item Config tool $\rightarrow$ \textbf{Ambisonics}, pick the \textbf{Order};
         feed your B-format (AmbiX) onto inputs 1--$(\mathrm{order}+1)^2$.
@@ -2131,7 +2132,7 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
         together as one engine.
 \end{enumerate}
 
-\section{F — Multi-speaker group alignment}
+\section{F: Multi-speaker group alignment}
 \begin{enumerate}[nosep]
   \item Measure each speaker (and the sub, if any) into one \textbf{measurement
         folder} per rig, using the \textbf{Sub} switch and \textbf{Sub
@@ -2158,7 +2159,7 @@ B = mains+sub, C = nearfields) and switch from the top bar. Use
         markdown report next to the impulse responses. The subwoofer only
         ever gets its time-alignment delay (Section~\ref{sec:groupsub}).
   \item If the suggested trims are significant, enter them in each output's
-        \textbf{Trim} in the matrix view — they are reported, never written
+        \textbf{Trim} in the matrix view; they are reported, never written
         automatically.
 \end{enumerate}
 
@@ -2188,7 +2189,7 @@ provided by the GitHub Actions workflow \texttt{.github/workflows/release.yml},
 triggered by pushing a version tag (\texttt{v\textit{X.Y.Z}}).
 
 \section{License}
-LGPL-3.0-or-later — \textcopyright{} 2023--2026 Olivier Doaré.
+LGPL-3.0-or-later. \textcopyright{} 2023--2026 Olivier Doaré.
 
 %==============================================================================
 \appendix
@@ -2203,9 +2204,9 @@ recipes of Chapter~\ref{ch:workflows}. The recurring idea is the split between
   \item A \textbf{configuration} (A--F) stores the \emph{routing}: which
         inputs feed which outputs, with a gain, a phase flip, a small 2-band
         EQ and an active state per frame (Chapter~\ref{ch:matrix}).
-  \item Everything that characterises a physical loudspeaker --- trim, its
+  \item Everything that characterises a physical loudspeaker (trim, its
         own 2-band EQ, time-alignment \textbf{delay} and \textbf{FIR}
-        correction --- lives on the \textbf{output}, and is therefore
+        correction) lives on the \textbf{output}, and is therefore
         \emph{shared by every configuration that uses that output}
         (Section~\ref{sec:outputchain}).
 \end{itemize}
@@ -2254,7 +2255,7 @@ E & Headphones       & in1$\rightarrow$7,\; in2$\rightarrow$8 \\
   \item \textbf{Config B}: same as A but route the pair to outputs 3/4 (edit the
         two frames in the Matrix view; the sub frame is unchanged).
   \item \textbf{Configs C and D}: copy A/B but deactivate the sub frame
-        (double-click it) --- the mains play on their own.
+        (double-click it); the mains play on their own.
   \item \textbf{Config E}: route in1/in2 to outputs 7/8.
   \item Engage \textbf{Exclusive} and switch sets from the top bar; collapse
         ($\blacktriangle$) to a compact output-strip window for daily use.
@@ -2262,14 +2263,14 @@ E & Headphones       & in1$\rightarrow$7,\; in2$\rightarrow$8 \\
 
 \paragraph{Full range vs.\ bass management.} The highpass that bass management
 puts on the mains is an \emph{output} filter, so it is shared by every
-configuration that drives those outputs --- there is no separate
+configuration that drives those outputs: there is no separate
 ``highpassed'' and ``full-range'' version of output~1. For a room that really
 switches between with-sub and without-sub on the \emph{same} speakers, run the
 mains full range and let the subwoofer \emph{augment} below the crossover (a
 lowpass on the sub output only, which never touches the mains); configs C/D are
 then genuinely full-range. Reserve the highpass form of bass management for
-small satellites that must never see deep bass --- in which case ``mains alone''
-simply loses the bottom octave and is rarely engaged.
+small satellites that must never see deep bass, in which case ``mains alone''
+loses the bottom octave and is rarely engaged.
 
 %------------------------------------------------------------------------------
 \section{An aligned 5.1 system, switchable to 2.1 / 5.0 / 2.0}\label{sec:ex-surround}
@@ -2326,7 +2327,7 @@ outputs 1--8 and the sub on output~9.
 
 \begin{enumerate}[nosep]
   \item Raise the \emph{matrix} size to at least 4 in / 9 out (16/16 is
-        convenient) — the plugin bus itself is always fixed at 32 in/32 out.
+        convenient); the plugin bus itself is always fixed at 32 in/32 out.
         Wire the eight monitors to outputs 1--8 and the sub to output~9; feed
         your AmbiX B-format onto inputs 1--4.
   \item Config tool $\rightarrow$ \textbf{Ambisonics}, \textbf{Order}~1,
@@ -2341,7 +2342,7 @@ outputs 1--8 and the sub on output~9.
   \item Measure and correct each of the eight monitors (workflow~A) and
         phase-align the sub (workflow~B). Because the decode, the per-output
         corrections, the radius delays and the latency compensation all run in
-        the same engine, no double-counting occurs --- the per-output measured
+        the same engine, no double-counting occurs: the per-output measured
         alignment already carries each speaker's path-length delay.
   \item For an irregular rig (uneven radii or angles), prefer
         \textbf{Load IEM decoder\dots} to import an AllRAD matrix instead of the
@@ -2351,8 +2352,8 @@ outputs 1--8 and the sub on output~9.
         from the top bar.
 \end{enumerate}
 
-The background behind the decoder --- spherical harmonics, orders, the AmbiX
-convention and the max-\(r_E\) weighting --- is in Appendix~\ref{ch:ambiprimer}.
+The background behind the decoder (spherical harmonics, orders, the AmbiX
+convention and the max-\(r_E\) weighting) is in Appendix~\ref{ch:ambiprimer}.
 
 %==============================================================================
 \chapter{Ambisonics primer}\label{ch:ambiprimer}
@@ -2438,7 +2439,7 @@ the \emph{normalisation}. The modern standard is \textbf{AmbiX}~\cite{NachbarAmb
         \begin{equation}
           j = n^2 + n + m ,
         \end{equation}
-        so \(j=0,1,2,3,\dots\) are \(W,\,Y,\,Z,\,X,\dots\) — note \(Y\) (\(m=-1\))
+        so \(j=0,1,2,3,\dots\) are \(W,\,Y,\,Z,\,X,\dots\); note \(Y\) (\(m=-1\))
         before \(Z\) (\(m=0\)) before \(X\) (\(m=+1\)).
   \item \textbf{SN3D} (Schmidt semi-normalisation) scales each harmonic so its
         peak magnitude is \(1\); it relates to the fully orthonormal N3D form by
@@ -2458,7 +2459,7 @@ Collect the speaker directions in the \(K\times L\) \emph{re-encoding} matrix
 solution is the \textbf{mode-matching} pseudo-inverse \(\mathbf D=\mathbf C^{+}\).
 For a \emph{near-uniform} layout the harmonics stay orthogonal when sampled at the
 speakers, \(\mathbf{C}\mathbf{C}^{\mathsf T}\!\approx\!\tfrac{L}{K}\mathbf I\),
-and the pseudo-inverse collapses to the scaled transpose — the
+and the pseudo-inverse collapses to the scaled transpose, the
 \textbf{sampling (projection) decoder}
 \begin{equation}
   D_{s,j} \;=\; \frac{1}{L}\,Y_j(\Omega_s),
@@ -2522,7 +2523,7 @@ Cross-references point to where each term is developed in the text.
 \begin{description}[style=nextline, leftmargin=0pt, font=\normalfont\bfseries]
   \item[All-pass / excess phase] A factor with \emph{unit magnitude} that
         changes only phase (eq.~\eqref{eq:minap}). It carries the
-        ``excess'' phase a response has beyond the minimum-phase minimum —
+        ``excess'' phase a response has beyond the minimum-phase minimum:
         pure delay, reflections, out-of-phase summation. Not removable by a
         stable causal filter; SuperMoTo deliberately \emph{adds} a short
         all-pass to steer a main onto a subwoofer's phase
@@ -2566,7 +2567,7 @@ Cross-references point to where each term is developed in the text.
         a pure delay across the band; it can impose an arbitrary phase
         correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
   \item[Minimum-phase] A causal, stable response whose inverse is also causal
-        and stable (all poles and zeros inside the unit circle) — the only kind
+        and stable (all poles and zeros inside the unit circle), the only kind
         that is fully invertible by a realisable filter. Defined physically and
         mathematically in Section~\ref{sec:minphasedef}.
   \item[Polarity (Invert)] A frequency-independent $180^\circ$ sign flip, as
@@ -2589,7 +2590,7 @@ Cross-references point to where each term is developed in the text.
         microphone positions, so the correction targets what is consistent
         across the listening area rather than one seat (Section~\ref{sec:spatialavg}).
   \item[Transfer function] The complex ratio $H(f)=Y(f)/X(f)$ of output to input
-        spectrum — magnitude and phase together — that describes a linear system
+        spectrum (magnitude and phase together) that describes a linear system
         (Section~\ref{sec:welch}).
   \item[Welch method] Power/cross-spectra estimated by averaging windowed,
         overlapping FFT segments; trades resolution for variance to give a
