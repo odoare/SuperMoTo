@@ -534,16 +534,23 @@ logarithmically over one octave either side of the crossover,
 \end{equation}
 %
 unwraps the phase by forcing successive differences into $(-\pi, \pi]$, and takes
-the least-squares slope (\srcref{AnalysisEngine.cpp}{569--603}):
+the least-squares slope weighted by the measured power
+$w_n = |S_i(f_n)|^2$ (\srcref{AnalysisEngine.cpp}{569--620}):
 %
 \begin{equation}
   \sigma \;=\;
-  \frac{N \sum_n f_n \tilde\varphi_n - \bigl(\sum_n f_n\bigr)\bigl(\sum_n \tilde\varphi_n\bigr)}
-       {N \sum_n f_n^2 - \bigl(\sum_n f_n\bigr)^2},
+  \frac{\sum_n w_n (f_n - \bar f)(\tilde\varphi_n - \bar\varphi)}
+       {\sum_n w_n (f_n - \bar f)^2},
+  \qquad
+  \bar f = \frac{\sum w_n f_n}{\sum w_n}, \quad
+  \bar\varphi = \frac{\sum w_n \tilde\varphi_n}{\sum w_n},
   \qquad
   \boxed{\;\tau_{\mathrm{grp}} \;=\; -\frac{\sigma}{2\pi}\;}
   \label{eq:estB}
 \end{equation}
+%
+The weighting is not a refinement. Section~\ref{sec:B-failure} shows the
+unweighted fit is unusable in exactly the band this estimator is built for.
 %
 with $\tilde\varphi$ the unwrapped phase, clamped to $\pm\SI{40}{\milli\second}$
 on return. The minus sign is bookkeeping: by \eqref{eq:sign} a lagging source
@@ -597,6 +604,34 @@ comfortably beyond the $\pm\SI{40}{\milli\second}$ the result is clamped to.
 \label{sec:B-failure}
 
 \begin{enumerate}[leftmargin=*]
+\item \textbf{The fit band reaches into the stopband.} This is the dominant
+  failure and the reason \eqref{eq:estB} is weighted. The band
+  $[f_x/2,\,2f_x]$ is chosen around the crossover, but a subwoofer is already
+  far down at its top: on a real five-position measurement crossed at
+  \SI{85}{\hertz}, $|S|$ falls from \SI{-6}{\dB} at \SI{60}{\hertz} to
+  \SI{-18}{\dB} at \SI{120}{\hertz} and \SI{-50}{\dB} at \SI{170}{\hertz}, a
+  spread of \SI{46}{\dB} across the fit band, and the position-to-position
+  coherence collapses from $0.99$ to $0.60$ over the same span. An unweighted
+  fit gives that noise the same say as the passband, and the estimate then
+  walks with the crossover setting:
+  %
+  \begin{center}
+  \begin{tabular}{@{}lccccc@{}}
+  \toprule
+  $f_x$ (Hz) & 60 & 85 & 100 & 120 & 150\\
+  \midrule
+  $\tau_{\mathrm{grp}}$, unweighted (ms) & 27.6 & 21.8 & 17.7 & 13.7 & 11.3\\
+  $\tau_{\mathrm{grp}}$, weighted (ms)   & 26.4 & 31.3 & 32.3 & 34.8 & 30.7\\
+  \bottomrule
+  \end{tabular}
+  \end{center}
+  %
+  The weighted figure is stable and agrees with the arrival-time estimate for
+  the same set (\SI{30.6}{\milli\second}); the unweighted one manufactures a
+  disagreement of \SI{8.8}{\milli\second} at \SI{85}{\hertz} that is pure
+  artefact of fitting through noise. Acting on it moves the alignment
+  \SI{9}{\milli\second} away from correct.
+
 \item \textbf{Smoothing dependence.} Estimator B runs on
   \code{subAverageSmoothed}, i.e.\ after complex variable-octave smoothing. A
   smoothing window of relative width $\beta$ (in octaves) at frequency $f$ spans
@@ -841,7 +876,9 @@ advancing it by $T$:
 %
 with $w = w(f)$ the alignment weight, unity at and below $f_x$ and released to
 zero one octave above (\srcref{AnalysisEngine.cpp}{610}). Where $w = 1$ the
-corrected main's phase is steered onto $\arg S'$.
+corrected main's phase is steered onto $\arg S'$. Note that $A$ is renormalised
+to $|A| = 1$: the all-pass moves phase and nothing else, which matters in
+Section~\ref{sec:phasetype}.
 
 \subsection{The alignment identity}
 \label{sec:identity}
@@ -891,6 +928,86 @@ this speaker \emph{relative to the subwoofer}. The header at
 delayed \dots\ negative $=$ the sub is delayed instead'': a single signed
 number encoding a difference.
 \end{remark}
+
+\subsection{Where that phase goes: linear versus minimum phase}
+\label{sec:phasetype}
+
+Everything above concerns the complex correction $c_i(f)$. What is exported is an
+impulse response, and the Phase type control decides how one is made from the
+other (\srcref{AnalysisEngine.cpp}{924--1024}). The two paths do not treat the
+all-pass \eqref{eq:allpass} alike, and the difference is total rather than one of
+degree.
+
+\paragraph{Linear phase.} The full complex spectrum is used, with a half-length
+shift to make the (mixed-phase) result causal:
+%
+\begin{equation}
+  h[n] \;=\; \frac{1}{N}\sum_{k=0}^{N-1} c_i(f_k)\, e^{-j\pi k}\, e^{+j 2\pi k n/N},
+  \qquad f_k = \tfrac{k}{N} f_s .
+  \label{eq:renderlin}
+\end{equation}
+%
+The factor $e^{-j\pi k} = (-1)^k$ is a delay of exactly $N/2$ samples, which is
+where the mode's latency comes from. The phase of $c_i$, all-pass included,
+survives intact.
+
+\paragraph{Minimum phase.} The impulse is rebuilt from the target
+\emph{magnitude} alone by the real-cepstrum method: with
+$m(f_k) = \log|c_i(f_k)|$ and $\hat m = \mathcal{F}^{-1}\{m\}$, the anti-causal
+half of the cepstrum is folded onto the causal half,
+%
+\begin{equation}
+  w[n] = \begin{cases} 1, & n = 0 \text{ or } n = N/2,\\ 2, & 1 \le n < N/2,\\ 0, & \text{otherwise,}\end{cases}
+  \qquad
+  c_i^{\min} = \exp\bigl(\mathcal{F}\{w\,\hat m\}\bigr),
+  \qquad
+  h = \mathcal{F}^{-1}\{c_i^{\min}\}.
+  \label{eq:rendermin}
+\end{equation}
+%
+Only $|c_i|$ enters \eqref{eq:rendermin}. And the all-pass is renormalised to
+unit magnitude in \eqref{eq:allpass}, $A \leftarrow A/|A|$, precisely so that it
+changes no level. Therefore $|c_i|$ does not depend on $T$ at all, and
+%
+\begin{equation}
+  \boxed{\;\frac{\partial h}{\partial T} \;=\; 0 \quad\text{in minimum-phase mode.}\;}
+  \label{eq:minphase-null}
+\end{equation}
+
+\begin{remark}{Scope of the alignment identity}
+Equation~\eqref{eq:identity} therefore has force only in linear-phase mode. Under
+minimum phase the subwoofer trim, the crossover frequency and the Invert sub
+switch have exactly no effect on the exported FIR: not a reduced effect, none.
+What still happens is the bulk time alignment, since $a_i$ and $a_s$ are written
+to the outputs as plain delays \eqref{eq:groupdelays} and never pass through the
+FIR at all. So the group is still time-aligned on arrival times; it is only the
+residual phase steering through the crossover that is absent.
+
+The practical consequence is that the Phase type control is not the
+magnitude-versus-phase trade-off its name suggests. It is also a
+subwoofer-integration on/off switch, and nothing in the delay machinery of this
+section applies while it is set to minimum.
+\end{remark}
+
+\paragraph{What the plots show.} The phase read-outs go through
+\code{effectiveCorrection()} rather than \code{correction}, so they display
+$\arg c_i^{\min}$ from \eqref{eq:rendermin} whenever that is the mode
+(\srcref{AnalysisEngine.cpp}{903--921}). Until this was noticed they read
+$\arg c_i$ unconditionally and therefore drew, in minimum-phase mode, a phase
+correction that would never be exported: the plot did not move at all when the
+Phase type was changed. The reconstruction is evaluated on the correction's own
+bin grid rather than the FIR's, so the curve is the ideal minimum-phase
+equivalent of the designed magnitude and does not model the truncation to
+\code{firLength} (which the plot has never modelled in either mode). The
+magnitude curves are unaffected, since \eqref{eq:rendermin} preserves $|c_i|$
+exactly.
+
+The spectrum is derived eagerly, by \code{recomputeCorrection()} and
+\code{setPhaseType()}, not on first use. That keeps every accessor on the class
+a pure read once the analysis is done, which the threading contract relies on:
+the report figures call these same read-outs from a background export job while
+the message thread may be plotting the same engine, and concurrent reads are
+safe where a lazily filled cache would not be.
 
 \subsection{The single-speaker panel satisfies it}
 
@@ -1053,27 +1170,42 @@ which reduces the offset the correction has to make up. One control, one physica
 degree of freedom, and \eqref{eq:identity} holds for every value the user can
 set.
 
-\paragraph{The group shift.} A sufficiently negative $\Delta$ asks for the
-subwoofer \emph{earlier} than the group reference, which no output delay can
-express: $a_s$ would have to be negative. Rather than clamping (which would
-silently break \eqref{eq:trim-offset}), the code pushes the whole group back by
-the shortfall:
+\paragraph{The group shift.} Only differences are audible, so the whole set is
+free to slide in time, and the useful choice is the one with the least latency:
+the raw delays are computed first and then shifted so that the \emph{earliest}
+entry sits at zero,
 %
 \begin{equation}
-  \Sigma \;=\; \max\bigl(0,\; -(D - d_s + \Delta)\bigr).
+  \Sigma \;=\; -\min_{e \,\in\, \text{loaded}} \bigl(D - d_e + \Delta_e\bigr),
+  \qquad \Delta_e = \Delta \text{ for the sub}, \; 0 \text{ otherwise.}
 \end{equation}
 %
-Every entry receives $\Sigma$ equally, so all relative timing (the only thing
-that is audible) is untouched, at the cost of a little added latency. With
-$\Sigma$ in place, $a_s \ge 0$ and $a_i \ge 0$ hold by construction, so the lower
-clamp never fires.
+This is what makes a positive trim behave as one expects. Delaying the subwoofer
+by \SI{9}{\milli\second} relative to mains already carrying
+\SI{30.6}{\milli\second} is realised by \emph{subtracting} it from the mains
+($30.6 \to 21.4$, sub at $0$) rather than adding it to the sub (mains at $30.6$,
+sub at $9.2$): identical alignment, \SI{9.2}{\milli\second} less latency. A
+one-sided shift that only ever adds, which is what the first implementation did,
+gives the second, and the extra latency is pure waste. With $\Sigma$ defined this
+way $a_e \ge 0$ holds by construction for every entry, so the lower clamp never
+fires.
 
-\begin{remark}{Residual caveat}
-The upper clamp at \SI{100}{\milli\second} can still fire, for a large positive
-trim or a large shift on an already-spread group. If it does,
-\eqref{eq:trim-offset} stops holding for the clamped entry and its crossover
-alignment is designed for an offset it will not get. This is a corner the code
-does not currently detect.
+\begin{remark}{Clamps}
+Two clamps bound \eqref{eq:trim-offset}, and one of them used to bite in ordinary
+use. \code{setTimeAlignMs} originally limited $T$ to
+$\pm\SI{40}{\milli\second}$, the range of the single-speaker pane's slider,
+carried over without reconsidering it. In a group $T$ is a \emph{difference} of
+two delays that each live in $[0, \SI{100}{\milli\second}]$, and on the
+measurement discussed in Section~\ref{sec:B-failure}, where
+$d_s - d_m = \SI{30.6}{\milli\second}$, it saturated at a trim of only
+$\Delta = 30.6 - 40 = \SI{-9.4}{\milli\second}$: the slider kept moving and
+nothing further happened. The limit is now $\pm\SI{100}{\milli\second}$, matching
+the output delay range.
+
+The upper clamp on $a_e$ at \SI{100}{\milli\second} can still fire on a very
+spread group. If it does, \eqref{eq:trim-offset} stops holding for the clamped
+entry and its crossover alignment is designed for an offset it will not get.
+That corner is still undetected.
 \end{remark}
 
 \subsection{The suggested trim}
@@ -1116,15 +1248,27 @@ when it is not trustworthy. \code{isCrossoverEstimateReliable()} computes the
 phasor rotation across the smoothing window at the top of the fit band,
 %
 \begin{equation}
-  \Delta\varphi \;=\; 2\pi\,|\Delta^\star|\,\beta\,(2 f_x)\,\ln 2,
-  \qquad \beta = \max(\beta_{\mathrm{LF}}, \beta_{\mathrm{HF}}),
+  \Delta\varphi \;=\; 2\pi\,|\Delta^\star|\,\beta(2 f_x)\,(2 f_x)\,\ln 2 ,
 \end{equation}
 %
-and reports the estimate as usable only while $\Delta\varphi < \pi/2$, half the
-angle at which the complex average collapses. Below that threshold the button is
-disabled and the read-out says so, rather than offering a number that looks
-authoritative. The trim itself stays available: the user can always set it by
-ear.
+where $\beta(f)$ is the octave fraction \emph{actually in force at $f$}. The two
+smoothing controls are anchors at \SI{100}{\hertz} and \SI{10}{\kilo\hertz} and
+the fraction between them is log-interpolated, so at \SI{170}{\hertz}
+%
+\begin{equation}
+  \beta \;=\; \beta_{\mathrm{LF}} + 0.115\,(\beta_{\mathrm{HF}} - \beta_{\mathrm{LF}}),
+\end{equation}
+%
+that is \SI{88}{\percent} of the LF setting. Using
+$\max(\beta_{\mathrm{LF}}, \beta_{\mathrm{HF}})$ instead, as the first
+implementation did, made heavy HF smoothing declare the estimate unusable even
+though HF smoothing does essentially nothing at a subwoofer crossover.
+
+The estimate is reported as usable only while $\Delta\varphi < \pi/2$, half the
+angle at which the complex average collapses. Past that the \code{Use x-over}
+button is disabled and the read-out says why, rather than offering a number that
+looks authoritative. The trim itself stays available: the user can always set it
+by ear.
 
 \subsection{What the interface shows}
 
@@ -1134,7 +1278,15 @@ pane), the \code{Use x-over} button, and a read-out of $\Delta^\star$ or of the
 reason it is unavailable. Each speaker row keeps its applied delay $a_i$.
 Applying the trim re-derives the alignment and re-designs every correction, so it
 is coalesced through the same \SI{150}{\milli\second} debounce as the other
-shared controls rather than run per drag tick. The exported report records the
+shared controls rather than run per drag tick. That coalescing carries an
+obligation the first implementation missed: anything that \emph{consumes} the
+derived alignment must commit the pending change first. Compute alignment and
+Apply \& export now flush the debounce before running, and a tick that arrives
+while a background batch owns the engines reschedules itself instead of being
+dropped. Without both, a trim set a moment earlier was still sitting in the
+slider while the delays written to the outputs were the ones from before it,
+which is the same failure mode as Section~\ref{sec:defect} wearing a different
+hat: what is applied and what is assumed drift apart. The exported report records the
 trim alongside the crossover and the other design settings.
 
 \subsection{Alternatives rejected}

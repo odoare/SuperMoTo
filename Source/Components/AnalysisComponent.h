@@ -65,6 +65,7 @@ public:
         addAndMakeVisible (loadButton);
 
         addLabel (windowLabel, "Welch window");
+        updateWindowLabel();
         for (int size = 1 << 14; size <= 1 << 18; size <<= 1)
             windowBox.addItem (juce::String (size), size);
         windowBox.setSelectedId (65536, juce::dontSendNotification);
@@ -116,6 +117,7 @@ public:
         SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
         tfBox.onChange = [this]
         {
+            updateWindowLabel();
             if (! loadedFiles.isEmpty())
                 analyze();
         };
@@ -341,6 +343,19 @@ public:
         updateAlignInfo();
     }
 
+
+    /** The window size means two different things depending on the estimator:
+        the Welch segment length, or the length of IR kept after the sweep
+        deconvolution. Same control, same effect on resolution, but calling it a
+        Welch window in sweep mode is simply wrong, so the label follows. */
+    void updateWindowLabel()
+    {
+        const bool sweep = tfBox.getSelectedId() == 2;
+        windowLabel.setText (sweep ? "IR gate" : "Welch window", juce::dontSendNotification);
+        windowBox.setTooltip (sweep ? "Length of the impulse response kept after the sweep deconvolution, in samples (a rectangular gate from the start of the IR). Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic. It is not a Welch window in this mode: the sweep gives one IR in a single shot, with no segment averaging."
+                                    : "Length of the Welch analysis segments, in samples. Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic.");
+    }
+
     // Recommendation + matrix instruction shown while a sub set is loaded.
     void updateAlignInfo()
     {
@@ -532,6 +547,7 @@ private:
                 const bool sweepOk = currentSweepInfo().isValid();
                 tfBox.setItemEnabled (2, sweepOk);
                 tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
+                updateWindowLabel();
 
                 analyze();
             });

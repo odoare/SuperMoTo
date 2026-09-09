@@ -110,7 +110,14 @@ public:
         the mid-band reference, so levels of different engines/speakers can
         be compared directly — used by Group analysis's level matching.
         Returns -120 with no data. */
-    float getBandLevelDb (float lowHz, float highHz) const;
+    /** Mean power of the response over [lowHz, highHz], in dB.
+
+        `corrected` = true gives the level the speaker will play at once its
+        correction FIR is applied, which is what level-matching several
+        corrected speakers needs. Pass false for a source that will NOT receive
+        a correction (the group's subwoofer never gets one), where the level
+        that matters is the one it already has. */
+    float getBandLevelDb (float lowHz, float highHz, bool corrected = true) const;
 
     /** The mid-band reference level, in dB: 20*log10 of the 200 Hz .. 2 kHz
         mean magnitude of the smoothed average, i.e. the 0 dB line the plot
@@ -141,6 +148,11 @@ public:
     float getCrossoverHz() const noexcept       { return crossoverHz; }
     void setSubPolarityInverted (bool inverted);
     bool getSubPolarityInverted() const noexcept { return subInverted; }
+
+    /** Largest assumed main-vs-sub offset, in ms. Matches smt::maxDelayMs (the
+        output delay range), since the offset is a difference of two delays that
+        each live in [0, maxDelayMs]. */
+    static constexpr float maxTimeAlignMs = 100.0f;
 
     /** Bulk time-alignment delay (ms) ASSUMED to be applied physically to the
         main output(s). The all-pass then only corrects the residual phase, so a
@@ -181,8 +193,33 @@ public:
                   cost of the phase correction and the subwoofer phase
                   alignment. Use it for low-latency monitoring while tracking. */
     enum class PhaseType { linear, minimum };
-    void setPhaseType (PhaseType t) noexcept    { phaseType = t; }
+    void setPhaseType (PhaseType t);
     PhaseType getPhaseType() const noexcept     { return phaseType; }
+
+    /** The correction as it will actually be REALISED, which under minimum
+        phase is not the one that was designed.
+
+        renderIR() rebuilds a minimum-phase impulse from |correction| alone, so
+        the designed phase (crossover all-pass included) is thrown away and
+        replaced by the minimum-phase equivalent of the same magnitude. Plotting
+        `correction` therefore shows a phase correction that will never be
+        exported. The phase read-outs go through here instead; in linear-phase
+        mode it simply returns `correction`.
+
+        Magnitude is unchanged by the reconstruction (to within the -120 dB log
+        floor), so the dB curves are the same either way.
+
+        Derived eagerly by recomputeCorrection() and setPhaseType() rather than
+        on demand, so that every accessor on this class stays a pure read once
+        the analysis is done. That matters: the report figures call the phase
+        read-outs from a background export job while the message thread may be
+        plotting the same engine, and concurrent reads are safe where a lazily
+        filled cache would not be. */
+    const std::vector<std::complex<float>>& effectiveCorrection() const noexcept
+    {
+        return phaseType == PhaseType::minimum && ! correctionMinPhase.empty()
+                   ? correctionMinPhase : correction;
+    }
 
     /** Octave-fraction smoothing applied to the displayed transfer functions
         AND to the average the correction is derived from (complex smoothing,
@@ -197,6 +234,14 @@ public:
     void setSmoothing (float lowFraction, float highFraction);
     float getSmoothingLow() const noexcept      { return smoothingLowFraction; }
     float getSmoothingHigh() const noexcept     { return smoothingHighFraction; }
+
+    /** The octave fraction actually used at frequency f, log-interpolated
+        between the LF and HF settings across smoothLowAnchorHz ..
+        smoothHighAnchorHz. The two settings are end points, not the values in
+        force anywhere in between: at 170 Hz the fraction is still 88 % of the
+        LF setting, so an HF setting says almost nothing about what happens
+        around a subwoofer crossover. */
+    float smoothingFractionAt (double f) const;
 
     /** Microphone calibration applied to the measured transfer functions (and
         thus to the displayed curves, the correction and the exported measured
@@ -309,6 +354,12 @@ private:
     static constexpr int maxHarmonicOrder = 5;  // orders 2..5 extracted
 
     std::vector<Curve> curves;
+    // Minimum-phase equivalent of `correction`, for effectiveCorrection().
+    // Empty unless the phase type is minimum. Kept in step by
+    // updateEffectiveCorrection(), never derived on the fly (see the accessor).
+    std::vector<std::complex<float>> correctionMinPhase;
+    void updateEffectiveCorrection();
+
     std::vector<std::complex<float>> average;           // delay-aligned complex average
     std::vector<std::complex<float>> averageSmoothed;   // what plots & correction use
     std::vector<std::complex<float>> correction;        // designed correction

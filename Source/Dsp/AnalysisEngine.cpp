@@ -85,7 +85,7 @@ float AnalysisEngine::getPropagationDelayMs() const
     return (float) (1000.0 * (double) *mid / sampleRate);
 }
 
-float AnalysisEngine::getBandLevelDb (float lowHz, float highHz) const
+float AnalysisEngine::getBandLevelDb (float lowHz, float highHz, bool corrected) const
 {
     if (averageSmoothed.empty() || sampleRate <= 0.0)
         return -120.0f;
@@ -102,7 +102,7 @@ float AnalysisEngine::getBandLevelDb (float lowHz, float highHz) const
         if (f < (double) lowHz || f > (double) highHz)
             continue;
         auto h = std::complex<double> (averageSmoothed[k]);
-        if (k < correction.size())
+        if (corrected && k < correction.size())
             h *= std::complex<double> (correction[k]);
         sum += std::norm (h);
         ++count;
@@ -557,7 +557,13 @@ void AnalysisEngine::setSubPolarityInverted (bool inverted)
 
 void AnalysisEngine::setTimeAlignMs (float ms)
 {
-    ms = juce::jlimit (-40.0f, 40.0f, ms);
+    // maxTimeAlignMs, not the single-speaker pane's +/-40 ms slider range: in a
+    // group the assumed offset is a_i - a_sub, and a spread-out set with a
+    // trimmed subwoofer reaches well past 40 ms. Clamping at 40 here made the
+    // group's sub trim silently stop having any effect once the offset
+    // saturated, which on a set with a 30.6 ms arrival difference happened at a
+    // trim of only -9.4 ms.
+    ms = juce::jlimit (-maxTimeAlignMs, maxTimeAlignMs, ms);
     if (ms == timeAlignMs)
         return;
     timeAlignMs = ms;
@@ -575,12 +581,23 @@ float AnalysisEngine::estimateMainSubOffsetMs() const
     const double fHi = (double) crossoverHz * 2.0;
     constexpr int N = 48;
 
-    // Sample and unwrap the phase, then least-squares slope dphi/df (rad/Hz).
-    double sf = 0, sp = 0, sff = 0, sfp = 0, prev = 0, unwrapped = 0;
+    // Sample and unwrap the phase, then WEIGHTED least-squares slope dphi/df.
+    //
+    // The weight |S|^2 is essential, not a refinement. The fit band reaches an
+    // octave above the crossover, and a subwoofer is typically 40-70 dB down by
+    // then: for a real measurement crossed at 85 Hz the band spans some 46 dB,
+    // and above roughly 120 Hz the phase is noise. An unweighted fit gives that
+    // noise the same say as the passband, so the answer walks with the
+    // crossover setting (26 ms at 60 Hz down to 11 ms at 150 Hz on one such
+    // set) and reports a disagreement with the arrival-time estimate that is
+    // pure artefact. Weighting by power holds the same measurement at 26-35 ms
+    // across every crossover setting, in agreement with the arrival times.
+    double sw = 0, sf = 0, sp = 0, sff = 0, sfp = 0, prev = 0, unwrapped = 0;
     for (int i = 0; i < N; ++i)
     {
         const double f = fLo * std::pow (fHi / fLo, (double) i / (double) (N - 1));
-        double p = std::arg (std::complex<double> (interpComplex (subAverageSmoothed, (float) f)));
+        const auto   S = std::complex<double> (interpComplex (subAverageSmoothed, (float) f));
+        double p = std::arg (S);
         if (i == 0)
         {
             unwrapped = p;
@@ -593,15 +610,36 @@ float AnalysisEngine::estimateMainSubOffsetMs() const
             unwrapped += d;
         }
         prev = p;
-        sf += f; sp += unwrapped; sff += f * f; sfp += f * unwrapped;
+
+        // Unwrapping still has to walk the whole band in order, so every point
+        // is visited; only its influence on the slope is weighted.
+        const double w = std::norm (S);
+        sw += w; sf += w * f; sp += w * unwrapped;
+        sff += w * f * f; sfp += w * f * unwrapped;
     }
 
-    const double denom = (double) N * sff - sf * sf;
-    if (std::abs (denom) < 1.0e-12)
-        return 0.0f;
-    const double slope = ((double) N * sfp - sf * sp) / denom;   // dphi/df
+    const double denom = sw * sff - sf * sf;
+    if (! (denom > 1.0e-30))
+        return 0.0f;                // no usable level anywhere in the band
+    const double slope = (sw * sfp - sf * sp) / denom;   // dphi/df
     const double tauMs = -slope / juce::MathConstants<double>::twoPi * 1000.0;  // phi = -2pi f tau
-    return juce::jlimit (-40.0f, 40.0f, (float) tauMs);
+    return juce::jlimit (-maxTimeAlignMs, maxTimeAlignMs, (float) tauMs);
+}
+
+float AnalysisEngine::smoothingFractionAt (double f) const
+{
+    // Same log interpolation smoothVariableOctave applies per bin: lowFraction
+    // at or below smoothLowAnchorHz, highFraction at or above
+    // smoothHighAnchorHz. Exposed so callers can ask what smoothing actually
+    // applies at a frequency of interest instead of guessing from the two
+    // end-point settings — at 170 Hz the answer is 88% of the LF setting.
+    const double logLo = std::log2 (smoothLowAnchorHz);
+    const double logHi = std::log2 (smoothHighAnchorHz);
+    double t = 0.0;
+    if (f > 0.0 && logHi > logLo)
+        t = juce::jlimit (0.0, 1.0, (std::log2 (f) - logLo) / (logHi - logLo));
+    return (float) ((double) smoothingLowFraction
+                    + t * ((double) smoothingHighFraction - (double) smoothingLowFraction));
 }
 
 // Phase-alignment weight: full (1) at and below the crossover, released to 0
@@ -619,6 +657,7 @@ float AnalysisEngine::alignWeight (double f) const
 void AnalysisEngine::recomputeCorrection()
 {
     correction.clear();
+    correctionMinPhase.clear();
     if (averageSmoothed.empty() || sampleRate <= 0.0)
         return;
 
@@ -732,6 +771,10 @@ void AnalysisEngine::recomputeCorrection()
 
         correction[(size_t) k] = std::complex<float> (c);
     }
+
+    // Derive the realised spectrum now, while we are on a writing thread: the
+    // read-outs must never have to build it themselves (see effectiveCorrection).
+    updateEffectiveCorrection();
 }
 
 //==============================================================================
@@ -808,11 +851,64 @@ std::vector<float> AnalysisEngine::getSubPhaseDeg (const std::vector<float>& fre
     return v;
 }
 
+void AnalysisEngine::updateEffectiveCorrection()
+{
+    correctionMinPhase.clear();
+    if (phaseType != PhaseType::minimum || correction.empty())
+        return;
+
+    // Same real-cepstrum construction renderIR() uses, but evaluated on the
+    // correction's own bin grid so the plots can read it directly. The FIR is
+    // rendered at its own (shorter) length, so the two agree in shape rather
+    // than sample for sample; what matters here is that the phase shown is the
+    // minimum-phase one that will be exported, not the designed one that will
+    // not.
+    const int numBins = (int) correction.size();
+    if (numBins < 2)
+        return;
+
+    const int N = 2 * (numBins - 1);            // == windowSize
+    if (! juce::isPowerOfTwo (N))
+        return;
+
+    using Cplx = std::complex<float>;
+    juce::dsp::FFT fft ((int) std::log2 ((double) N));
+    std::vector<Cplx> a ((size_t) N), b ((size_t) N);
+    constexpr float floorMag = 1.0e-6f;         // -120 dB: avoids log(0)
+
+    for (int k = 0; k < numBins; ++k)
+        a[(size_t) k] = Cplx (std::log (juce::jmax (floorMag,
+                                                    std::abs (correction[(size_t) k]))), 0.0f);
+    for (int k = 1; k < N / 2; ++k)             // real, even spectrum: mirror
+        a[(size_t) (N - k)] = a[(size_t) k];
+
+    fft.perform (a.data(), b.data(), true);      // b = real cepstrum
+
+    for (int n = 1; n < N / 2; ++n)      b[(size_t) n] *= 2.0f;
+    for (int n = N / 2 + 1; n < N; ++n)  b[(size_t) n]  = Cplx();
+
+    fft.perform (b.data(), a.data(), false);     // a = minimum-phase log spectrum
+
+    correctionMinPhase.resize ((size_t) numBins);
+    for (int k = 0; k < numBins; ++k)
+        correctionMinPhase[(size_t) k] = std::exp (a[(size_t) k]);
+}
+
+void AnalysisEngine::setPhaseType (PhaseType t)
+{
+    if (t == phaseType)
+        return;
+    phaseType = t;
+    // Which spectrum is actually realised depends on this, so the cached
+    // minimum-phase version has to follow. Cheap: it clears in linear mode.
+    updateEffectiveCorrection();
+}
+
 std::vector<float> AnalysisEngine::getCorrectionPhaseDeg (const std::vector<float>& freqs) const
 {
     std::vector<float> v (freqs.size(), 0.0f);
     for (size_t i = 0; i < freqs.size(); ++i)
-        v[i] = argDeg (interpComplex (correction, freqs[i]));
+        v[i] = argDeg (interpComplex (effectiveCorrection(), freqs[i]));
     return v;
 }
 
@@ -823,7 +919,7 @@ std::vector<float> AnalysisEngine::getCorrectedPhaseDeg (const std::vector<float
         return v;
     for (size_t i = 0; i < freqs.size(); ++i)
         v[i] = argDeg (interpComplex (averageSmoothed, freqs[i])
-                       * interpComplex (correction, freqs[i]));
+                       * interpComplex (effectiveCorrection(), freqs[i]));
     return v;
 }
 

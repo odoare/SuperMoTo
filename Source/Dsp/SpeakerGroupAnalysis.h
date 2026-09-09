@@ -62,6 +62,13 @@ public:
     static constexpr float levelMatchLowHz  = 500.0f;
     static constexpr float levelMatchHighHz = 2000.0f;
 
+    // Band used for the SUBWOOFER's level suggestion: half an octave either
+    // side of the crossover, i.e. [fx/sqrt2, fx*sqrt2]. That is where the two
+    // sources overlap and where their relative level decides whether the
+    // crossover region sums flat, sags or humps. The mid-band above is useless
+    // here: the sub has no output in it.
+    static constexpr float subMatchHalfWidth = 1.41421356f;   // sqrt(2)
+
     struct Entry
     {
         Entry() : engine (std::make_unique<AnalysisEngine>()) {}
@@ -250,12 +257,17 @@ public:
         if (! subEnabled || ! sub.hasData())
             return false;
 
-        const float beta = juce::jmax (sub.engine->getSmoothingLow(),
-                                       sub.engine->getSmoothingHigh());
-        if (beta <= 0.0f)
-            return true;                    // no smoothing, nothing to collapse
-
+        // The fraction in force at the top of the fit band, NOT the larger of
+        // the two end-point settings: they are anchors at 100 Hz and 10 kHz and
+        // the value between them is log-interpolated, so at 170 Hz the HF
+        // setting contributes about a tenth. Using the maximum made heavy HF
+        // smoothing — which does nothing at a subwoofer crossover — declare the
+        // estimate unusable.
         const float f    = 2.0f * sub.engine->getCrossoverHz();
+        const float beta = sub.engine->smoothingFractionAt ((double) f);
+        if (beta <= 0.0f)
+            return true;                    // no smoothing here, nothing to collapse
+
         const float tau  = std::abs (getSuggestedSubTrimMs()) * 0.001f;
         const float rot  = 2.0f * juce::MathConstants<float>::pi
                              * tau * beta * f * std::log (2.0f);
@@ -308,18 +320,36 @@ public:
         if (! any)
             return;
 
-        // A negative trim asks for the sub EARLIER than the group reference,
-        // which no output delay can express. Push the whole group back by the
-        // shortfall instead: the relative alignment — the only thing that
-        // matters acoustically — is identical, at the cost of a little latency.
+        // Only differences matter acoustically, so the whole set is free to
+        // slide in time; the useful choice is the one with the least latency,
+        // i.e. the one where the earliest entry sits at zero. Compute the raw
+        // (possibly negative) delays first, then shift everything by the
+        // minimum. Without this the trim only ever ADDS: asking for the sub
+        // 9 ms later would leave the mains at 30.6 ms and push the sub to 9.2,
+        // where subtracting 9.2 from the mains gives the same alignment for
+        // 9.2 ms less latency.
         const bool haveSub = subEnabled && sub.hasData();
-        float groupShift = 0.0f;
-        if (haveSub)
+
+        auto rawDelay = [&] (const Entry& e, float extra)
         {
-            const float raw = maxDelay - sub.engine->getPropagationDelayMs() + subTrimMs;
-            if (raw < 0.0f)
-                groupShift = -raw;
-        }
+            return maxDelay - e.engine->getPropagationDelayMs() + extra;
+        };
+
+        float groupShift = 0.0f;
+        bool  first = true;
+        auto considerRaw = [&] (const Entry& e, float extra)
+        {
+            if (! e.hasData())
+                return;
+            const float r = rawDelay (e, extra);
+            groupShift = first ? r : juce::jmin (groupShift, r);
+            first = false;
+        };
+        for (int i = 0; i < activeCount; ++i)
+            considerRaw (speakers[(size_t) i], 0.0f);
+        if (haveSub)
+            considerRaw (sub, subTrimMs);
+        groupShift = first ? 0.0f : -groupShift;    // bring the earliest to zero
 
         auto apply = [&] (Entry& e, float extra)
         {
@@ -329,8 +359,7 @@ public:
                 return;
             }
             e.alignedDelayMs = juce::jlimit (0.0f, smt::maxDelayMs,
-                                             maxDelay - e.engine->getPropagationDelayMs()
-                                                 + groupShift + extra);
+                                             rawDelay (e, extra) + groupShift);
         };
 
         // The sub first: every speaker's assumed offset is measured against it.
@@ -374,6 +403,65 @@ public:
             auto& s = speakers[(size_t) i];
             s.suggestedTrimDb = s.hasData() ? minLevel - s.bandLevelDb : 0.0f;
         }
+
+        computeSubLevelMatch();
+    }
+
+    /** Subwoofer level suggestion: how much to trim the sub so that, through
+        the crossover region, it plays at the same level as a main will once
+        that main's correction and its own suggested trim are applied.
+
+        Two asymmetries with the speakers' version, both deliberate. The band is
+        centred on the crossover rather than the mid-band, because that is the
+        only place the sub and the mains both have output. And the sub's level
+        is read UNCORRECTED (getBandLevelDb's second argument): the group never
+        designs a correction FIR for the subwoofer, so the level that matters is
+        the one it already has, whereas each main is measured as it will play
+        after correction plus its own trim.
+
+        Matched against ONE main, not their sum. With several mains driven
+        together the acoustic sum through the crossover is higher (about 3 dB
+        for an uncorrelated pair, up to 6 dB for correlated content), so a user
+        running a stereo pair into a mono sub will usually want a few dB less
+        than this figure. Informational either way: never written to an output. */
+    void computeSubLevelMatch()
+    {
+        sub.bandLevelDb = 0.0f;
+        sub.suggestedTrimDb = 0.0f;
+
+        if (! subEnabled || ! sub.hasData())
+            return;
+
+        const float fx = sub.engine->getCrossoverHz();
+        if (fx <= 0.0f)
+            return;
+
+        const float lo = fx / subMatchHalfWidth;
+        const float hi = fx * subMatchHalfWidth;
+
+        // The sub as it will actually play: no correction FIR is exported for it.
+        sub.bandLevelDb = sub.engine->getBandLevelDb (lo, hi, false);
+
+        // The mains as they will play: corrected, plus the trim each is being
+        // told to apply. Averaged in POWER across the loaded speakers, so the
+        // reference is what one main plays, not what several sum to.
+        double acc = 0.0;
+        int n = 0;
+        for (int i = 0; i < activeCount; ++i)
+        {
+            const auto& sp = speakers[(size_t) i];
+            if (! sp.hasData())
+                continue;
+            const double lvl = (double) sp.engine->getBandLevelDb (lo, hi, true)
+                             + (double) sp.suggestedTrimDb;
+            acc += std::pow (10.0, lvl / 10.0);
+            ++n;
+        }
+        if (n == 0)
+            return;
+
+        const double mainsDb = 10.0 * std::log10 (juce::jmax (1.0e-12, acc / (double) n));
+        sub.suggestedTrimDb = (float) (mainsDb - (double) sub.bandLevelDb);
     }
 
     //==========================================================================
@@ -575,7 +663,17 @@ public:
         else
         {
             reportFiles (sub);
-            result.report << "- Measured propagation delay: "
+            result.report << "- Crossover-band level ("
+                           << juce::String (sub.engine->getCrossoverHz() / subMatchHalfWidth, 0)
+                           << " - "
+                           << juce::String (sub.engine->getCrossoverHz() * subMatchHalfWidth, 0)
+                           << " Hz, uncorrected): "
+                           << juce::String (sub.bandLevelDb, 1) << " dB\n"
+                           << "- Suggested level trim: " << juce::String (sub.suggestedTrimDb, 1)
+                           << " dB (to match ONE corrected main through the crossover; with "
+                              "several mains driven together their sum is higher, so allow a "
+                              "few dB less. Informational, not written to the output)\n"
+                           << "- Measured propagation delay: "
                            << juce::String (sub.engine->getPropagationDelayMs(), 2) << " ms\n"
                            << "- Applied (aligned) delay: "
                            << juce::String (sub.alignedDelayMs, 2) << " ms\n";

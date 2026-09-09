@@ -89,6 +89,7 @@ public:
         computeButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.2f));
         computeButton.onClick = [this]
         {
+            flushPendingSettings();     // a trim set moments ago must be in first
             group.computeAlignment();
             refreshRows();
             updatePlotPreview();
@@ -139,6 +140,7 @@ public:
         // ── Shared correction-design controls (fanned out to every engine in
         // the group — one "tone" for the whole speaker set). ─────────────────
         addLabel (windowLabel, "Welch window");
+        updateWindowLabel();
         for (int size = 1 << 14; size <= 1 << 18; size <<= 1)
             windowBox.addItem (juce::String (size), size);
         windowBox.setSelectedId (65536, juce::dontSendNotification);
@@ -181,7 +183,7 @@ public:
                           "Needs the sweep parameters from the folder's measurement.xml; "
                           "auto-selected when available.");
         SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
-        tfBox.onChange = [this] { pushSettingsToAll(); reanalyzeAll(); };
+        tfBox.onChange = [this] { updateWindowLabel(); pushSettingsToAll(); reanalyzeAll(); };
         addAndMakeVisible (tfBox);
 
         addLabel (rangeLabel, "Range");
@@ -300,6 +302,14 @@ public:
                                      "subwoofer: above its passband a measurement is just noise.");
         subRow.onLoad = [this] { loadSubFiles(); };
         subRow.setSubMode (true);
+        subRow.trimReadout.setTooltip ("Suggested level trim for the subwoofer, read over half an "
+                                       "octave either side of the crossover (where the sub and the "
+                                       "mains overlap) rather than the mid-band used for the "
+                                       "speakers, which the sub does not reach. Matches the sub to "
+                                       "ONE corrected main: with a stereo pair driven together "
+                                       "their sum is about 3 dB higher, so allow for that. "
+                                       "Informational \xe2\x80\x94 apply it yourself via the "
+                                       "output's Trim in the matrix view.");
         // Coalesced like the other shared controls: applying the trim re-derives
         // the alignment, which re-designs every speaker's correction — far too
         // much to do once per drag tick. The slider is the source of truth; the
@@ -495,11 +505,28 @@ private:
     // one settings push + recompute per pause, instead of one per tick.
     static constexpr int debounceMs = 150;
 
+    /** Commits a pending debounced change immediately. Anything that consumes
+        the derived alignment (Compute alignment, Apply & export) must call this
+        first: otherwise a trim set less than debounceMs earlier is still
+        sitting in the slider and the delays exported are the ones from before
+        it. */
+    void flushPendingSettings()
+    {
+        if (isTimerRunning())
+            timerCallback();
+    }
+
     void timerCallback() override
     {
         stopTimer();
         if (runner.isRunning())
-            return;   // a background batch owns the engines right now; drop this tick
+        {
+            // A background batch owns the engines right now. Come back rather
+            // than dropping the change: this tick may be carrying the only copy
+            // of a setting the user has already moved.
+            startTimer (debounceMs);
+            return;
+        }
         pushSettingsToAll();
         // A no-op when the value has not moved, so this costs nothing on the
         // ticks raised by the other shared controls.
@@ -729,6 +756,19 @@ private:
         return s;
     }
 
+
+    /** The window size means two different things depending on the estimator:
+        the Welch segment length, or the length of IR kept after the sweep
+        deconvolution. Same control, same effect on resolution, but calling it a
+        Welch window in sweep mode is simply wrong, so the label follows. */
+    void updateWindowLabel()
+    {
+        const bool sweep = tfBox.getSelectedId() == 2;
+        windowLabel.setText (sweep ? "IR gate" : "Welch window", juce::dontSendNotification);
+        windowBox.setTooltip (sweep ? "Length of the impulse response kept after the sweep deconvolution, in samples (a rectangular gate from the start of the IR). Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic. It is not a Welch window in this mode: the sweep gives one IR in a single shot, with no segment averaging."
+                                    : "Length of the Welch analysis segments, in samples. Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic.");
+    }
+
     void pushSettingsTo (smt::AnalysisEngine& e, bool isSub)
     {
         e.setTfMethod (tfBox.getSelectedId() == 2 ? smt::AnalysisEngine::TfMethod::sweep
@@ -864,8 +904,12 @@ private:
         auto& s = group.subEntry();
         subRow.fileStatus.setText (describe (s), juce::dontSendNotification);
         subRow.delayReadout.setText (delayText (s), juce::dontSendNotification);
-        // No trim suggestion for the sub: its level is a crossover-balance
-        // question and the matching band sits above its passband.
+        // The sub gets its own level suggestion, read in the crossover band
+        // rather than the mid-band the speakers are matched over. Blank when the
+        // sub is excluded: computeSubLevelMatch() leaves it at zero then, and a
+        // bare "0.0 dB" would read as a measurement rather than as "not computed".
+        subRow.trimReadout.setText (group.isSubEnabled() ? trimText (s) : juce::String(),
+                                    juce::dontSendNotification);
         subRow.outputBox.setSelectedId (s.assignedOutput + 2, juce::dontSendNotification);
         updateSubTrimInfo();
     }
@@ -1024,6 +1068,7 @@ private:
                     && sweepInfoFor (contents.speakers[0].files).isValid();
                 tfBox.setItemEnabled (2, sweepOk);
                 tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
+                updateWindowLabel();
                 const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
                 const auto subFiles = contents.sub.files;
 
@@ -1111,6 +1156,10 @@ private:
 
     void applyAndExport()
     {
+        // Whatever is exported must reflect the controls as they stand now, not
+        // as they stood before the last debounced change landed.
+        flushPendingSettings();
+
         fileChooser = std::make_unique<juce::FileChooser> ("Choose export folder", smt::getLastBrowseDir());
         fileChooser->launchAsync (juce::FileBrowserComponent::openMode
                                   | juce::FileBrowserComponent::canSelectDirectories,
