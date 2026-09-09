@@ -302,6 +302,28 @@ public:
     /** Same but returns the IR buffer. */
     juce::AudioBuffer<float> renderMeasuredIR (int firLength) const;
 
+    /** IR of the measured response WITH its correction applied: what this
+        speaker is predicted to do once its FIR is loaded. Uses
+        effectiveCorrection(), so it follows the Phase type: under minimum phase
+        the crossover all-pass is absent from the prediction exactly as it will
+        be absent from the export. Band-limited like renderMeasuredIR(). */
+    juce::AudioBuffer<float> renderCorrectedIR (int firLength) const;
+
+    /** IR of the whole main + subwoofer system as it is predicted to play: the
+        corrected main summed with the subwoofer, the sub carrying its polarity,
+        the assumed bulk delay (setTimeAlignMs) and `subGainDb` of level
+        relative to THIS main.
+
+        Both parts are referred to the main's arrival, so the trace lines up
+        with renderCorrectedIR() rather than sliding with the delay. Empty when
+        no subwoofer is loaded.
+
+        One main only. Where several mains are driven into one subwoofer the
+        real sum is higher by up to 3 dB (uncorrelated) or 6 dB (correlated),
+        which the caller must account for; nothing here can know the bass
+        management. */
+    juce::AudioBuffer<float> renderSystemIR (int firLength, float subGainDb) const;
+
 private:
     struct Curve
     {

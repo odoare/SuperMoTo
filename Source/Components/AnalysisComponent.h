@@ -329,6 +329,17 @@ public:
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
         displayBox.setSelectedId (1, juce::dontSendNotification);
+        displayBox.setTooltip (
+            "Impulse response traces:\n"
+            "measured â the speaker as it is now.\n"
+            "correction â the FIR that will be exported, at the chosen length and "
+            "Phase type.\n"
+            "corrected â the speaker predicted with that FIR loaded.\n"
+            "+ sub â the same, summed with the subwoofer at the Mains-delay offset "
+            "and at the level it was measured at (this pane does no level matching).\n\n"
+            "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises its "
+            "share of the sum, so apply about 3 dB more attenuation to the sub in the real "
+            "system (up to 6 dB for content correlated between L and R).");
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
         displayBox.onChange = [this] { updateDisplayMode(); };
         addAndMakeVisible (displayBox);
@@ -831,15 +842,41 @@ private:
 
         const int N = firBox.getSelectedId();
         const double sr = analysis.getSampleRate();
-        const auto measured   = analysis.renderMeasuredIR (N);
-        const auto correction = analysis.renderCorrectionIR (N);
 
-        juce::AudioBuffer<float> both (2, N);
+        std::vector<juce::AudioBuffer<float>> traces;
+        juce::StringArray names;
+        std::vector<juce::Colour> cols;
+        auto add = [&] (juce::AudioBuffer<float> b, const juce::String& n, juce::Colour c)
+        {
+            if (b.getNumSamples() == 0)
+                return;
+            traces.push_back (std::move (b));
+            names.add (n);
+            cols.push_back (c);
+        };
+
+        add (analysis.renderMeasuredIR (N),   "measured",   SuperMoToTheme::curveAverage);
+        add (analysis.renderCorrectionIR (N), "correction", SuperMoToTheme::master);
+        add (analysis.renderCorrectedIR (N),  "corrected",  SuperMoToTheme::fir);
+        // This pane has no level matching, so the sub is summed at the level it
+        // was measured at: the prediction if no trim is applied to it.
+        if (analysis.hasSub())
+            add (analysis.renderSystemIR (N, 0.0f), "+ sub (as measured)", SuperMoToTheme::mono);
+
+        if (traces.empty())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        juce::AudioBuffer<float> both ((int) traces.size(), N);
         both.clear();
-        if (measured.getNumSamples() > 0)
-            both.copyFrom (0, 0, measured, 0, 0, juce::jmin (N, measured.getNumSamples()));
-        if (correction.getNumSamples() > 0)
-            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (N, correction.getNumSamples()));
+        for (int i = 0; i < (int) traces.size(); ++i)
+            both.copyFrom (i, 0, traces[(size_t) i], 0, 0,
+                           juce::jmin (N, traces[(size_t) i].getNumSamples()));
+
+        irPlot.setChannelNames (names);
+        irPlot.setChannelColours (cols);
 
         const bool resetView = N != lastIrLength || sr != lastIrRate;
         lastIrLength = N;

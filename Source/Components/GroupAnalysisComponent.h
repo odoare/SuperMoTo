@@ -267,7 +267,7 @@ public:
                              "Min phase: magnitude only, near-zero latency, no phase correction "
                              "or subwoofer alignment \xe2\x80\x94 for tracking.");
         SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
-        phaseBox.onChange = [this] { startTimer (debounceMs); };
+        phaseBox.onChange = [this] { updateFirInfo(); startTimer (debounceMs); };
         addAndMakeVisible (phaseBox);
 
         addLabel (crossoverLabel, "Crossover");
@@ -343,11 +343,32 @@ public:
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
         displayBox.setSelectedId (1, juce::dontSendNotification);
+        displayBox.setTooltip (
+            "Impulse response traces:\n"
+            "measured â the speaker as it is now.\n"
+            "correction â the FIR that will be exported, at the chosen length "
+            "and Phase type.\n"
+            "corrected â the speaker predicted with that FIR loaded.\n"
+            "+ sub (1 main) â the same, summed with the subwoofer at its aligned "
+            "delay and its suggested level trim.\n\n"
+            "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises "
+            "its share of the sum, so apply about 3 dB more attenuation to the sub in the "
+            "real system (up to 6 dB for content correlated between L and R).");
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
         displayBox.onChange = [this] { updateDisplayMode(); };
         addAndMakeVisible (displayBox);
 
-        firBox.onChange = [this] { refreshIrIfVisible(); };
+        firBox.onChange = [this] { updateFirInfo(); refreshIrIfVisible(); };
+
+        firInfo.setFont (juce::Font (juce::FontOptions (12.0f)));
+        firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
+        firInfo.setTooltip ("How low the exported FIR can still shape the response. A filter of "
+                            "N taps resolves the spectrum to fs/N, so two bins (2*fs/N) is the "
+                            "lowest frequency at which it can place a correction at all. Below "
+                            "it the filter is simply too short, whatever the analysis says. The "
+                            "analysis Range setting bounds the correction from below as well; "
+                            "whichever is higher wins.");
+        addAndMakeVisible (firInfo);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
         irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
@@ -358,6 +379,7 @@ public:
         addChildComponent (progressBar);   // shown only while a background batch runs
 
         buildFreqGrid();
+        updateFirInfo();
         syncRowsVisibility();
     }
 
@@ -433,11 +455,16 @@ public:
         r2.removeFromLeft (12);
         firLabel.setBounds (r2.removeFromLeft (64));
         firBox.setBounds (r2.removeFromLeft (90));
-        r2.removeFromLeft (16);
-        crossoverLabel.setBounds (r2.removeFromLeft (66));
-        crossoverBox.setBounds (r2.removeFromLeft (90));
-        r2.removeFromLeft (12);
-        subInvertToggle.setBounds (r2.removeFromLeft (96));
+        r2.removeFromLeft (10);
+        // Crossover and Invert sub come off the RIGHT, so the read-out beside
+        // the FIR length absorbs the slack in between and shrinks away on a
+        // narrow window instead of pushing controls off the end.
+        subInvertToggle.setBounds (r2.removeFromRight (96));
+        r2.removeFromRight (12);
+        crossoverBox.setBounds (r2.removeFromRight (90));
+        crossoverLabel.setBounds (r2.removeFromRight (66));
+        r2.removeFromRight (16);
+        firInfo.setBounds (r2);
 
         area.removeFromTop (8);
         constexpr int rowH = 26;
@@ -1149,6 +1176,7 @@ private:
                                             + (haveFolderCal ? " Embedded mic cal applied." : ""),
                                         juce::dontSendNotification);
                         refreshRows();
+                        updateFirInfo();    // the sample rate is known now
                         updatePlotPreview();
                     });
             });
@@ -1290,6 +1318,39 @@ private:
     //==========================================================================
     // Impulse-response view
 
+    /** How low the chosen FIR length can still correct. Two bins of the
+        filter's own resolution (fs/N): below that it cannot place a correction
+        at all, whatever the analysis range allows. Same convention and wording
+        as the single-speaker pane. */
+    void updateFirInfo()
+    {
+        const int N = firBox.getSelectedId();
+        auto* eng = previewedEngine();
+        double fs = eng != nullptr ? eng->getSampleRate() : 0.0;
+        const bool known = fs > 0.0;
+        if (! known)
+            fs = 48000.0;
+
+        const double fMinHz = 2.0 * fs / (double) juce::jmax (1, N);
+        firInfo.setText (juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
+                             + juce::String (fMinHz, fMinHz < 100.0 ? 1 : 0) + " Hz"
+                             + (known ? juce::String() : juce::String (" (at 48 kHz)")),
+                         juce::dontSendNotification);
+    }
+
+    /** Level of the subwoofer relative to speaker `i`, once both suggested
+        trims are applied. That is what decides the shape of their sum, and it
+        is what renderSystemIR needs. Zero when either figure is not available
+        (Compute alignment not yet pressed), which then previews the two at
+        their measured levels. */
+    float relativeSubGainDb (int i) const
+    {
+        if (! group.isSubEnabled() || ! group.subEntry().hasData()
+            || i < 0 || i >= group.getNumSpeakers())
+            return 0.0f;
+        return group.subEntry().suggestedTrimDb - group.speaker (i).suggestedTrimDb;
+    }
+
     smt::AnalysisEngine* previewedEngine() const
     {
         const int id = previewBox.getSelectedId();
@@ -1323,15 +1384,48 @@ private:
 
         const int N = firBox.getSelectedId();
         const double sr = eng->getSampleRate();
-        const auto measured   = eng->renderMeasuredIR (N);
-        const auto correction = eng->renderCorrectionIR (N);
+        const int id = previewBox.getSelectedId();
+        const bool isSpeaker = id >= 1 && id <= group.getNumSpeakers();
 
-        juce::AudioBuffer<float> both (2, N);
+        std::vector<juce::AudioBuffer<float>> traces;
+        juce::StringArray names;
+        std::vector<juce::Colour> cols;
+        auto add = [&] (juce::AudioBuffer<float> b, const juce::String& n, juce::Colour c)
+        {
+            if (b.getNumSamples() == 0)
+                return;
+            traces.push_back (std::move (b));
+            names.add (n);
+            cols.push_back (c);
+        };
+
+        add (eng->renderMeasuredIR (N),   "measured",   SuperMoToTheme::curveAverage);
+        add (eng->renderCorrectionIR (N), "correction", SuperMoToTheme::master);
+
+        // Predictions only make sense for a speaker: the sub is never given a
+        // correction FIR, and "main + sub" has no meaning on the sub's own row.
+        if (isSpeaker)
+        {
+            add (eng->renderCorrectedIR (N), "corrected", SuperMoToTheme::fir);
+            if (eng->hasSub())
+                add (eng->renderSystemIR (N, relativeSubGainDb (id - 1)),
+                     "+ sub (1 main)", SuperMoToTheme::mono);
+        }
+
+        if (traces.empty())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        juce::AudioBuffer<float> both ((int) traces.size(), N);
         both.clear();
-        if (measured.getNumSamples() > 0)
-            both.copyFrom (0, 0, measured, 0, 0, juce::jmin (N, measured.getNumSamples()));
-        if (correction.getNumSamples() > 0)
-            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (N, correction.getNumSamples()));
+        for (int i = 0; i < (int) traces.size(); ++i)
+            both.copyFrom (i, 0, traces[(size_t) i], 0, 0,
+                           juce::jmin (N, traces[(size_t) i].getNumSamples()));
+
+        irPlot.setChannelNames (names);
+        irPlot.setChannelColours (cols);
 
         const bool resetView = N != lastIrLength || sr != lastIrRate;
         lastIrLength = N;
@@ -1456,7 +1550,7 @@ private:
     juce::Label levelLabel, boostLabel, firLabel, phaseLabel, crossoverLabel;
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
     juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox, tfBox;
-    juce::Label displayLabel, tfLabel;
+    juce::Label displayLabel, tfLabel, firInfo;
     juce::ToggleButton subInvertToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 

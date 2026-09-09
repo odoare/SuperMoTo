@@ -1127,6 +1127,57 @@ juce::AudioBuffer<float> AnalysisEngine::renderMeasuredIR (int firLength) const
     return renderIR (banded, firLength);
 }
 
+juce::AudioBuffer<float> AnalysisEngine::renderCorrectedIR (int firLength) const
+{
+    if (averageSmoothed.empty() || correction.empty() || sampleRate <= 0.0)
+        return {};
+
+    const auto& c = effectiveCorrection();
+    std::vector<std::complex<float>> v (averageSmoothed.size());
+    for (int k = 0; k < (int) v.size(); ++k)
+    {
+        const double f = (double) k * sampleRate / (double) windowSize;
+        auto h = std::complex<double> (averageSmoothed[(size_t) k]);
+        if (k < (int) c.size())
+            h *= std::complex<double> (c[(size_t) k]);
+        v[(size_t) k] = std::complex<float> (h * (double) bandWeight (f));
+    }
+    return renderIR (v, firLength);
+}
+
+juce::AudioBuffer<float> AnalysisEngine::renderSystemIR (int firLength, float subGainDb) const
+{
+    if (averageSmoothed.empty() || subAverageSmoothed.empty() || sampleRate <= 0.0)
+        return {};
+
+    const auto& c = effectiveCorrection();
+    const double g   = juce::Decibels::decibelsToGain ((double) subGainDb);
+    const double tau = (double) timeAlignMs / 1000.0;
+
+    std::vector<std::complex<float>> v (averageSmoothed.size());
+    for (int k = 0; k < (int) v.size(); ++k)
+    {
+        const double f = (double) k * sampleRate / (double) windowSize;
+
+        auto main = std::complex<double> (averageSmoothed[(size_t) k]);
+        if (k < (int) c.size())
+            main *= std::complex<double> (c[(size_t) k]);
+
+        // The sub as it will actually arrive: polarity, then advanced by the
+        // bulk delay the main is assumed to receive. Same S' the correction is
+        // designed against, so this trace and the corrected-main trace share
+        // one time reference.
+        auto S = std::complex<double> (subAverageSmoothed[(size_t) k]);
+        if (subInverted)
+            S = -S;
+        if (timeAlignMs != 0.0f)
+            S *= std::polar (1.0, 2.0 * juce::MathConstants<double>::pi * f * tau);
+
+        v[(size_t) k] = std::complex<float> ((main + g * S) * (double) bandWeight (f));
+    }
+    return renderIR (v, firLength);
+}
+
 bool AnalysisEngine::exportCorrectionIR (const juce::File& file, int firLength) const
 {
     auto ir = renderCorrectionIR (firLength);
