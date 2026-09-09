@@ -24,6 +24,7 @@
 #include <JuceHeader.h>
 #include "../Model/ConfigModel.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 
 class BandEqEditor : public juce::Component
 {
@@ -35,29 +36,35 @@ public:
         {
             bandOn[bi].setButtonText (juce::String (bi + 1));
             SuperMoToTheme::accentToggleButton (bandOn[bi], accent);
+            bandOn[bi].setTooltip (smt::tips::mtx::bandOn);
             bandOn[bi].onClick = [this] { fireOnChange(); };
             addAndMakeVisible (bandOn[bi]);
 
             bandType[bi].addItemList ({ "Lowpass", "Highpass", "Bandpass", "Band" }, 1);
             SuperMoToTheme::accentComboBox (bandType[bi], accent);
+            bandType[bi].setTooltip (smt::tips::mtx::bandType);
             bandType[bi].onChange = [this] { fireOnChange(); updateBandEnablement(); resized(); };
             addAndMakeVisible (bandType[bi]);
 
             bandOrder[bi].addItemList ({ "2nd", "4th" }, 1);
             SuperMoToTheme::accentComboBox (bandOrder[bi], accent);
+            bandOrder[bi].setTooltip (smt::tips::mtx::bandOrder);
             bandOrder[bi].onChange = [this] { fireOnChange(); };
             addAndMakeVisible (bandOrder[bi]);
 
             initKnob (bandFreq[bi], "Freq", 10.0, 20000.0, 1.0);
             bandFreq[bi].setSkewFactorFromMidPoint (630.0);
+            bandFreq[bi].setTooltip (smt::tips::mtx::bandFreq);
 
             initKnob (bandQ[bi], "Q", 0.1, 10.0, 0.01);
             bandQ[bi].setSkewFactorFromMidPoint (0.707);
             bandQ[bi].setDoubleClickReturnValue (true, 0.707);
+            bandQ[bi].setTooltip (smt::tips::mtx::bandQ);
 
             initKnob (bandGain[bi], "Gain", -24.0, 24.0, 0.1);
             bandGain[bi].setCentralValue (0.0);     // bipolar: arc grows from 0 dB
             bandGain[bi].setDoubleClickReturnValue (true, 0.0);
+            bandGain[bi].setTooltip (smt::tips::mtx::bandGain);
         }
 
         updateBandEnablement();

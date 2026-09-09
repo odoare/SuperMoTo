@@ -20,6 +20,7 @@
 #include <JuceHeader.h>
 #include "../Model/ConfigModel.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 #include "BandEqEditor.h"
 
 class FrameEditorComponent : public juce::Component,
@@ -46,12 +47,16 @@ public:
         initToggle (activeButton, "Active", SuperMoToTheme::master);
         initToggle (phaseButton, "Phase inv.", SuperMoToTheme::exclusive);
         initToggle (spectrumButton, "Analyzer", SuperMoToTheme::spectrum);
+        activeButton.setTooltip (smt::tips::mtx::frameActive);
+        phaseButton.setTooltip (smt::tips::mtx::framePhase);
+        spectrumButton.setTooltip (smt::tips::mtx::frameSpectrum);
 
         levelSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         levelSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         levelSlider.setRange (-60.0, 12.0, 0.1);
         levelSlider.setDoubleClickReturnValue (true, 0.0);
         SuperMoToTheme::accentSlider (levelSlider, SuperMoToTheme::master);
+        levelSlider.setTooltip (smt::tips::mtx::frameLevel);
         levelSlider.onValueChange = [this] { pushToModel(); };
         addAndMakeVisible (levelSlider);
 

@@ -29,6 +29,13 @@ namespace SuperMoToTheme
     inline const juce::Colour mute        { 0xffe05858 };
     inline const juce::Colour dim         { 0xffd9b13a };
     inline const juce::Colour mono        { 0xff8aa0b8 };
+    // Time alignment (output delay, mains delay, sub trim). Its own colour
+    // rather than `dim`, which is a bright gold: the look-and-feel draws the
+    // slider's value in white over the filled track, and white on that gold is
+    // 2.0:1, well under the 4.5:1 WCAG wants for body text. This violet is
+    // 5.7:1, in line with `master` (5.9:1), which is the readable benchmark
+    // already in the palette.
+    inline const juce::Colour delay       { 0xff5a2f9f };
     inline const juce::Colour exclusive   { 0xff00ffff };
     inline const juce::Colour fir         { 0xff35c0c0 };   // teal (FIR correction)
     inline const juce::Colour spectrum    { 0xff8fc73e };   // lime (analyzer)

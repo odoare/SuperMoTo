@@ -29,6 +29,7 @@
 #include "../PluginProcessor.h"
 #include "../AppSettings.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 // fxme::SplMeterComponent and fxme::SpectrumDisplay come via the FxmeTools
 // module umbrella (JuceHeader.h)
 
@@ -52,6 +53,7 @@ public:
         for (int c = 1; c <= smt::numChannels; ++c)
             micBox.addItem ("Input " + juce::String (c), c);
         micBox.setSelectedId (1, juce::dontSendNotification);
+        micBox.setTooltip (smt::tips::cal::micInput);
         SuperMoToTheme::accentComboBox (micBox, SuperMoToTheme::measure);
         addAndMakeVisible (micBox);
 
@@ -62,17 +64,18 @@ public:
         micCalValue.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         micCalValue.setColour (juce::Label::backgroundColourId,
                                SuperMoToTheme::plotBackground.withAlpha (0.4f));
-        micCalValue.setTooltip ("REW / miniDSP / FRD text calibration; divided out of the "
-                                "live spectrum and the analysis measurements.");
+        micCalValue.setTooltip (smt::tips::cal::micCalValue);
         addAndMakeVisible (micCalValue);
 
         micCalLoadButton.setButtonText (juce::String::fromUTF8 ("\xe2\x80\xa6"));   // ellipsis
         micCalLoadButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::measure.darker (0.8f));
+        micCalLoadButton.setTooltip (smt::tips::cal::micCalLoad);
         micCalLoadButton.onClick = [this] { loadMicCal(); };
         addAndMakeVisible (micCalLoadButton);
 
         micCalClearButton.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));      // multiply sign
         micCalClearButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
+        micCalClearButton.setTooltip (smt::tips::cal::micCalClear);
         micCalClearButton.onClick = [this] { clearMicCal(); };
         addAndMakeVisible (micCalClearButton);
 
@@ -82,6 +85,7 @@ public:
         for (int o = 0; o < smt::numChannels; ++o)
         {
             auto* b = outputToggles.add (new juce::ToggleButton (juce::String (o + 1)));
+            b->setTooltip (smt::tips::cal::outputs);
             SuperMoToTheme::accentToggleButton (*b, SuperMoToTheme::measure);
             addAndMakeVisible (b);
         }
@@ -99,6 +103,7 @@ public:
             b.setColour (juce::TextButton::buttonOnColourId, SuperMoToTheme::measure.darker (0.25f));
             b.setColour (juce::TextButton::textColourOffId,  SuperMoToTheme::dimText);
             b.setColour (juce::TextButton::textColourOnId,   SuperMoToTheme::measure.brighter (0.7f));
+            b.setTooltip (smt::tips::cal::measureType);
             b.onClick = [this] { updateModeUi(); };
             addAndMakeVisible (b);
         };
@@ -111,6 +116,7 @@ public:
         signalBox.addItem ("White noise (10 Hz - 20 kHz)", 1);
         signalBox.addItem ("Log sweep (10 Hz - 20 kHz)", 2);
         signalBox.setSelectedId (2, juce::dontSendNotification);
+        signalBox.setTooltip (smt::tips::cal::signal);
         SuperMoToTheme::accentComboBox (signalBox, SuperMoToTheme::measure);
         addAndMakeVisible (signalBox);
 
@@ -122,6 +128,7 @@ public:
         duration.setValue (10.0, juce::dontSendNotification);
         duration.setDoubleClickReturnValue (true, 10.0);
         SuperMoToTheme::accentSlider (duration, SuperMoToTheme::measure);
+        duration.setTooltip (smt::tips::cal::duration);
         addAndMakeVisible (duration);
 
         addLabel (levelLabel, "Level");
@@ -130,13 +137,13 @@ public:
         level.setValue (-12.0, juce::dontSendNotification);
         level.setDoubleClickReturnValue (true, -12.0);
         SuperMoToTheme::accentSlider (level, SuperMoToTheme::measure);
+        level.setTooltip (smt::tips::cal::level);
         addAndMakeVisible (level);
 
         subEnabledToggle.setButtonText ("Sub");
         subEnabledToggle.setToggleState (false, juce::dontSendNotification);
         SuperMoToTheme::accentToggleButton (subEnabledToggle, SuperMoToTheme::measure);
-        subEnabledToggle.setTooltip ("Whether this measurement run includes a subwoofer channel. When "
-                                     "off, no channel is tagged as sub even if one is picked below.");
+        subEnabledToggle.setTooltip (smt::tips::cal::subEnabled);
         subEnabledToggle.onClick = [this] { updateSubUi(); };
         addAndMakeVisible (subEnabledToggle);
 
@@ -145,15 +152,13 @@ public:
         for (int c = 0; c < smt::numChannels; ++c)
             subChannelBox.addItem (juce::String (c + 1), c + 2);
         subChannelBox.setSelectedId (1, juce::dontSendNotification);
-        subChannelBox.setTooltip ("Which output channel is the subwoofer. Its files are named "
-                                  "sub_pos<N>.wav instead of ch<channel>_pos<N>.wav, so Group analysis's "
-                                  "\"Load measurement folder...\" recognizes it automatically. Not used "
-                                  "in Full system mode (there the toggled channels are plugin inputs).");
+        subChannelBox.setTooltip (smt::tips::cal::subChannel);
         SuperMoToTheme::accentComboBox (subChannelBox, SuperMoToTheme::measure);
         addAndMakeVisible (subChannelBox);
 
         addLabel (pathLabel, "Measurement folder");
         pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
+        pathEditor.setTooltip (smt::tips::cal::path);
         pathEditor.setText (smt::getLastBrowseDir().getFullPathName());
         // A hand-typed folder may hold a manifest with a general comment:
         // pick it up once the path entry is left.
@@ -161,6 +166,7 @@ public:
         pathEditor.onFocusLost = [this] { refreshGeneralComment(); };
         addAndMakeVisible (pathEditor);
 
+        browseButton.setTooltip (smt::tips::cal::browse);
         browseButton.setButtonText ("...");
         browseButton.onClick = [this] { browse(); };
         addAndMakeVisible (browseButton);
@@ -169,22 +175,19 @@ public:
         // behind a button-opened popup, and a one-line comment for the next run.
         commentButton.setButtonText ("Folder comment...");
         commentButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
-        commentButton.setTooltip ("General comment for this measurement folder, written to "
-                                  "measurement.xml and readme_measurement.md at the end of every "
-                                  "run \xe2\x80\x94 edit it between runs and the next save rewrites it. "
-                                  "Pre-filled from the folder's existing manifest.");
+        commentButton.setTooltip (smt::tips::cal::comment);
         commentButton.onClick = [this] { editGeneralComment(); };
         addAndMakeVisible (commentButton);
 
         addLabel (runCommentLabel, "Run comment");
         runCommentEditor.setColour (juce::TextEditor::backgroundColourId,
                                     SuperMoToTheme::plotBackground.withAlpha (0.4f));
-        runCommentEditor.setTooltip ("One-line comment for the next run, logged with that run's "
-                                     "entry in the manifests.");
+        runCommentEditor.setTooltip (smt::tips::cal::runComment);
         addAndMakeVisible (runCommentEditor);
 
         refreshGeneralComment();
 
+        runButton.setTooltip (smt::tips::cal::run);
         runButton.setButtonText ("Run");
         runButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::measure.darker (0.8f));
         runButton.onClick = [this] { runOrStop(); };
@@ -442,6 +445,7 @@ private:
 
         meterOnButton.setButtonText ("Meter on");
         SuperMoToTheme::accentToggleButton (meterOnButton, SuperMoToTheme::measure);
+        meterOnButton.setTooltip (smt::tips::cal::meterOn);
         meterOnButton.onClick = [this] { pushSplSettings(); };
         addAndMakeVisible (meterOnButton);
 
@@ -451,21 +455,25 @@ private:
         windowBox.addItem ("300 ms", 3);
         windowBox.addItem ("1 s", 4);
         windowBox.setSelectedId (3, juce::dontSendNotification);
+        windowBox.setTooltip (smt::tips::cal::splWindow);
         SuperMoToTheme::accentComboBox (windowBox, SuperMoToTheme::measure);
         windowBox.onChange = [this] { pushSplSettings(); };
         addAndMakeVisible (windowBox);
 
         sineButton.setButtonText ("Sine");
         SuperMoToTheme::accentToggleButton (sineButton, SuperMoToTheme::measure);
+        sineButton.setTooltip (smt::tips::cal::splSine);
         sineButton.onClick = [this] { pushSplSettings(); };
         addAndMakeVisible (sineButton);
 
         addLabel (sineAmpLabel, "Amplitude");
         addNumberEntry (sineAmp, -60.0, 0.0, 0.5, -12.0, " dB");
+        sineAmp.setTooltip (smt::tips::cal::splSineAmp);
         sineAmp.onValueChange = [this] { pushSplSettings(); };
 
         addLabel (sineFreqLabel, "Frequency");
         addNumberEntry (sineFreq, 20.0, 20000.0, 1.0, 1000.0, " Hz");
+        sineFreq.setTooltip (smt::tips::cal::splSineFreq);
         sineFreq.onValueChange = [this] { pushSplSettings(); };
 
         noiseButton.setButtonText ("White noise");

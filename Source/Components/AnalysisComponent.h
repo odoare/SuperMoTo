@@ -22,6 +22,7 @@
 #include "../Dsp/AnalysisEngine.h"
 #include "../AppSettings.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 #include "TransferFunctionPlot.h"
 
 class AnalysisComponent : public juce::Component
@@ -39,8 +40,7 @@ public:
         micCalInfo.setFont (juce::Font (juce::FontOptions (11.0f)));
         micCalInfo.setJustificationType (juce::Justification::centredRight);
         micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
-        micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
-                               "Load it in the Measurement & Calibration pane.");
+        micCalInfo.setTooltip (smt::tips::shared::micCalInfo);
         addAndMakeVisible (micCalInfo);
 
         // Which mic calibration is divided out: the global one (loaded in the
@@ -51,9 +51,7 @@ public:
         micCalSourceBox.addItem ("No mic cal", 3);
         micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
         micCalSourceBox.setItemEnabled (2, false);   // until loaded files provide one
-        micCalSourceBox.setTooltip ("Microphone calibration source: the global curve loaded in "
-                                    "the Measurement pane, the curve embedded in the loaded "
-                                    "files' measurement.xml, or none.");
+        micCalSourceBox.setTooltip (smt::tips::ana::micCalSource);
         SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
         micCalSourceBox.onChange = [this] { pushMicCalibration(); updatePlotData(); };
         addAndMakeVisible (micCalSourceBox);
@@ -61,6 +59,7 @@ public:
         updateMicCalInfo();
 
         loadButton.setButtonText ("Load measurements...");
+        loadButton.setTooltip (smt::tips::ana::load);
         loadButton.onClick = [this] { loadFiles(); };
         addAndMakeVisible (loadButton);
 
@@ -97,8 +96,8 @@ public:
             box.onChange = [this] { pushSmoothing(); };
             addAndMakeVisible (box);
         };
-        setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
-        setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
+        setupSmoothBox (smoothLowBox,  smt::tips::shared::smoothLow);
+        setupSmoothBox (smoothHighBox, smt::tips::shared::smoothHigh);
 
         // Transfer-function estimation method; "Sweep" auto-selects when the
         // loaded files' manifest carries the sweep identity.
@@ -107,13 +106,7 @@ public:
         tfBox.addItem ("Sweep (Farina)", 2);
         tfBox.setSelectedId (1, juce::dontSendNotification);
         tfBox.setItemEnabled (2, false);
-        tfBox.setTooltip ("Transfer-function estimation:\n"
-                          "Welch: averaged cross/auto spectra (any stimulus).\n"
-                          "Sweep (Farina): deconvolution by the synchronized sweep's analytic "
-                          "inverse (Novak et al. 2015) \xe2\x80\x94 full-band response with true "
-                          "phase in one shot, plus the harmonic-distortion curves (H2...). "
-                          "Needs the sweep parameters from the folder's measurement.xml; "
-                          "auto-selected when available.");
+        tfBox.setTooltip (smt::tips::shared::tfMethod);
         SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
         tfBox.onChange = [this]
         {
@@ -129,6 +122,7 @@ public:
         levelSlider.setValue (1.0, juce::dontSendNotification);
         levelSlider.setDoubleClickReturnValue (true, 1.0);
         SuperMoToTheme::accentSlider (levelSlider, SuperMoToTheme::master);
+        levelSlider.setTooltip (smt::tips::shared::correctionLevel);
         levelSlider.onValueChange = [this]
         {
             analysis.setCorrectionLevel ((float) levelSlider.getValue());
@@ -143,6 +137,7 @@ public:
         boostSlider.setDoubleClickReturnValue (true, 12.0);
         boostSlider.setTextValueSuffix (" dB");
         SuperMoToTheme::accentSlider (boostSlider, SuperMoToTheme::master);
+        boostSlider.setTooltip (smt::tips::shared::maxBoost);
         boostSlider.onValueChange = [this]
         {
             analysis.setMaxBoostDb ((float) boostSlider.getValue());
@@ -167,6 +162,8 @@ public:
         };
         setupFreqBox (lowFreqBox,  { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
         setupFreqBox (highFreqBox, { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
+        lowFreqBox.setTooltip (smt::tips::shared::rangeLow);
+        highFreqBox.setTooltip (smt::tips::shared::rangeHigh);
         addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));    // en dash
         rangeToLabel.setJustificationType (juce::Justification::centred);
 
@@ -178,14 +175,7 @@ public:
         levelRefBox.addItem ("dB SPL", 3);
         levelRefBox.setSelectedId (1, juce::dontSendNotification);
         levelRefBox.setItemEnabled (3, false);   // needs SPL cal + run info
-        levelRefBox.setTooltip ("Level reference of the measured curves:\n"
-                                "Normalized: 0 dB = 200 Hz - 2 kHz mean of the average.\n"
-                                "Absolute dB: recorded level per unit of stimulus level "
-                                "(no normalization).\n"
-                                "dB SPL: estimated SPL during the measurement — needs an SPL "
-                                "calibration and the run's stimulus level from measurement.xml; "
-                                "exact for sweep runs, approximate for noise.\n"
-                                "The correction curve is always absolute dB.");
+        levelRefBox.setTooltip (smt::tips::shared::levelRef);
         SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
         levelRefBox.onChange = [this]
         {
@@ -211,10 +201,7 @@ public:
         phaseBox.addItem ("Linear phase", 1);
         phaseBox.addItem ("Min phase", 2);
         phaseBox.setSelectedId (1, juce::dontSendNotification);
-        phaseBox.setTooltip ("Linear: corrects magnitude and phase (incl. subwoofer "
-                             "alignment), adds firLength/2 latency.\n"
-                             "Min phase: magnitude only, near-zero latency, no phase "
-                             "correction or subwoofer alignment \xe2\x80\x94 for tracking.");
+        phaseBox.setTooltip (smt::tips::shared::phaseType);
         SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
         phaseBox.onChange = [this]
         {
@@ -251,6 +238,7 @@ public:
         // ── Optional subwoofer phase integration ─────────────────────────────
         loadSubButton.setButtonText ("Load sub measurements...");
         loadSubButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.4f));
+        loadSubButton.setTooltip (smt::tips::ana::loadSub);
         loadSubButton.onClick = [this] { loadSubFiles(); };
         addAndMakeVisible (loadSubButton);
 
@@ -291,7 +279,8 @@ public:
         // "drawFromCentre" property, which hardcodes the track's geometric
         // midpoint and so is only right while this range stays symmetric.
         alignSlider.setCentralValue (0.0);
-        SuperMoToTheme::accentSlider (alignSlider, SuperMoToTheme::mono);
+        SuperMoToTheme::accentSlider (alignSlider, SuperMoToTheme::delay);
+        alignSlider.setTooltip (smt::tips::ana::mainsDelay);
         alignSlider.onValueChange = [this]
         {
             analysis.setTimeAlignMs ((float) alignSlider.getValue());
@@ -310,9 +299,7 @@ public:
         // physical time-alignment the correction was designed around.
         applyDelayToggle.setButtonText ("Apply bulk delay");
         SuperMoToTheme::accentToggleButton (applyDelayToggle, SuperMoToTheme::mono);
-        applyDelayToggle.setTooltip ("On Export correction IR + assign, also set that output's "
-                                     "delay to the Mains-delay value (the bulk time-alignment "
-                                     "the correction was designed for). Negative values clamp to 0.");
+        applyDelayToggle.setTooltip (smt::tips::ana::applyDelay);
         addAndMakeVisible (applyDelayToggle);
 
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
@@ -329,17 +316,7 @@ public:
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
         displayBox.setSelectedId (1, juce::dontSendNotification);
-        displayBox.setTooltip (
-            "Impulse response traces:\n"
-            "measured â the speaker as it is now.\n"
-            "correction â the FIR that will be exported, at the chosen length and "
-            "Phase type.\n"
-            "corrected â the speaker predicted with that FIR loaded.\n"
-            "+ sub â the same, summed with the subwoofer at the Mains-delay offset "
-            "and at the level it was measured at (this pane does no level matching).\n\n"
-            "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises its "
-            "share of the sum, so apply about 3 dB more attenuation to the sub in the real "
-            "system (up to 6 dB for content correlated between L and R).");
+        displayBox.setTooltip (smt::tips::ana::display);
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
         displayBox.onChange = [this] { updateDisplayMode(); };
         addAndMakeVisible (displayBox);
@@ -363,8 +340,8 @@ public:
     {
         const bool sweep = tfBox.getSelectedId() == 2;
         windowLabel.setText (sweep ? "IR gate" : "Welch window", juce::dontSendNotification);
-        windowBox.setTooltip (sweep ? "Length of the impulse response kept after the sweep deconvolution, in samples (a rectangular gate from the start of the IR). Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic. It is not a Welch window in this mode: the sweep gives one IR in a single shot, with no segment averaging."
-                                    : "Length of the Welch analysis segments, in samples. Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic.");
+        windowBox.setTooltip (sweep ? smt::tips::shared::windowGate
+                                    : smt::tips::shared::windowWelch);
     }
 
     // Recommendation + matrix instruction shown while a sub set is loaded.

@@ -26,6 +26,7 @@
 #include "../Model/ConfigModel.h"
 #include "../Dsp/MatrixEngine.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 
 class OutputMetersStrip : public juce::Component,
                           public juce::TooltipClient,

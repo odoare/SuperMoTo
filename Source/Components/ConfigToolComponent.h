@@ -37,6 +37,7 @@
 #include <FxmeTools/dsp/IemDecoder.h>
 #include "../AppSettings.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 
 class ConfigToolComponent : public juce::Component
 {
@@ -51,6 +52,7 @@ public:
         layoutBox.addItemList ({ "Stereo 2.0", "Stereo 2.1", "Quad 4.0", "Quad 4.1", "5.1", "7.1",
                                  "Ambisonics" }, 1);
         SuperMoToTheme::accentComboBox (layoutBox, SuperMoToTheme::master);
+        layoutBox.setTooltip (smt::tips::cfg::layout);
         layoutBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
         addAndMakeVisible (layoutBox);
         addLabel (layoutLabel, "Layout");
@@ -59,6 +61,7 @@ public:
         orderBox.addItemList ({ "1st order", "2nd order", "3rd order" }, 1);
         SuperMoToTheme::accentComboBox (orderBox, SuperMoToTheme::master);
         orderBox.setSelectedId (1, juce::dontSendNotification);
+        orderBox.setTooltip (smt::tips::cfg::order);
         orderBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
         addChildComponent (orderBox);
         addLabel (orderLabel, "Order");
@@ -67,12 +70,14 @@ public:
         targetBox.addItemList ({ "A", "B", "C", "D", "E", "F" }, 1);
         SuperMoToTheme::accentComboBox (targetBox, SuperMoToTheme::master);
         targetBox.setSelectedId (1, juce::dontSendNotification);
+        targetBox.setTooltip (smt::tips::cfg::target);
         addAndMakeVisible (targetBox);
         addLabel (targetLabel, "Write to config");
 
         bassManagement.setButtonText ("Bass management");
         SuperMoToTheme::accentToggleButton (bassManagement, SuperMoToTheme::fir);
         bassManagement.setToggleState (true, juce::dontSendNotification);
+        bassManagement.setTooltip (smt::tips::cfg::bassManagement);
         addAndMakeVisible (bassManagement);
 
         crossover.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -82,11 +87,13 @@ public:
         crossover.setDoubleClickReturnValue (true, 80.0);
         crossover.setTextValueSuffix (" Hz");
         SuperMoToTheme::accentSlider (crossover, SuperMoToTheme::fir);
+        crossover.setTooltip (smt::tips::cfg::crossover);
         addAndMakeVisible (crossover);
         addLabel (crossoverLabel, "Crossover");
 
         applyButton.setButtonText ("Apply to configuration");
         applyButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::master.darker (0.8f));
+        applyButton.setTooltip (smt::tips::cfg::apply);
         applyButton.onClick = [this] { apply(); };
         addAndMakeVisible (applyButton);
 
@@ -98,6 +105,7 @@ public:
         numSpkSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         numSpkSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         numSpkSlider.setRange (4.0, (double) smt::numChannels, 1.0);
+        numSpkSlider.setTooltip (smt::tips::cfg::numSpk);
         numSpkSlider.onValueChange = [this] { rebuildRows(); };
         SuperMoToTheme::accentSlider (numSpkSlider, SuperMoToTheme::master);
         addChildComponent (numSpkSlider);
@@ -111,17 +119,20 @@ public:
         // analysis pane).
         writeGainToggle.setButtonText ("Write radius gain");
         writeGainToggle.setToggleState (true, juce::dontSendNotification);
+        writeGainToggle.setTooltip (smt::tips::cfg::writeGain);
         SuperMoToTheme::accentToggleButton (writeGainToggle, SuperMoToTheme::dim);
         addChildComponent (writeGainToggle);
 
         writeDelayToggle.setButtonText ("Write radius delay");
         writeDelayToggle.setToggleState (true, juce::dontSendNotification);
+        writeDelayToggle.setTooltip (smt::tips::cfg::writeDelay);
         SuperMoToTheme::accentToggleButton (writeDelayToggle, SuperMoToTheme::dim);
         addChildComponent (writeDelayToggle);
 
         // Import an IEM AllRADecoder .json as the decode matrix (Ambisonics only).
         loadIemButton.setButtonText ("Load IEM decoder...");
         loadIemButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (0.8f));
+        loadIemButton.setTooltip (smt::tips::cfg::loadIem);
         loadIemButton.onClick = [this] { loadIemDecoder(); };
         addChildComponent (loadIemButton);
 
@@ -420,11 +431,13 @@ private:
 
             row->name.setText (def.name, juce::dontSendNotification);
             row->name.setColour (juce::Label::textColourId, SuperMoToTheme::text);
+            row->name.setTooltip (smt::tips::cfg::rowName);
             addAndMakeVisible (row->name);
 
             for (int c = 1; c <= smt::numChannels; ++c)
                 row->output.addItem (juce::String (c), c);
             row->output.setSelectedId (def.out + 1, juce::dontSendNotification);
+            row->output.setTooltip (smt::tips::cfg::rowOutput);
             SuperMoToTheme::accentComboBox (row->output, SuperMoToTheme::master);
             addAndMakeVisible (row->output);
 
@@ -433,6 +446,7 @@ private:
             row->gain.setRange (-60.0, 12.0, 0.1);
             row->gain.setValue (def.gain, juce::dontSendNotification);
             row->gain.setDoubleClickReturnValue (true, 0.0);
+            row->gain.setTooltip (smt::tips::cfg::rowGain);
             SuperMoToTheme::accentSlider (row->gain, SuperMoToTheme::master);
             addAndMakeVisible (row->gain);
 
@@ -451,6 +465,8 @@ private:
                 };
                 initAngle (row->az, -180.0, 180.0, def.az);
                 initAngle (row->el,  -90.0,  90.0, def.el);
+                row->az.setTooltip (smt::tips::cfg::rowAz);
+                row->el.setTooltip (smt::tips::cfg::rowEl);
 
                 row->radius.setSliderStyle (juce::Slider::LinearHorizontal);
                 row->radius.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -458,11 +474,13 @@ private:
                 row->radius.setValue (def.radius, juce::dontSendNotification);
                 row->radius.setDoubleClickReturnValue (true, def.radius);
                 row->radius.setTextValueSuffix (" m");
+                row->radius.setTooltip (smt::tips::cfg::rowRadius);
                 SuperMoToTheme::accentSlider (row->radius, SuperMoToTheme::master);
                 addAndMakeVisible (row->radius);
             }
             else
             {
+                row->input.setTooltip (smt::tips::cfg::rowInput);
                 for (int c = 1; c <= smt::numChannels; ++c)
                     row->input.addItem (juce::String (c), c);
                 // The subwoofer can take the sum of all mains instead of an input.

@@ -89,6 +89,23 @@ inline void setUiView (int view)
     }
 }
 
+/** Whether hover tooltips are shown. On by default: they are the only in-app
+    explanation of what most controls do. */
+inline bool getUiTooltips()
+{
+    auto* s = appProperties().getUserSettings();
+    return s == nullptr || s->getBoolValue ("uiTooltips", true);
+}
+
+inline void setUiTooltips (bool on)
+{
+    if (auto* s = appProperties().getUserSettings())
+    {
+        s->setValue ("uiTooltips", on);
+        s->saveIfNeeded();
+    }
+}
+
 /** How compact the editor was left: 0 = full, 1 = top bar + output strip,
     2 = mini (two control rows + output meters). Mirrors the editor's
     Compact enum. Falls back to the older boolean "uiCollapsed" setting so a

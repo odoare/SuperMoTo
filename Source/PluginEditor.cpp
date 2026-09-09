@@ -18,6 +18,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "AppSettings.h"
+#include "Tooltips.h"
 
 //==============================================================================
 // Width of the matrix component for a given window width (expanded layout):
@@ -89,6 +90,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
                                                            smt::configName (c),
                                                            SuperMoToTheme::configEngage));
         b->setLookAndFeel (&fxmeLookAndFeel);
+        b->button.setTooltip (smt::tips::bar::config);
         addAndMakeVisible (b);
     }
 
@@ -109,15 +111,15 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     // The mini layout shortens these to single glyphs, so the tooltip is the
     // only thing left saying what they do. On the inner ToggleButton: it fills
     // the FxmeButton wrapper, so it is what the mouse actually lands on.
-    exclusiveButton->button.setTooltip ("Exclusive: engaging a configuration releases the others");
-    muteButton->button.setTooltip ("Mute the master output");
-    dimButton->button.setTooltip ("Dim the master output");
-    monoButton->button.setTooltip ("Sum to mono (checks phase cancellation)");
+    exclusiveButton->button.setTooltip (smt::tips::bar::exclusive);
+    muteButton->button.setTooltip (smt::tips::bar::mute);
+    dimButton->button.setTooltip (smt::tips::bar::dim);
+    monoButton->button.setTooltip (smt::tips::bar::mono);
 
     levelSlider = std::make_unique<fxme::FxmeSlider> (audioProcessor.apvts, "Level", "Level",
                                                       SuperMoToTheme::master);
     levelSlider->setSliderStyle (juce::Slider::LinearHorizontal);
-    levelSlider->setTooltip ("Master level (dB)");
+    levelSlider->setTooltip (smt::tips::bar::level);
     SuperMoToTheme::accentSlider (*levelSlider, SuperMoToTheme::master);
     levelSlider->setLookAndFeel (&fxmeLookAndFeel);
     addAndMakeVisible (*levelSlider);
@@ -131,7 +133,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     collapseButton.setClickingTogglesState (false);
     collapseButton.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
                               SuperMoToTheme::panel);
-    collapseButton.setTooltip ("Compact view: the output strip only");
+    collapseButton.setTooltip (smt::tips::bar::collapseOff);
     // One button, three layouts: full -> output strip -> mini -> full.
     collapseButton.onClick = [this]
     {
@@ -144,21 +146,33 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     // Hidden until the mini layout asks for it (setView).
     addChildComponent (outputMeters);
 
-    auto initViewButton = [this] (fxme::AccentToggle& b, const juce::String& text, View v)
+    auto initViewButton = [this] (fxme::AccentToggle& b, const juce::String& text, View v,
+                                  const char* tip)
     {
         b.setButtonText (text);
         b.setClickingTogglesState (false);
         b.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
                      SuperMoToTheme::panel);
+        b.setTooltip (tip);
         b.onClick = [this, v] { setView (v); };
         addAndMakeVisible (b);
     };
-    initViewButton (matrixViewButton, "Matrix", View::matrix);
-    initViewButton (configToolButton, "Config tool", View::configTool);
-    initViewButton (calibrationButton, "Calibration", View::calibration);
-    initViewButton (analysisButton, "Analysis", View::analysis);
-    initViewButton (groupAnalysisButton, "Group", View::groupAnalysis);
-    initViewButton (presetsViewButton, "Presets", View::presets);
+    initViewButton (matrixViewButton, "Matrix", View::matrix, smt::tips::bar::viewMatrix);
+    initViewButton (configToolButton, "Config tool", View::configTool, smt::tips::bar::viewConfig);
+    initViewButton (calibrationButton, "Calibration", View::calibration, smt::tips::bar::viewCal);
+    initViewButton (analysisButton, "Analysis", View::analysis, smt::tips::bar::viewAnalysis);
+    initViewButton (groupAnalysisButton, "Group", View::groupAnalysis, smt::tips::bar::viewGroup);
+    initViewButton (presetsViewButton, "Presets", View::presets, smt::tips::bar::viewPresets);
+
+    // Hover-help switch. Not a view, so it is not part of initViewButton: its
+    // toggle state is its own setting rather than which panel is up.
+    tooltipsButton.setButtonText ("?");
+    tooltipsButton.setClickingTogglesState (false);
+    tooltipsButton.setAccent (SuperMoToTheme::viewSelected, SuperMoToTheme::text,
+                              SuperMoToTheme::panel);
+    tooltipsButton.setTooltip (smt::tips::bar::tooltips);
+    tooltipsButton.onClick = [this] { setTooltipsEnabled (! tooltipWindow.enabled); };
+    addAndMakeVisible (tooltipsButton);
 
     // Compact preset selector: top-right corner, expanded mode only.
     presetBar.setAccentColour (SuperMoToTheme::master);
@@ -185,6 +199,8 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     };
     initSizeBox (insLabel, insBox, "Inputs:");
     initSizeBox (outsLabel, outsBox, "Outputs:");
+    insBox.setTooltip (smt::tips::bar::ins);
+    outsBox.setTooltip (smt::tips::bar::outs);
     insBox.setSelectedId (audioProcessor.configModel.getNumIns(), juce::dontSendNotification);
     outsBox.setSelectedId (audioProcessor.configModel.getNumOuts(), juce::dontSendNotification);
     audioProcessor.configModel.addListener (this);
@@ -217,6 +233,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
         auto* b = editConfigButtons.add (new fxme::AccentToggle());
         b->setButtonText (smt::configName (c));
         b->setClickingTogglesState (false);
+        b->setTooltip (smt::tips::bar::editConfig);
         // Same cyan as the A..F engage buttons in the top bar, so "edited" and
         // "engaged" read as the same family of control.
         b->setAccent (SuperMoToTheme::configEngage, SuperMoToTheme::text,
@@ -285,6 +302,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     setResizeLimits (1100, 720, 2400, 1600);
     setSize (1280, 820);
 
+    setTooltipsEnabled (smt::getUiTooltips());
     setCompactMode (static_cast<Compact> (juce::jlimit (0, 2, smt::getUiCompactMode())));
 }
 
@@ -359,7 +377,7 @@ void SuperMoToAudioProcessorEditor::setView (View v)
         b->setVisible (m);
 
     for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton,
-                     &groupAnalysisButton, &presetsViewButton })
+                     &groupAnalysisButton, &presetsViewButton, &tooltipsButton })
         b->setVisible (! isCompact());
 
     configTool.setVisible (v == View::configTool && ! isCompact());
@@ -585,6 +603,14 @@ juce::Point<int> SuperMoToAudioProcessorEditor::miniWindowSize() const
              margin + rowsH + margin };
 }
 
+void SuperMoToAudioProcessorEditor::setTooltipsEnabled (bool on)
+{
+    tooltipWindow.enabled = on;
+    tooltipWindow.hideTip();            // a tip already on screen would otherwise linger
+    tooltipsButton.setToggleState (on, juce::dontSendNotification);
+    smt::setUiTooltips (on);
+}
+
 void SuperMoToAudioProcessorEditor::setCompactMode (Compact m)
 {
     if (compactMode == m)
@@ -606,9 +632,9 @@ void SuperMoToAudioProcessorEditor::setCompactMode (Compact m)
     collapseButton.setButtonText (juce::String::fromUTF8 (m == Compact::mini ? "\xe2\x96\xbc"      // down
                                                                              : "\xe2\x96\xb2"));   // up
     collapseButton.setToggleState (isCompact(), juce::dontSendNotification);
-    collapseButton.setTooltip (m == Compact::off   ? "Compact view: the output strip only"
-                             : m == Compact::strip ? "Mini view: master controls and output meters"
-                                                   : "Back to the full editor");
+    collapseButton.setTooltip (m == Compact::off   ? smt::tips::bar::collapseOff
+                             : m == Compact::strip ? smt::tips::bar::collapseMini
+                                                   : smt::tips::bar::collapseBack);
 
     // The mini row has no room for words. Mono becomes the empty-set sign, the
     // usual shorthand for the cancellation the button is there to reveal; the
@@ -777,13 +803,20 @@ void SuperMoToAudioProcessorEditor::resized()
     for (auto* b : editConfigButtons)
         b->setBounds (bottom.removeFromLeft (40).reduced (2, 1));
 
-    const int vw = juce::jmin (110, bottom.getWidth() / 6);
+    // The "?" is reserved before the view buttons are sized: at the minimum
+    // window width the six of them fill the bar exactly, so taking its 34 px
+    // afterwards would overlap the edit-config buttons on the left.
+    constexpr int tipW = 34;
+    const int vw = juce::jmin (110, (bottom.getWidth() - tipW) / 6);
     presetsViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     groupAnalysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     analysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     calibrationButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     configToolButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     matrixViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    // Left of the view switcher, and narrow: it is a single glyph and it is not
+    // one of the views.
+    tooltipsButton.setBounds (bottom.removeFromRight (tipW).reduced (2, 1));
 
     // ── Main area ────────────────────────────────────────────────────────────
     auto main = area.reduced (8);

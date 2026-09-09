@@ -73,6 +73,7 @@ private:
     //           toggles and a row of output meters on a second.
     enum class Compact { off, strip, mini };
 
+    void setTooltipsEnabled (bool on);
     void setCompactMode (Compact m);
     bool isCompact() const noexcept     { return compactMode != Compact::off; }
 
@@ -90,7 +91,22 @@ private:
     SuperMoToAudioProcessor& audioProcessor;
 
     fxme::FxmeLookAndFeel fxmeLookAndFeel;
-    juce::TooltipWindow tooltipWindow { this, 600 };    // hover help (latency comp, …)
+
+    // Hover help, with an off switch (the "?" button in the bottom bar).
+    // Overriding getTipFor rather than destroying the window: one object for the
+    // editor's lifetime, and the suppression covers every component under it,
+    // including the ones that build their tip dynamically (the matrix cells).
+    struct ToggleableTooltipWindow : public juce::TooltipWindow
+    {
+        using juce::TooltipWindow::TooltipWindow;
+        juce::String getTipFor (juce::Component& c) override
+        {
+            return enabled ? juce::TooltipWindow::getTipFor (c) : juce::String();
+        }
+        bool enabled = true;
+    };
+
+    ToggleableTooltipWindow tooltipWindow { this, 600 };
 
     // ── Top bar ──────────────────────────────────────────────────────────────
     juce::Image logo;
@@ -105,6 +121,7 @@ private:
     // the click, so each one has setClickingTogglesState(false) — see the ctor.
     fxme::AccentToggle matrixViewButton, configToolButton, calibrationButton, analysisButton,
                        presetsViewButton, groupAnalysisButton;
+    fxme::AccentToggle tooltipsButton;      // "?" — turns the hover help on and off
 
     // ── Matrix view ──────────────────────────────────────────────────────────
     MatrixComponent matrix;

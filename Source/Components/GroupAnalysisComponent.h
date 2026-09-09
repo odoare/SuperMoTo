@@ -25,6 +25,7 @@
 #include "../Dsp/SpeakerGroupAnalysis.h"
 #include "../AppSettings.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 #include "TransferFunctionPlot.h"
 #include "ReportFigures.h"
 
@@ -34,7 +35,7 @@ class GroupAnalysisComponent : public juce::Component,
 public:
     explicit GroupAnalysisComponent (SuperMoToAudioProcessor& p) : processor (p)
     {
-        title.setText ("Group analysis \xe2\x80\x94 multi-speaker alignment", juce::dontSendNotification);
+        title.setText ("Group analysis & multi-speaker alignment", juce::dontSendNotification);
         title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         addAndMakeVisible (title);
@@ -42,8 +43,7 @@ public:
         micCalInfo.setFont (juce::Font (juce::FontOptions (11.0f)));
         micCalInfo.setJustificationType (juce::Justification::centredRight);
         micCalInfo.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
-        micCalInfo.setTooltip ("Microphone calibration is divided out of the measurements. "
-                               "Load it in the Measurement & Calibration pane.");
+        micCalInfo.setTooltip (smt::tips::shared::micCalInfo);
         addAndMakeVisible (micCalInfo);
 
         // Which mic calibration is divided out: the global one (loaded in the
@@ -55,9 +55,7 @@ public:
         micCalSourceBox.addItem ("No mic cal", 3);
         micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
         micCalSourceBox.setItemEnabled (2, false);   // until a folder provides one
-        micCalSourceBox.setTooltip ("Microphone calibration source: the global curve loaded in "
-                                    "the Measurement pane, the curve embedded in the measurement "
-                                    "folder's measurement.xml, or none.");
+        micCalSourceBox.setTooltip (smt::tips::grp::micCalSource);
         SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
         micCalSourceBox.onChange = [this] { updateMicCalInfo(); startTimer (debounceMs); };
         addAndMakeVisible (micCalSourceBox);
@@ -69,15 +67,14 @@ public:
             countBox.addItem (juce::String (n), n);
         countBox.setSelectedId (group.getNumSpeakers(), juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (countBox, SuperMoToTheme::master);
+        countBox.setTooltip (smt::tips::grp::count);
         countBox.onChange = [this] { setNumSpeakers (countBox.getSelectedId()); };
         addAndMakeVisible (countBox);
 
         subEnabledToggle.setButtonText ("Sub");
         subEnabledToggle.setToggleState (true, juce::dontSendNotification);
         SuperMoToTheme::accentToggleButton (subEnabledToggle, SuperMoToTheme::mono);
-        subEnabledToggle.setTooltip ("Whether this group has a subwoofer. When off, the Sub row is "
-                                     "disabled and the subwoofer is excluded from alignment and from "
-                                     "Apply & export (its own settings/data are kept, not cleared).");
+        subEnabledToggle.setTooltip (smt::tips::grp::subEnabled);
         subEnabledToggle.onClick = [this]
         {
             group.setSubEnabled (subEnabledToggle.getToggleState());
@@ -87,6 +84,7 @@ public:
 
         computeButton.setButtonText ("Compute alignment");
         computeButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.2f));
+        computeButton.setTooltip (smt::tips::grp::compute);
         computeButton.onClick = [this]
         {
             flushPendingSettings();     // a trim set moments ago must be in first
@@ -99,6 +97,7 @@ public:
 
         applyButton.setButtonText ("Apply & export...");
         applyButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (1.0f));
+        applyButton.setTooltip (smt::tips::grp::apply);
         applyButton.onClick = [this] { applyAndExport(); };
         addAndMakeVisible (applyButton);
 
@@ -108,29 +107,18 @@ public:
         prefixEditor.setColour (juce::TextEditor::backgroundColourId,
                                 SuperMoToTheme::plotBackground.withAlpha (0.4f));
         prefixEditor.setTextToShowWhenEmpty ("(none)", SuperMoToTheme::dimText);
-        prefixEditor.setTooltip ("Optional name prefix for everything Apply & export writes: "
-                                 "<prefix>_speaker1_correction.wav, <prefix>_report.md. Lets "
-                                 "several alignments (rooms, groups, takes) live in one folder "
-                                 "instead of overwriting each other \xe2\x80\x94 which also keeps "
-                                 "the FIR files of previously applied outputs intact. "
-                                 "Pre-filled from the measurement folder's name.");
+        prefixEditor.setTooltip (smt::tips::grp::prefix);
         addAndMakeVisible (prefixEditor);
 
         figuresToggle.setButtonText ("Figures");
         figuresToggle.setToggleState (true, juce::dontSendNotification);
         SuperMoToTheme::accentToggleButton (figuresToggle, SuperMoToTheme::spectrum);
-        figuresToggle.setTooltip ("Also render each speaker's frequency-response and "
-                                  "impulse-response plots as PNGs into <prefix>_figs/ and embed "
-                                  "them in the report. Adds a few seconds to Apply & export for "
-                                  "a large group.");
+        figuresToggle.setTooltip (smt::tips::grp::figures);
         addAndMakeVisible (figuresToggle);
 
         loadFolderButton.setButtonText ("Load measurement folder...");
         loadFolderButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::spectrum.darker (1.0f));
-        loadFolderButton.setTooltip ("Load an entire measurement set written by the Measurement & "
-                                     "calibration pane's folder-based capture: reads readme_measurement.md "
-                                     "to find the channels and the subwoofer, and loads every speaker's "
-                                     "(and the sub's) position files in one step.");
+        loadFolderButton.setTooltip (smt::tips::grp::loadFolder);
         loadFolderButton.onClick = [this] { loadMeasurementFolder(); };
         addAndMakeVisible (loadFolderButton);
 
@@ -164,8 +152,8 @@ public:
             box.onChange = [this] { startTimer (debounceMs); };
             addAndMakeVisible (box);
         };
-        setupSmoothBox (smoothLowBox,  "Smoothing of the low frequencies (<= 100 Hz)");
-        setupSmoothBox (smoothHighBox, "Smoothing of the high frequencies (>= 10 kHz)");
+        setupSmoothBox (smoothLowBox,  smt::tips::shared::smoothLow);
+        setupSmoothBox (smoothHighBox, smt::tips::shared::smoothHigh);
 
         // Transfer-function estimation method; "Sweep" auto-selects when the
         // loaded folder's manifest carries the sweep identity. Changing it
@@ -175,13 +163,7 @@ public:
         tfBox.addItem ("Sweep (Farina)", 2);
         tfBox.setSelectedId (1, juce::dontSendNotification);
         tfBox.setItemEnabled (2, false);
-        tfBox.setTooltip ("Transfer-function estimation:\n"
-                          "Welch: averaged cross/auto spectra (any stimulus).\n"
-                          "Sweep (Farina): deconvolution by the synchronized sweep's analytic "
-                          "inverse (Novak et al. 2015) \xe2\x80\x94 full-band response with true "
-                          "phase in one shot, plus the harmonic-distortion curves (H2...). "
-                          "Needs the sweep parameters from the folder's measurement.xml; "
-                          "auto-selected when available.");
+        tfBox.setTooltip (smt::tips::shared::tfMethod);
         SuperMoToTheme::accentComboBox (tfBox, SuperMoToTheme::spectrum);
         tfBox.onChange = [this] { updateWindowLabel(); pushSettingsToAll(); reanalyzeAll(); };
         addAndMakeVisible (tfBox);
@@ -200,11 +182,14 @@ public:
         };
         setupFreqBox (lowFreqBox,  { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
         setupFreqBox (highFreqBox, { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
+        lowFreqBox.setTooltip (smt::tips::shared::rangeLow);
+        highFreqBox.setTooltip (smt::tips::shared::rangeHigh);
         addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));
         rangeToLabel.setJustificationType (juce::Justification::centred);
 
         addLabel (previewLabel, "Preview");
         SuperMoToTheme::accentComboBox (previewBox, SuperMoToTheme::spectrum);
+        previewBox.setTooltip (smt::tips::grp::preview);
         previewBox.onChange = [this] { updatePlotPreview(); };
         addAndMakeVisible (previewBox);
 
@@ -216,14 +201,7 @@ public:
         levelRefBox.addItem ("dB SPL", 3);
         levelRefBox.setSelectedId (1, juce::dontSendNotification);
         levelRefBox.setItemEnabled (3, false);   // needs SPL cal + run info
-        levelRefBox.setTooltip ("Level reference of the measured curves:\n"
-                                "Normalized: 0 dB = 200 Hz - 2 kHz mean of the average.\n"
-                                "Absolute dB: recorded level per unit of stimulus level "
-                                "(no normalization).\n"
-                                "dB SPL: estimated SPL during the measurement — needs an SPL "
-                                "calibration and the run's stimulus level from measurement.xml; "
-                                "exact for sweep runs, approximate for noise.\n"
-                                "The correction curve is always absolute dB.");
+        levelRefBox.setTooltip (smt::tips::shared::levelRef);
         SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
         levelRefBox.onChange = [this]
         {
@@ -238,6 +216,7 @@ public:
         levelSlider.setValue (1.0, juce::dontSendNotification);
         levelSlider.setDoubleClickReturnValue (true, 1.0);
         SuperMoToTheme::accentSlider (levelSlider, SuperMoToTheme::master);
+        levelSlider.setTooltip (smt::tips::shared::correctionLevel);
         levelSlider.onValueChange = [this] { startTimer (debounceMs); };
         addAndMakeVisible (levelSlider);
 
@@ -248,6 +227,7 @@ public:
         boostSlider.setDoubleClickReturnValue (true, 12.0);
         boostSlider.setTextValueSuffix (" dB");
         SuperMoToTheme::accentSlider (boostSlider, SuperMoToTheme::master);
+        boostSlider.setTooltip (smt::tips::shared::maxBoost);
         boostSlider.onValueChange = [this] { startTimer (debounceMs); };
         addAndMakeVisible (boostSlider);
 
@@ -262,10 +242,7 @@ public:
         phaseBox.addItem ("Linear phase", 1);
         phaseBox.addItem ("Min phase", 2);
         phaseBox.setSelectedId (1, juce::dontSendNotification);
-        phaseBox.setTooltip ("Linear: corrects magnitude and phase (incl. subwoofer alignment), "
-                             "adds firLength/2 latency.\n"
-                             "Min phase: magnitude only, near-zero latency, no phase correction "
-                             "or subwoofer alignment \xe2\x80\x94 for tracking.");
+        phaseBox.setTooltip (smt::tips::shared::phaseType);
         SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
         phaseBox.onChange = [this] { updateFirInfo(); startTimer (debounceMs); };
         addAndMakeVisible (phaseBox);
@@ -276,11 +253,13 @@ public:
         crossoverBox.setEditableText (true);
         crossoverBox.setSelectedId (80, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (crossoverBox, SuperMoToTheme::mono);
+        crossoverBox.setTooltip (smt::tips::shared::crossover);
         crossoverBox.onChange = [this] { startTimer (debounceMs); };
         addAndMakeVisible (crossoverBox);
 
         subInvertToggle.setButtonText ("Invert sub");
         SuperMoToTheme::accentToggleButton (subInvertToggle, SuperMoToTheme::mono);
+        subInvertToggle.setTooltip (smt::tips::shared::subInvert);
         subInvertToggle.onClick = [this] { startTimer (debounceMs); };
         addAndMakeVisible (subInvertToggle);
 
@@ -298,18 +277,10 @@ public:
             rowsHolder.addAndMakeVisible (row);
         }
         subRow.nameLabel.setText ("Sub", juce::dontSendNotification);
-        subRow.nameLabel.setTooltip ("Delay only \xe2\x80\x94 no correction FIR is designed for the "
-                                     "subwoofer: above its passband a measurement is just noise.");
+        subRow.nameLabel.setTooltip (smt::tips::grp::subName);
         subRow.onLoad = [this] { loadSubFiles(); };
         subRow.setSubMode (true);
-        subRow.trimReadout.setTooltip ("Suggested level trim for the subwoofer, read over half an "
-                                       "octave either side of the crossover (where the sub and the "
-                                       "mains overlap) rather than the mid-band used for the "
-                                       "speakers, which the sub does not reach. Matches the sub to "
-                                       "ONE corrected main: with a stereo pair driven together "
-                                       "their sum is about 3 dB higher, so allow for that. "
-                                       "Informational \xe2\x80\x94 apply it yourself via the "
-                                       "output's Trim in the matrix view.");
+        subRow.trimReadout.setTooltip (smt::tips::grp::subTrimLevel);
         // Coalesced like the other shared controls: applying the trim re-derives
         // the alignment, which re-designs every speaker's correction — far too
         // much to do once per drag tick. The slider is the source of truth; the
@@ -343,31 +314,17 @@ public:
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
         displayBox.setSelectedId (1, juce::dontSendNotification);
-        displayBox.setTooltip (
-            "Impulse response traces:\n"
-            "measured â the speaker as it is now.\n"
-            "correction â the FIR that will be exported, at the chosen length "
-            "and Phase type.\n"
-            "corrected â the speaker predicted with that FIR loaded.\n"
-            "+ sub (1 main) â the same, summed with the subwoofer at its aligned "
-            "delay and its suggested level trim.\n\n"
-            "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises "
-            "its share of the sum, so apply about 3 dB more attenuation to the sub in the "
-            "real system (up to 6 dB for content correlated between L and R).");
+        displayBox.setTooltip (smt::tips::grp::display);
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
         displayBox.onChange = [this] { updateDisplayMode(); };
         addAndMakeVisible (displayBox);
 
+        firBox.setTooltip (smt::tips::shared::firLength);
         firBox.onChange = [this] { updateFirInfo(); refreshIrIfVisible(); };
 
         firInfo.setFont (juce::Font (juce::FontOptions (12.0f)));
         firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
-        firInfo.setTooltip ("How low the exported FIR can still shape the response. A filter of "
-                            "N taps resolves the spectrum to fs/N, so two bins (2*fs/N) is the "
-                            "lowest frequency at which it can place a correction at all. Below "
-                            "it the filter is simply too short, whatever the analysis says. The "
-                            "analysis Range setting bounds the correction from below as well; "
-                            "whichever is higher wins.");
+        firInfo.setTooltip (smt::tips::shared::firInfo);
         addAndMakeVisible (firInfo);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
@@ -398,7 +355,7 @@ public:
         micCalSourceBox.setBounds (titleRow.removeFromRight (130).reduced (0, 1));
         titleRow.removeFromRight (8);
         micCalInfo.setBounds (titleRow.removeFromRight (240));
-        title.setBounds (titleRow);
+        title.setBounds (titleRow.withTrimmedLeft (30));   // room for the info button
         area.removeFromTop (6);
 
         // Row 0 — the workflow, left to right: load the measurements, describe
@@ -576,6 +533,7 @@ private:
 
             loadButton.setButtonText ("Load...");
             loadButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::mono.darker (1.4f));
+            loadButton.setTooltip (smt::tips::grp::rowLoad);
             loadButton.onClick = [this] { if (onLoad) onLoad(); };
             addAndMakeVisible (loadButton);
 
@@ -586,22 +544,20 @@ private:
             delayReadout.setFont (juce::Font (juce::FontOptions (12.0f)));
             delayReadout.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
             delayReadout.setJustificationType (juce::Justification::centredRight);
+            delayReadout.setTooltip (smt::tips::grp::rowDelay);
             addAndMakeVisible (delayReadout);
 
             trimReadout.setFont (juce::Font (juce::FontOptions (12.0f)));
             trimReadout.setColour (juce::Label::textColourId, SuperMoToTheme::master);
             trimReadout.setJustificationType (juce::Justification::centredRight);
-            trimReadout.setTooltip ("Suggested level-matching trim: how much to attenuate this "
-                                    "output to match the quietest speaker in the group, from the "
-                                    "corrected mid-band (500 Hz - 2 kHz, the SMPTE ST 2095-1 "
-                                    "calibration band) level. Informational \xe2\x80\x94 apply it "
-                                    "yourself via the output's Trim in the matrix view.");
+            trimReadout.setTooltip (smt::tips::grp::rowTrim);
             addAndMakeVisible (trimReadout);
 
             outputBox.addItem ("(none)", 1);
             for (int o = 0; o < smt::numChannels; ++o)
                 outputBox.addItem ("Output " + juce::String (o + 1), o + 2);
             outputBox.setSelectedId (1, juce::dontSendNotification);
+            outputBox.setTooltip (smt::tips::grp::rowOutput);
             SuperMoToTheme::accentComboBox (outputBox, SuperMoToTheme::fir);
             addAndMakeVisible (outputBox);
 
@@ -626,13 +582,8 @@ private:
             // Mains-delay slider (setCentralValue rather than drawFromCentre,
             // which would hardcode the track's geometric midpoint).
             trimSlider.setCentralValue (0.0);
-            SuperMoToTheme::accentSlider (trimSlider, SuperMoToTheme::dim);
-            trimSlider.setTooltip ("Offset applied to the subwoofer against the rest of the "
-                                   "group. Positive delays the sub further; negative brings it "
-                                   "forward (the whole group is pushed back instead when that "
-                                   "would take the sub's delay below zero, which changes nothing "
-                                   "acoustically). Every speaker's crossover phase alignment "
-                                   "follows, so the plot updates as you drag.");
+            SuperMoToTheme::accentSlider (trimSlider, SuperMoToTheme::delay);
+            trimSlider.setTooltip (smt::tips::grp::subTrim);
             trimSlider.onValueChange = [this]
             {
                 if (onTrimChanged != nullptr)
@@ -643,10 +594,7 @@ private:
             suggestButton.setButtonText ("Use x-over");
             suggestButton.setColour (juce::TextButton::buttonColourId,
                                      SuperMoToTheme::mono.darker (1.4f));
-            suggestButton.setTooltip ("Set the trim from the measured crossover-band phase slope "
-                                      "instead of the arrival times. The two disagree by the "
-                                      "subwoofer's own group delay (its low-pass and box "
-                                      "alignment), which arrival times cannot see.");
+            suggestButton.setTooltip (smt::tips::grp::subSuggest);
             suggestButton.onClick = [this] { if (onUseSuggestion != nullptr) onUseSuggestion(); };
             addChildComponent (suggestButton);
 
@@ -792,8 +740,8 @@ private:
     {
         const bool sweep = tfBox.getSelectedId() == 2;
         windowLabel.setText (sweep ? "IR gate" : "Welch window", juce::dontSendNotification);
-        windowBox.setTooltip (sweep ? "Length of the impulse response kept after the sweep deconvolution, in samples (a rectangular gate from the start of the IR). Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic. It is not a Welch window in this mode: the sweep gives one IR in a single shot, with no segment averaging."
-                                    : "Length of the Welch analysis segments, in samples. Longer = finer frequency resolution and more of the room's decay, shorter = smoother and more anechoic.");
+        windowBox.setTooltip (sweep ? smt::tips::shared::windowGate
+                                    : smt::tips::shared::windowWelch);
     }
 
     void pushSettingsTo (smt::AnalysisEngine& e, bool isSub)

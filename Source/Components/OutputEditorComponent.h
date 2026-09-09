@@ -20,6 +20,7 @@
 #include "../Dsp/MatrixEngine.h"
 #include "../AppSettings.h"
 #include "../Theme.h"
+#include "../Tooltips.h"
 #include "BandEqEditor.h"
 
 class OutputEditorComponent : public juce::Component,
@@ -38,21 +39,25 @@ public:
 
         firButton.setButtonText ("FIR");
         SuperMoToTheme::accentToggleButton (firButton, SuperMoToTheme::fir);
+        firButton.setTooltip (smt::tips::mtx::outFir);
         firButton.onClick = [this] { pushToModel(); };
         addAndMakeVisible (firButton);
 
         spectrumButton.setButtonText ("Analyzer");
         SuperMoToTheme::accentToggleButton (spectrumButton, SuperMoToTheme::spectrum);
+        spectrumButton.setTooltip (smt::tips::mtx::outSpectrum);
         spectrumButton.onClick = [this] { pushToModel(); };
         addAndMakeVisible (spectrumButton);
 
         loadButton.setButtonText ("Load IR...");
         loadButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::fir.darker (0.8f));
+        loadButton.setTooltip (smt::tips::mtx::outLoadIr);
         loadButton.onClick = [this] { loadIr(); };
         addAndMakeVisible (loadButton);
 
         clearButton.setButtonText ("Clear");
         clearButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::panel);
+        clearButton.setTooltip (smt::tips::mtx::outClearIr);
         clearButton.onClick = [this] { clearIr(); };
         addAndMakeVisible (clearButton);
 
@@ -76,7 +81,9 @@ public:
             addAndMakeVisible (l);
         };
         initBar (levelSlider, levelLabel, "Trim", -60.0, 12.0, 0.1, SuperMoToTheme::master);
-        initBar (delaySlider, delayLabel, "Delay", 0.0, (double) smt::maxDelayMs, 0.01, SuperMoToTheme::dim);
+        levelSlider.setTooltip (smt::tips::mtx::outTrim);
+        initBar (delaySlider, delayLabel, "Delay", 0.0, (double) smt::maxDelayMs, 0.01, SuperMoToTheme::delay);
+        delaySlider.setTooltip (smt::tips::mtx::outDelay);
 
         setOutput (-1);
     }
