@@ -1002,8 +1002,25 @@ equivalent of the designed magnitude and does not model the truncation to
 magnitude curves are unaffected, since \eqref{eq:rendermin} preserves $|c_i|$
 exactly.
 
-The spectrum is derived eagerly, by \code{recomputeCorrection()} and
-\code{setPhaseType()}, not on first use. That keeps every accessor on the class
+\paragraph{Which subwoofer curve is drawn.} A second frame-of-reference error
+sat next to the first. The correction is steered onto $S'$, the sub
+\emph{after} the assumed bulk delay \eqref{eq:allpass}, but
+\code{getSubPhaseDeg} plotted the raw anchored average $S$, and neither the
+Invert sub switch nor the delay moved it. The two curves on the plot were
+therefore in different time references, and the feedback they gave was exactly
+inverted: with $T$ correctly set the corrected main comes out nearly flat while
+the drawn sub still swept through its full offset, so a correct alignment looked
+like a gross mismatch; with $T = 0$, before Compute alignment has been pressed,
+both curves are steep and lie on top of each other, so doing nothing looked
+right. On the measurement of Section~\ref{sec:B-failure}, over the
+\SIrange{60}{120}{\hertz} span where that subwoofer has output, the drawn curve
+swept \SI{662}{\degree} (nearly two turns) where the curve the correction
+actually targets sweeps \SI{89}{\degree}. \code{getSubPhaseDeg} now returns
+$\arg S'$, so the corrected main and the subwoofer can be read against each
+other, which is the one comparison the plot exists to support.
+
+The effective-correction spectrum is built eagerly, by the two writers
+\code{recomputeCorrection()} and \code{setPhaseType()}, never on first use. That keeps every accessor on the class
 a pure read once the analysis is done, which the threading contract relies on:
 the report figures call these same read-outs from a background export job while
 the message thread may be plotting the same engine, and concurrent reads are

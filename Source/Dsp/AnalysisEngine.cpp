@@ -846,8 +846,31 @@ std::vector<float> AnalysisEngine::getSubPhaseDeg (const std::vector<float>& fre
     std::vector<float> v (freqs.size(), 0.0f);
     if (subAverageSmoothed.empty())
         return v;
+
+    // The sub AS THE CORRECTION SEES IT: polarity flipped if asked, and
+    // advanced by the assumed bulk delay. This is exactly the S' that
+    // recomputeCorrection() steers the corrected main onto.
+    //
+    // Plotting the raw anchored average instead put this curve in a different
+    // time reference from the corrected-main curve drawn beside it. With the
+    // 30 ms main/sub offset of a real room the raw sub sweeps through many
+    // turns across the crossover while the corrected main, steered onto the
+    // post-delay version, comes out nearly flat: the two looked maximally
+    // misaligned at precisely the moment they were correctly aligned, and
+    // identical when the alignment had not been computed at all. Neither the
+    // Invert sub switch nor the Mains-delay slider moved this curve, though
+    // both changed what the correction was built from.
+    const double tau = (double) timeAlignMs / 1000.0;
     for (size_t i = 0; i < freqs.size(); ++i)
-        v[i] = argDeg (interpComplex (subAverageSmoothed, freqs[i]));
+    {
+        auto S = std::complex<double> (interpComplex (subAverageSmoothed, freqs[i]));
+        if (subInverted)
+            S = -S;
+        if (timeAlignMs != 0.0f)
+            S *= std::polar (1.0, 2.0 * juce::MathConstants<double>::pi
+                                      * (double) freqs[i] * tau);
+        v[i] = (float) (std::arg (S) * 180.0 / juce::MathConstants<double>::pi);
+    }
     return v;
 }
 

@@ -166,6 +166,12 @@ public:
     float estimateMainSubOffsetMs() const;
 
     std::vector<float> getSubDb (const std::vector<float>& freqs) const;
+    /** The subwoofer's phase as the correction sees it: polarity applied, and
+        advanced by the assumed bulk delay (setTimeAlignMs). This is the curve
+        the corrected main is steered onto around the crossover, so the two can
+        be read against each other on the plot; the raw anchored average is in a
+        different time reference and cannot. Magnitude (getSubDb) is unaffected
+        by either, so it needs no equivalent. */
     std::vector<float> getSubPhaseDeg (const std::vector<float>& freqs) const;
 
     //==========================================================================
