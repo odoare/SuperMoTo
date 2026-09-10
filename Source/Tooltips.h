@@ -94,7 +94,7 @@ namespace mtx
         "Crosspoint gain (dB). Can also be set by dragging the cell vertically in the matrix. "
         "Right-click to type a value.";
 
-    // ── Band EQ (shared by both editors) ─────────────────────────────────────
+    // -- Band EQ (shared by both editors) -------------------------------
     inline constexpr auto bandOn =
         "Enable this filter band.";
     inline constexpr auto bandType =
@@ -214,7 +214,7 @@ namespace cal
         "Play and record every selected output once, at the current microphone position. Move "
         "the microphone and run again for each position you want to average.";
 
-    // ── SPL calibration ──────────────────────────────────────────────────────
+    // -- SPL calibration ------------------------------------------------------
     inline constexpr auto meterOn =
         "Show the live level of the measurement microphone, so a real SPL meter can be read "
         "next to it.";

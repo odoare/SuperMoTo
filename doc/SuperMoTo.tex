@@ -861,6 +861,138 @@ Both are written to \texttt{measurement.xml} and reproduced in
 \texttt{readme\_measurement.md}, the latter being the copy you can read without
 any tooling.
 
+\section{How many positions, and how far apart}\label{sec:howmany}
+The analysis averages the measurements of one loudspeaker across microphone
+positions as complex quantities, after removing each one's own arrival delay
+(Section~\ref{sec:spatialavg}). How many positions to take, and how widely to
+spread them, then decides what that average actually represents. The two
+questions have different answers, and the second matters more than the first.
+
+\subsection{How far apart: the correlation length}
+Two microphones a distance $d$ apart in a diffuse field do not measure
+independent pressures. The spatial correlation coefficient
+follows~\cite{Cook1955}
+\begin{equation}
+  R(d) = \frac{\sin kd}{kd}, \qquad k = \frac{2\pi f}{c},
+  \label{eq:spatialcorr}
+\end{equation}
+whose first zero is at $d = \lambda/2$. Below that separation the two
+measurements are largely the same measurement; above it they are effectively
+independent samples. The separation needed is therefore frequency dependent,
+and at low frequencies it is large:
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+Frequency & \SI{40}{\hertz} & \SI{100}{\hertz} & \SI{250}{\hertz}
+          & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{4}{\kilo\hertz}\\
+$\lambda/2$ & \SI{4.3}{\metre} & \SI{1.7}{\metre} & \SI{69}{\centi\metre}
+            & \SI{34}{\centi\metre} & \SI{17}{\centi\metre} & \SI{4.3}{\centi\metre}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+A cluster of positions spanning \SI{30}{\centi\metre} around the seat, which is
+the usual choice, therefore reaches $\lambda/2$ only above about
+\SI{570}{\hertz}. Everything below that is sampled inside a single correlation
+cell. Measured on a real five-position set in a small studio, the vector
+coherence $|\overline{H}| / \overline{|H|}$ (unity when every position agrees,
+zero when they are independent) bears this out:
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+Frequency & \SI{63}{\hertz} & \SI{160}{\hertz} & \SI{250}{\hertz}
+          & \SI{630}{\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz}\\
+Coherence & 0.997 & 0.98 & 0.98 & 0.73 & 0.75 & 0.36\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The consequence is worth stating plainly, because it is easy to expect
+otherwise: \textbf{a cluster of positions around one seat cannot average out
+room modes}. To decorrelate \SI{100}{\hertz} the microphone would have to move
+\SI{1.7}{\metre}, which is no longer the same listening position. Below a few
+hundred hertz the average is the response \emph{at that seat}, modes included,
+and the correction derived from it is correspondingly seat specific. That is a
+property of the physics rather than a shortcoming of the method: a modal null
+cannot be filled by boosting anyway, which is what the Max boost ceiling
+(Section~\ref{sec:correction}) is there to prevent.
+
+What the spatial averaging does buy, in the range where it works, is protection
+against over-fitting: the narrow peaks and nulls of a single-point measurement
+move with the microphone, and correcting them would make the response worse
+everywhere else.
+
+\subsection{How many: where the answer stops moving}
+The useful test is not a rule of thumb but whether the result still changes when
+a position is added or removed. Taking the same five-position set and dropping
+each position in turn, the designed correction moves by:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Band & RMS deviation & Worst case\\
+\midrule
+\SIrange{30}{80}{\hertz}       & \SI{0.22}{\dB} & \SI{0.57}{\dB}\\
+\SIrange{80}{200}{\hertz}      & \SI{0.36}{\dB} & \SI{1.52}{\dB}\\
+\SIrange{200}{500}{\hertz}     & \SI{0.25}{\dB} & \SI{1.27}{\dB}\\
+\SI{500}{\hertz} to \SI{2}{\kilo\hertz}   & \SI{0.50}{\dB} & \SI{1.82}{\dB}\\
+\SIrange{2}{8}{\kilo\hertz}    & \SI{1.11}{\dB} & \SI{6.90}{\dB}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Below \SI{500}{\hertz} the answer is settled to a quarter of a decibel, which
+follows directly from the coherence above: those positions are not independent,
+so adding more of them changes nothing. The only band that has not converged is
+above \SI{2}{\kilo\hertz}, and that is also the band where a detailed
+correction is least useful, since it will not hold a few centimetres away. The
+effective remedy there is broader high-frequency smoothing
+(Section~\ref{sec:smoothing}), not more measurements. Reducing the set from five
+positions to three roughly doubles these figures, consistent with the $1/\sqrt N$
+one would expect from averaging independent samples.
+
+\subsection{Practical recommendation}
+\begin{itemize}[nosep]
+  \item \textbf{Seven to nine positions} for a single listening seat. Five is
+        already enough below \SI{500}{\hertz}; the extra positions only earn
+        their keep higher up, where the return diminishes as $1/\sqrt N$.
+  \item \textbf{Spread them over \SIrange{30}{50}{\centi\metre}}, about the
+        volume a head occupies while working. Much wider and the mid band is
+        averaged towards something true at no single seat, without buying any
+        accuracy in the bass, where the wavelengths are metres.
+  \item \textbf{Use all three dimensions.} A flat cross in the horizontal plane
+        misses the fastest-changing direction: the desk and ceiling reflections
+        vary more with height than with lateral position. Two or three points
+        at $\pm$\SIrange{10}{15}{\centi\metre} vertically are worth more than
+        the same number added to the plane.
+  \item \textbf{Keep the geometry constant between speakers.} The group
+        analysis pairs measurements by load order, so speaker~1 position~3 and
+        speaker~2 position~3 should be the same point in space.
+  \item If the system must serve a listening \emph{area} rather than a seat,
+        positions have to cover that area, and the low end then becomes an
+        explicit compromise rather than a correction. No single filter can
+        serve two seats a metre apart below a few hundred hertz.
+\end{itemize}
+
+\subsection{A subwoofer argues for keeping the cluster tight}
+When a subwoofer set is loaded, each of its measurements is anchored on the
+delay of the main measurement taken at the same position
+(Section~\ref{sec:subalign}), which is what preserves the main-to-sub timing.
+The residual offsets $\tau^{(n)}_\mathrm{sub} - \tau^{(n)}_\mathrm{main}$ differ
+from position to position, and the anchored average is only well conditioned
+while that spread is small compared with a period at the crossover. On the
+five-position set above the spread is \SI{0.57}{\milli\second}, about
+\SI{35}{\degree} at \SI{170}{\hertz}, which is harmless. Spreading the same
+positions over a metre or more would grow it several-fold, the anchored average
+would partially cancel, and the crossover-region estimates
+(Section~\ref{sec:subalign}) would degrade. Widening the array to improve the
+subwoofer integration makes it worse.
+
 \section{The measurement microphone}\label{sec:micchoice}
 What the analysis sees is the loudspeaker and room \emph{as sampled by the
 microphone}. The microphone is therefore part of the measurement chain, and the
@@ -1467,7 +1599,7 @@ window rather than being truncated, and how much pre-ringing a linear-phase
 filter is introducing. Changing \textbf{FIR length} or \textbf{Phase} updates
 it immediately.
 
-\section{Fractional-octave smoothing}
+\section{Fractional-octave smoothing}\label{sec:smoothing}
 A \textbf{$1/n$-octave smoothing} is applied both to the displayed curves and
 to the average from which the correction is derived. It is a \textbf{complex}
 moving average (magnitude and phase together) over a logarithmic band
@@ -1655,7 +1787,7 @@ illustrative, not real measurement data.}}
 \label{fig:correction}
 \end{figure}
 
-\section{Subwoofer phase alignment}
+\section{Subwoofer phase alignment}\label{sec:subalign}
 Where a main and a subwoofer overlap around a crossover, their outputs add as
 \emph{complex} pressures: a flat summed response requires the two to be in
 phase through the crossover region, otherwise the overlap shows a dip (or, if
@@ -2647,6 +2779,11 @@ no.~10, pp.~786--798, 2015.
 P.~D. Hatziantoniou and J.~N. Mourjopoulos, ``Generalized fractional-octave
 smoothing of audio and acoustic responses,'' \textit{J. Audio Eng. Soc.},
 vol.~48, no.~4, pp.~259--280, 2000.
+
+\bibitem{Cook1955}
+R.~K.~Cook, R.~V.~Waterhouse, R.~D.~Berendt, S.~Edelman and M.~C.~Thompson,
+``Measurement of correlation coefficients in reverberant sound fields'',
+\emph{J. Acoust. Soc. Am.} \textbf{27}(6), 1072--1077, 1955.
 
 \bibitem{Mourjopoulos1994}
 J.~N. Mourjopoulos, ``Digital equalization of room acoustics,''

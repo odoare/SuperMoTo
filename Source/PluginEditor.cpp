@@ -54,6 +54,17 @@ namespace mini
     constexpr int metersMinW = 56;      // keep the meter row readable at 4 outs
 }
 
+// Top bar (full and strip layouts). The left zone holds the logo, the title and
+// the version number; resized() skips it before placing the first control, so
+// paint() has to keep its text inside titleEnd or it draws over the collapse
+// button. resized() insets the bar by `inset` first, hence the two values.
+namespace topBar
+{
+    constexpr int inset    = 6;
+    constexpr int titleW   = 232;               // as seen by the inset bar
+    constexpr int titleEnd = inset + titleW;    // as seen by paint()
+}
+
 //==============================================================================
 SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
@@ -703,9 +714,22 @@ void SuperMoToAudioProcessorEditor::paint (juce::Graphics& g)
     if (logo.isValid())
         g.drawImage (logo, juce::Rectangle<float> (8.0f, 6.0f, 48.0f, 48.0f),
                      juce::RectanglePlacement::centred);
+    const juce::Font titleFont (juce::FontOptions (24.0f, juce::Font::bold));
     g.setColour (SuperMoToTheme::text);
-    g.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    g.setFont (titleFont);
     g.drawText ("SuperMoTo", 62, 0, 170, top.getHeight(), juce::Justification::centredLeft);
+
+    // Version, small and dim, centred beside the title. ProjectInfo is
+    // generated from the project() VERSION in CMakeLists.txt, so the number
+    // here follows a release bump with nothing else to edit. The box is
+    // clipped to the title zone: a longer string (a "-beta" suffix, say) is
+    // ellipsised rather than drawn over the controls.
+    const int versionX = 62 + (int) juce::GlyphArrangement::getStringWidth (titleFont, "SuperMoTo") + 6;
+    g.setColour (SuperMoToTheme::dimText);
+    g.setFont (juce::Font (juce::FontOptions (12.0f)));
+    g.drawText ("v" + juce::String (ProjectInfo::versionString),
+                versionX, 0, juce::jmax (0, topBar::titleEnd - versionX), top.getHeight(),
+                juce::Justification::centredLeft);
 }
 
 void SuperMoToAudioProcessorEditor::resized()
@@ -743,8 +767,8 @@ void SuperMoToAudioProcessorEditor::resized()
     // ── Top bar ──────────────────────────────────────────────────────────────
     // Left-packed and kept within the matrix width, so the strip window
     // (sized to the matrix) shows every control.
-    auto top = area.removeFromTop (60).reduced (6);
-    top.removeFromLeft (232);                       // logo + title
+    auto top = area.removeFromTop (60).reduced (topBar::inset);
+    top.removeFromLeft (topBar::titleW);            // logo + title + version
     collapseButton.setBounds (top.removeFromLeft (28).reduced (0, 14));
     top.removeFromLeft (12);
 
