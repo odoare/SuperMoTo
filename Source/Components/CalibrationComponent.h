@@ -5,7 +5,8 @@
     Part 2 GUI: measurement of the loudspeakers and the full system. Select the
     microphone input, the measurement type (Dry outputs / outputs+FIR / complete
     System), the channels to measure (outputs, or plugin inputs in System mode),
-    the stimulus (band limited white noise or log sweep, 10 Hz .. 20 kHz), the
+    the stimulus (band limited white noise over 10 Hz .. 20 kHz, or a log sweep
+    running from ~11 Hz up to Nyquist), the
     duration (5..30 s) and the base pathname; Run measures each selected channel
     in turn and writes stereo files (ch 1 = sent, ch 2 = recorded). System mode
     sends the stimulus through the whole engine (matrix, crossover, FIRs, latency
@@ -114,7 +115,7 @@ public:
 
         addLabel (signalLabel, "Signal");
         signalBox.addItem ("White noise (10 Hz - 20 kHz)", 1);
-        signalBox.addItem ("Log sweep (10 Hz - 20 kHz)", 2);
+        signalBox.addItem ("Log sweep (~11 Hz - Nyquist)", 2);
         signalBox.setSelectedId (2, juce::dontSendNotification);
         signalBox.setTooltip (smt::tips::cal::signal);
         SuperMoToTheme::accentComboBox (signalBox, SuperMoToTheme::measure);

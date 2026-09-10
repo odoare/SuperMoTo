@@ -15,8 +15,24 @@
 namespace smt
 {
 
-static constexpr float tailSeconds = 1.0f;      // capture the decay
-static constexpr float fadeSeconds = 0.02f;     // stimulus fade in/out
+static constexpr float tailSeconds   = 1.0f;    // capture the decay
+static constexpr float fadeInSeconds = 0.02f;   // stimulus fade in, both signals
+
+// Fade-OUT length. A long one is what Farina (AES 122, 2007, section 3.1) warns
+// against: on a sweep it tapers the top of the swept band, which smears the
+// deconvolved peak. Measured on a loopback, 20 ms costs 15..25 dB of ringing
+// around the peak while 0.5 ms costs at most 0.6 dB, so a sweep gets a token
+// fade-out only.
+//
+// It cannot be dropped altogether. The sweep now ends AT Nyquist, where every
+// remaining sample carries the same magnitude — so Farina's other remedy, cutting
+// at the last zero crossing, has nothing to cut to, and the final sample would
+// step from near full scale straight to silence. That is a broadband click into
+// the tweeter even though the deconvolution itself tolerates it.
+//
+// Noise is analysed by Welch and never deconvolved, so it keeps a normal fade.
+static constexpr float sweepFadeOutSeconds = 0.0005f;
+static constexpr float noiseFadeOutSeconds = 0.02f;
 
 // Filename grammar shared by the writer (MeasurementEngine) and the reader
 // (scanMeasurementFolder): "ch<NN>_pos<PPP>.wav", "in<NN>_pos<PPP>.wav", or
@@ -99,29 +115,35 @@ bool MeasurementEngine::start (const Settings& s)
         positions.push_back (maxPos + 1);
     }
 
-    // Log sweep parameters (f1 = sweepF1Hz, f2 = sweepF2Hz):
+    // This run's sweep band: up to Nyquist over a whole number of octaves.
+    sweepBandFor (sr, sweepF1, sweepF2);
+
+    // Log sweep parameters (f1 = sweepF1, f2 = sweepF2):
     //   phase(t) = K * (exp(t/L) - 1),  K = 2*pi*f1*L,
     // with L QUANTIZED so f1*L is an integer — the synchronized swept-sine
     // of Novak et al. (JAES 2015). That makes the harmonic impulse responses
     // separate with true phase when the recording is deconvolved by the
     // sweep's analytic inverse (the sweep sounds the same; only its exact
-    // duration moves slightly off the requested one).
+    // duration moves slightly off the requested one). With f2/f1 an exact
+    // power of two, that same condition also puts the sweep's total phase at
+    // an integer multiple of 2*pi, so it ends at a zero crossing.
     const double T = (double) settings.durationS;
-    sweepL = fxme::SynchronizedSweep::synchronizedL (sweepF1Hz, sweepF2Hz, T);
-    sweepK = 2.0 * juce::MathConstants<double>::pi * sweepF1Hz * sweepL;
+    sweepL = fxme::SynchronizedSweep::synchronizedL (sweepF1, sweepF2, T);
+    sweepK = 2.0 * juce::MathConstants<double>::pi * sweepF1 * sweepL;
 
     // Sweep runs use the exact synchronized duration L*ln(f2/f1); noise runs
     // keep the requested duration.
     const double actualT = settings.signalType == SignalType::logSweep
-                               ? sweepL * std::log (sweepF2Hz / sweepF1Hz)
+                               ? sweepL * std::log (sweepF2 / sweepF1)
                                : T;
     stimulusSamples = (int) std::llround (actualT * sr);
     totalSamples    = stimulusSamples + (int) (tailSeconds * sr);
     capture.setSize (2, totalSamples);
 
-    // Band-limit the white noise to the same band.
-    noiseHp.c = fxme::BiquadCoeffs::highpass (sr, (float) sweepF1Hz, 0.707f);
-    noiseLp.c = fxme::BiquadCoeffs::lowpass (sr, juce::jmin ((float) sweepF2Hz, (float) (0.45 * sr)), 0.707f);
+    // Band-limit the white noise to its own fixed band, so it is unaffected by
+    // where the sweep band happens to land at this sample rate.
+    noiseHp.c = fxme::BiquadCoeffs::highpass (sr, (float) noiseF1Hz, 0.707f);
+    noiseLp.c = fxme::BiquadCoeffs::lowpass (sr, juce::jmin ((float) noiseF2Hz, (float) (0.45 * sr)), 0.707f);
 
     currentChannel = 0;
     startCurrentOutput();
@@ -173,6 +195,27 @@ void MeasurementEngine::setStatus (const juce::String& s)
     statusText = s;
 }
 
+void MeasurementEngine::sweepBandFor (double sampleRate, double& f1, double& f2) noexcept
+{
+    if (sampleRate <= 0.0)      // not prepared yet: fall back to the legacy band
+    {
+        f1 = 10.0;
+        f2 = 20000.0;
+        return;
+    }
+
+    f2 = 0.5 * sampleRate;
+
+    // P octaves below Nyquist, P picked to land f1 as close as possible to
+    // targetF1Hz: 11 octaves gives 10.8 Hz at 44.1 kHz and 11.7 Hz at 48 kHz,
+    // 12 octaves the same two figures at 88.2 and 96 kHz. Both sit below the
+    // half-octave skirt under the analysis band's 20 Hz default, so nothing
+    // downstream loses range against the old fixed 10 Hz start.
+    constexpr double targetF1Hz = 10.5;
+    const int p = juce::jlimit (4, 16, (int) std::llround (std::log2 (f2 / targetF1Hz)));
+    f1 = f2 / std::pow (2.0, (double) p);
+}
+
 float MeasurementEngine::nextStimulusSample()
 {
     if (genPos >= stimulusSamples)
@@ -191,12 +234,16 @@ float MeasurementEngine::nextStimulusSample()
         v = noiseLp.processSample (noiseHp.processSample (v));
     }
 
-    // Fade in/out to avoid clicks.
-    const int fadeSamples = juce::jmax (1, (int) (fadeSeconds * sr));
-    if (genPos < fadeSamples)
-        v *= (float) genPos / (float) fadeSamples;
-    else if (genPos > stimulusSamples - fadeSamples)
-        v *= (float) (stimulusSamples - genPos) / (float) fadeSamples;
+    // Fade in/out to avoid clicks. The sweep's fade-out is deliberately a
+    // token one; see sweepFadeOutSeconds for why it is neither 20 ms nor zero.
+    const bool sweeping = settings.signalType == SignalType::logSweep;
+    const int fadeIn  = juce::jmax (1, (int) (fadeInSeconds * sr));
+    const int fadeOut = juce::jmax (1, (int) ((sweeping ? sweepFadeOutSeconds
+                                                        : noiseFadeOutSeconds) * sr));
+    if (genPos < fadeIn)
+        v *= (float) genPos / (float) fadeIn;
+    else if (genPos > stimulusSamples - fadeOut)
+        v *= (float) (stimulusSamples - genPos) / (float) fadeOut;
 
     ++genPos;
     return v * levelGain;
@@ -434,8 +481,8 @@ void MeasurementEngine::writeManifests() const
         // exact stimulus: phase(t) = 2*pi*f1*L*(exp(t/L) - 1), L in seconds.
         if (settings.signalType == SignalType::logSweep)
         {
-            run->setAttribute ("sweepF1", sweepF1Hz);
-            run->setAttribute ("sweepF2", sweepF2Hz);
+            run->setAttribute ("sweepF1", sweepF1);
+            run->setAttribute ("sweepF2", sweepF2);
             run->setAttribute ("sweepL", sweepL);
         }
 
@@ -484,7 +531,11 @@ void MeasurementEngine::writeManifests() const
                           : settings.mode == MeasureMode::outputFir ? "Output + FIR" : "Dry outputs") << "\n";
     out << "- Signal: " << (settings.signalType == SignalType::logSweep ? "Log sweep" : "White noise")
         << ", " << juce::String (settings.durationS, 0) << " s, "
-        << juce::String (settings.levelDb, 1) << " dB\n";
+        << juce::String (settings.levelDb, 1) << " dB";
+    if (settings.signalType == SignalType::logSweep)
+        out << ", " << juce::String (sweepF1, 2) << " Hz .. "
+            << juce::String (sweepF2, 0) << " Hz";
+    out << "\n";
     out << "- Mic input: " << (settings.micInput + 1) << "\n";
     if (settings.micCalName.isNotEmpty())
         out << "- Mic calibration: " << settings.micCalName << "\n";

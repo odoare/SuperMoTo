@@ -68,48 +68,156 @@
     workflow: load measurements, describe the set, compute alignment, apply &
     export.*
 
+- [x] In the group analysis, the detected delay between the subwoofer and the main speakers is displayed but it is not possible to modify this value. Like in the single analysis panel, the user should be allowed to modify this value and the graph sould be updated to show the effect on the phase alignment of the change.
+
+    *Neither of the two options in the 2026-09-05 design note was taken. Instead
+    of making the per-row `alignedDelayMs` editable, or surfacing
+    `estimateMainSubOffsetMs()` on every row, the sub row alone carries a `Sub
+    trim` slider (+/-40 ms) that offsets the sub against the rest of the group:
+    `SpeakerGroupAnalysis::setSubTrimMs`, applied on top of the arrival-time
+    delays so the "farthest driver gets 0" invariant survives. A `Use x-over`
+    button fills it from the measured crossover-band phase slope
+    (`getSuggestedSubTrimMs()`), with a read-out next to it, and the button
+    stays disabled while that estimate is not usable. The plots follow the
+    slider live, and `finalizeApply` writes the trimmed delay to the output.*
+
+- [x] Tooltips should be generalized to all controls and show a buton '(?)' to enable/disable them left to the matrix button.
+
+    *`Source/Tooltips.h` holds every hover-help string in one place: 113 strings
+    in a namespace per pane (`bar`, `mtx`, `cfg`, `cal`, `ana`, `grp`) plus
+    `shared`, wired into 118 `setTooltip` call sites across the editor and all
+    seven component headers. The `?` toggle ended up at the RIGHT of the bottom
+    view switcher rather than left of the matrix button, next to the other view
+    buttons. It drives a `ToggleableTooltipWindow` (a `juce::TooltipWindow`
+    whose `getTipFor` returns nothing when off), so one flag silences the whole
+    plugin; the state persists via `smt::getUiTooltips()`.*
+
+- [x] Implementation of an even more compact view with on first row: the existing controls until the (Exclusive) button. Second row: the Volume button, the mute/dim/mono buttons, and small vertical meters for the outputs.
+
+    *`PluginEditor::Compact` now has three states cycled by the top-bar collapse
+    button: `off` (full editor), `strip` (top bar plus the matrix output strip)
+    and `mini` (the requested two-row layout). Mini uses the new
+    `smt::OutputMetersStrip`, a row of narrow vertical meters fed from
+    `MatrixEngine::getOutputLevelDb()` -- display only, so a stray click cannot
+    act on an output the way the matrix strip would. `miniWindowSize()` fixes
+    the window to the output count. The mode persists via
+    `smt::getUiCompactMode()`, falling back to the older boolean `uiCollapsed`
+    setting.*
+
+- [x] Measurement : reduce the pre-ringing of the sweep-deconvolved impulse responses by running the sweep up to Nyquist over an integer number of octaves, and by shortening the fade-out on sweeps. Papers: Farina, AES 122 (2007) "Advancements in impulse response measurements by sine sweeps", section 3.1; Vetter & di Rosario (2011) "ExpoChirpToolbox", sections 2.1 and 2.5.
+
+    *Analysis note (2026-09-10), measured before implementing. The ringing
+    around the peak of a sweep-deconvolved IR is NOT Farina's fade-out
+    artifact: it is the symmetric sinc of the stimulus band edge at
+    `sweepF2Hz` = 20 kHz. Simulating our own path (the synchronized sweep of
+    `nextStimulusSample` deconvolved by `SynchronizedSweep::deconvolve`, with a
+    pure delay standing in for a loopback) gives, as worst ringing within 20 ms
+    of the peak relative to the peak:*
+
+    | Stimulus band | 44.1 kHz | 48 kHz | 96 kHz |
+    |---|---|---|---|
+    | 10 Hz .. 20 kHz (current) | -21.0 dB | -17.9 dB | -14.9 dB |
+    | f1 .. Nyquist, integer octaves | -52.9 dB | -61.0 dB | -62.2 dB |
+
+    *So the artifact is large (~-18 dB at 48 kHz) and it gets WORSE as the
+    sample rate rises, because the gap between 20 kHz and Nyquist grows. The
+    other remedies in the papers measure much smaller here: removing the 20 ms
+    fade-out alone changes the result by under 0.5 dB (it tapers only
+    19695 .. 20000 Hz, i.e. 0.022 octave -- Farina's warning applies to his
+    case where the sweep already ran to Nyquist, so the fade was the only thing
+    shaping the top edge).*
+
+    *A code fact supports the same conclusion independently: the analytic
+    inverse in `SynchronizedSweep::deconvolve` is applied unregularized from
+    bin 1 to Nyquist. Its group delay is -L*ln(f/f1), so content ABOVE f2 is
+    assigned negative delay and lands BEFORE the impulse, while the sqrt(f)
+    term amplifies it. Attenuating 20 .. 24 kHz with a converter low-pass
+    improved the current setup by 10 dB, which confirms the mechanism. Sweeping
+    to Nyquist removes the out-of-band region entirely, so no epsilon(f)
+    regularization of the inverse is needed. If f2 is ever kept below Nyquist
+    instead, such an epsilon(f) must rise only OUTSIDE [f1, f2]: a half-octave
+    raised-cosine skirt reaching inside the band cost 40 dB in the same test.*
+
+    *Reaching Nyquist accounts for most of the gain (-18 -> -53 dB at 48 kHz).
+    Choosing an integer OCTAVE count rather than any integer ratio adds a
+    further 8 dB, by landing the final sample closer to the true zero crossing.
+    An integer frequency ratio also makes the sweep's end phase an exact
+    multiple of 2*pi on top of Novak's f1*L integer condition, so the sweep
+    ends at a zero crossing and needs no fade-out; verified at every rate
+    tested.*
+
+    *Plan:*
+
+      *1. Make the sweep band per-run instead of the `sweepF1Hz` / `sweepF2Hz`
+      constants in `MeasurementEngine.h`. Set f2 = sr/2 and f1 = f2 / 2^P, with
+      P = 11 at 44.1/48 kHz and P = 12 at 88.2/96 kHz. That puts f1 between
+      10.8 and 11.7 Hz at every rate, so the analysis band and its half-octave
+      skirt lose nothing.*
+
+      *2. Split the fade logic in `nextStimulusSample`: noise keeps a 20 ms
+      fade-out, sweeps get a token one. The two changes are COUPLED -- at
+      Nyquist the fade-out becomes the only thing shaping the top edge, so a
+      20 ms one costs 15..25 dB.*
+
+      *3. Pin the noise band at 20 kHz rather than letting `noiseLp` follow f2,
+      so noise measurements do not silently change.*
+
+      *4. Nothing changes on the analysis side. `measurement.xml` already
+      records f1/f2/L per run and the analysis reads them back, so existing
+      measurement folders keep deconvolving exactly as they do now.*
+
+    *Two caveats to check before committing. The tweeter now receives content
+    up to Nyquist, though the per-octave energy is unchanged and the top octave
+    lasts ~90 ms of a 10 s sweep, and the DAC reconstruction filter attenuates
+    it; worth one listening check at reduced level. And the fundamental range
+    whose 2nd harmonic aliases grows, which affects the H2..H5 curves but is
+    not a regression, since it already aliased above sr/4.*
+
+    *Deliberately NOT doing two things the papers suggest, both measured as not
+    worth it. A Kirkeby "packing" filter derived from a loopback reference
+    (Farina 2007, section 3.1, after Kirkeby/Rubak/Farina "Fast Deconvolution
+    using Frequency-Dependent Regularization") improved far pre-ringing from
+    -22 to -32 dB on an AC-coupled chain but did nothing within 1 ms of the
+    peak, and too large a regularization made it worse; it would also need a
+    new reference-measurement workflow. And replacing the soft-knee tanh boost
+    limiter in `recomputeCorrection` with Kirkeby's conj(H)/(|H|^2 + eps) gave
+    no measurable change in the correction FIR's pre-echo at matched peak
+    boost: the existing limiter plus the complex fractional-octave smoothing
+    already does that job.*
+
+    *Implemented 2026-09-10. Two deviations from the plan above, both found by
+    measuring during implementation rather than before it.*
+
+    *Truncating the sweep at its last zero crossing was DROPPED: it does
+    nothing. The sweep now ends at Nyquist, where consecutive samples differ
+    only in sign, so every candidate end sample carries the same magnitude and
+    there is no zero crossing to cut to. Measured, truncation left the last
+    sample at 0.960 and the ringing at -61.0 dB, i.e. unchanged. Farina's
+    remedy only applies when the sweep stops below Nyquist.*
+
+    *The fade-out was therefore NOT removed but shortened to 0.5 ms
+    (`sweepFadeOutSeconds`). Scanning 0 .. 20 ms across 44.1/48/96 kHz and
+    5/10/30 s durations, everything up to about 1 ms sits within 1 dB of the
+    optimum while 4 ms and beyond costs real dB. Zero was marginally best on
+    average, but it leaves the final sample stepping from ~0.96 to silence,
+    which is a broadband click into the tweeter that the deconvolution happens
+    to tolerate; 0.5 ms costs at most 0.6 dB and removes it.*
+
+    *Everything else went in as planned: `MeasurementEngine::sweepBandFor`
+    derives f2 = Nyquist and f1 = f2/2^P with P from a ~10.5 Hz target (11
+    octaves at 44.1/48 kHz, 12 at 88.2/96 kHz), the noise band is pinned to its
+    own `noiseF1Hz`/`noiseF2Hz`, and the per-run band goes to `measurement.xml`
+    and to `readme_measurement.md`. The analysis side is untouched and old
+    folders still deconvolve with the band recorded in their own manifest. The
+    Calibration signal combo and the `cal::signal` tooltip now say the sweep
+    runs to Nyquist. NOT yet done: the two hardware checks from the caveats
+    above, namely a listening check at reduced level and a look at what the
+    widened aliasing range does to the H2..H5 curves.*
+
+    *Written up in full in `doc/note_on_pre-ringing_fix/`: the derivations, the
+    loopback measurements that separated the three candidate mechanisms, the
+    proof that Farina's zero-crossing cut cannot work once the sweep reaches
+    Nyquist, and the two rejected options with their numbers.*
+
 ## To do
-
-- [] In the group analysis, the detected delay between the subwoofer and the main speakers is displayed but it is not possible to modify this value. Like in the single analysis panel, the user should be allowed to modify this value and the graph sould be updated to show the effect on the phase alignment of the change.
-
-    *Design note (2026-09-05), to settle before implementing. The two panels do
-    not measure the same thing, so "the same control as the single analysis
-    panel" is not a straight port.*
-
-    *The single panel has two independent numbers: `estimateMainSubOffsetMs()`
-    (a least-squares fit of the sub's unwrapped phase over crossover/2 ..
-    crossover x2, i.e. the sub's group delay in the crossover region), shown as
-    a suggestion in `alignInfo`, and the `Mains delay` slider, which the user
-    sets freely in +/-40 ms and which feeds `setTimeAlignMs` so the plot follows
-    live. The group panel never calls that estimator. Its row readout is
-    `alignedDelayMs`, an arrival-time difference derived from the median IR-peak
-    delay of each entry (`getPropagationDelayMs`), computed only when Compute
-    alignment is pressed, and the same value is later written to the output as
-    its bulk delay by `finalizeApply`.*
-
-    *So a speaker's readout only reads as a main/sub offset when the sub happens
-    to be the farthest driver; it is really a group-wide relative delay, and the
-    sub row carries one too. Two ways to go:*
-
-      *1. Make `alignedDelayMs` editable per row (an override of the group
-      alignment). It would have to feed `setTimeAlignMs` on that speaker to move
-      the phase plot; `finalizeApply` already picks it up for the output delay.
-      But the group is then no longer aligned on a common reference and the
-      "farthest driver gets 0" invariant becomes the user's problem.*
-
-      *2. Surface `estimateMainSubOffsetMs()` in the group panel as well and let
-      `timeAlignMs` diverge from `alignedDelayMs`, matching the single panel
-      exactly. Cleaner conceptually, but it splits one readout into two numbers
-      per row, and a row already carries name, load, status, delay, trim and
-      output.*
-
-    *Either way there is a staleness question: Compute alignment currently
-    overwrites these fields wholesale, so an edit must either survive a
-    recompute or be visibly reset by it. Note also that changing any shared
-    setting (crossover included) silently leaves `alignedDelayMs` and every trim
-    figure stale until Compute is pressed again.*
-
-- [] Tooltips should be generalized to all controls and show a buton '(?)' to enable/disable them left to the matrix button.
-
-- [] Implementation of an even more compact view with on first row: the existing controls until the (Exclusive) button. Second row: the Volume button, the mute/dim/mono buttons, and small vertical meters for the outputs.
 

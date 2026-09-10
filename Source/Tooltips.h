@@ -182,7 +182,9 @@ namespace cal
         "White noise: works with any analysis, needs a longer capture for the same "
         "signal-to-noise ratio.\n"
         "Log sweep: also enables the synchronized-sweep analysis (true phase in one shot, plus "
-        "the harmonic-distortion curves). Its parameters are written into measurement.xml.";
+        "the harmonic-distortion curves). It runs all the way to Nyquist over a whole number of "
+        "octaves, which is what keeps the deconvolved impulse response free of ringing around "
+        "its peak. Its parameters are written into measurement.xml.";
     inline constexpr auto duration =
         "Length of each capture. Longer is quieter (more averaging) but slower; a sweep needs "
         "enough length for its harmonics to separate.";

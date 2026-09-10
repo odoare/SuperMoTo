@@ -3,10 +3,12 @@
     MeasurementEngine.h
 
     Part 2 of SuperMoTo: loudspeaker / system measurement. Sends a stimulus
-    (band limited white noise, or a SYNCHRONIZED logarithmic sweep — Novak et
-    al. JAES 2015, f1*L integer so deconvolution separates the harmonic IRs
-    with true phase — 10 Hz .. 20 kHz) to each selected channel in turn while
-    recording the measurement microphone on a selected input. Each measurement
+    (band limited white noise over 10 Hz .. 20 kHz, or a SYNCHRONIZED
+    logarithmic sweep — Novak et al. JAES 2015, f1*L integer so deconvolution
+    separates the harmonic IRs with true phase — running from ~10 Hz up to
+    NYQUIST over a whole number of octaves, see sweepBandFor) to each selected
+    channel in turn while recording the measurement microphone on a selected
+    input. Each measurement
     is a stereo file with channel 1 = sent signal and channel 2 = recorded
     signal; measurement.xml records the sweep identity (f1, f2, L) per run.
 
@@ -101,9 +103,27 @@ private:
 
     float nextStimulusSample();
 
-    // Stimulus band, shared by the sweep parameters, the noise band-limiting
-    // and the manifest (the analysis side reads them back from there).
-    static constexpr double sweepF1Hz = 10.0, sweepF2Hz = 20000.0;
+    // Noise band, fixed. The sweep band is derived per run instead (see
+    // sweepBandFor), so changing it cannot move the noise stimulus.
+    static constexpr double noiseF1Hz = 10.0, noiseF2Hz = 20000.0;
+
+    /** This run's sweep band: f2 = Nyquist, f1 = f2 / 2^P with P chosen to
+        land f1 near 10 Hz (11 octaves at 44.1/48 kHz, 12 at 88.2/96 kHz).
+
+        Running the sweep all the way to Nyquist is what keeps the deconvolved
+        impulse response clean. Stopping short of it leaves a brick-wall band
+        edge whose symmetric sinc rings around the peak of every measurement;
+        measured on a loopback that ringing is about -18 dB at 48 kHz, and it
+        gets WORSE as the sample rate rises because the gap to Nyquist grows.
+        Sweeping to Nyquist is worth ~43 dB of it. An integer octave count
+        additionally makes the sweep's end phase an exact multiple of 2*pi on
+        top of Novak's f1*L condition, so the sweep ends at a zero crossing of
+        its own accord. See Farina, AES 122 (2007), section 3.1, and Vetter &
+        di Rosario, ExpoChirpToolbox (2011), sections 2.1 and 2.5.
+
+        Written to the manifest per run, so folders measured with the older
+        fixed 10 Hz .. 20 kHz band keep deconvolving with their own band. */
+    static void sweepBandFor (double sampleRate, double& f1, double& f2) noexcept;
 
     double sr = 44100.0;
 
@@ -123,6 +143,7 @@ private:
     // Generators
     juce::Random random;
     fxme::Biquad noiseHp, noiseLp;
+    double sweepF1 = 0.0, sweepF2 = 0.0;    // this run's sweep band
     double sweepK = 0.0, sweepL = 0.0;
     int genPos = 0;
     float levelGain = 1.0f;
