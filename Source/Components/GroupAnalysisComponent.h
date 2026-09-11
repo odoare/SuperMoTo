@@ -712,6 +712,13 @@ private:
     // just noise — band-limiting keeps that preview (and the otherwise-unused
     // correction the engine still computes internally) meaningful rather than
     // fitting noise up to the shared speaker range's top end.
+    //
+    // NOTE: the effective cap is 500 Hz, not 300. AnalysisEngine::setAnalysisRange
+    // floors the high edge at max(lowHz * 1.1, 500), so the 300 asked for here is
+    // raised to 500 for every usable low edge. The sub's preview band is therefore
+    // 500 Hz wide at the top, and the group report states the engine's actual
+    // value rather than this one. Lowering that floor is the only way to make
+    // this constant bite.
     static constexpr float subMaxRangeHz = 300.0f;
 
     // The sweep identity for one entry's file set, from the folder manifest

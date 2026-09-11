@@ -536,6 +536,16 @@ public:
             return result;
         }
 
+        // Every shared setting below reads off sub.engine, which is fine because
+        // they are pushed uniformly — EXCEPT the analysis range. The sub's high
+        // edge is deliberately capped below the shared Range control (see
+        // GroupAnalysisComponent::subMaxRangeHz and the class doc), so reading
+        // the range from the sub would report the sub's narrower band as if it
+        // were the group's. The speakers carry the range the correction was
+        // actually designed with.
+        const AnalysisEngine& rangeEngine = activeCount > 0 ? *speakers[0].engine
+                                                            : *sub.engine;
+
         result.report << "# SuperMoTo multi-speaker alignment report\n\n"
                        << juce::Time::getCurrentTime().toString (true, true) << "\n\n"
                        << "## Group settings\n\n"
@@ -544,8 +554,10 @@ public:
                        << " (LF) / " << smoothingLabel (sub.engine->getSmoothingHigh()) << " (HF)\n"
                        << "- Correction level: " << juce::String (sub.engine->getCorrectionLevel(), 2) << "\n"
                        << "- Max boost: " << juce::String (sub.engine->getMaxBoostDb(), 1) << " dB\n"
-                       << "- Analysis range: " << juce::String (sub.engine->getAnalysisLowHz(), 0)
-                       << " Hz - " << juce::String (sub.engine->getAnalysisHighHz(), 0) << " Hz\n"
+                       << "- Analysis range: " << juce::String (rangeEngine.getAnalysisLowHz(), 0)
+                       << " Hz - " << juce::String (rangeEngine.getAnalysisHighHz(), 0)
+                       << " Hz (speakers; the subwoofer's own range is narrower, "
+                          "reported with it below)\n"
                        << "- Crossover: " << juce::String (sub.engine->getCrossoverHz(), 0) << " Hz"
                        << (sub.engine->getSubPolarityInverted() ? " (sub inverted)" : "") << "\n"
                        << "- Sub trim: " << juce::String (subTrimMs, 2)
@@ -663,7 +675,12 @@ public:
         else
         {
             reportFiles (sub);
-            result.report << "- Crossover-band level ("
+            result.report << "- Analysis range: "
+                           << juce::String (sub.engine->getAnalysisLowHz(), 0) << " Hz - "
+                           << juce::String (sub.engine->getAnalysisHighHz(), 0)
+                           << " Hz (capped below the group's: above a subwoofer's real "
+                              "passband a broadband measurement is just noise)\n"
+                           << "- Crossover-band level ("
                            << juce::String (sub.engine->getCrossoverHz() / subMatchHalfWidth, 0)
                            << " - "
                            << juce::String (sub.engine->getCrossoverHz() * subMatchHalfWidth, 0)

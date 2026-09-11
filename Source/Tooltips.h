@@ -44,7 +44,11 @@ namespace bar
         "Show this configuration in the matrix without engaging it, so it can be edited while "
         "another one plays.";
 
-    inline constexpr auto ins  = "Number of matrix inputs (rows).";
+    inline constexpr auto ins  =
+        "Number of matrix inputs (rows). Two is the stereo mixing case; raise it when the "
+        "source itself is multichannel: 6 for 5.1, 8 for 7.1, 12 for a 7.1.4 immersive bed, "
+        "or 4 / 9 / 16 for first / second / third-order Ambisonics. The Config tool sets it "
+        "for you when you apply a layout.";
     inline constexpr auto outs = "Number of matrix outputs (columns), i.e. speakers.";
 
     inline constexpr auto viewMatrix   = "Routing matrix, per-output chain and the analyzer.";
