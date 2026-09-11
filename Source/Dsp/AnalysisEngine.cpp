@@ -518,7 +518,21 @@ void AnalysisEngine::setAnalysisRange (float lowHz, float highHz)
 }
 
 // 1 inside [analysisLowHz, analysisHighHz], rolling smoothly to 0 over a
-// half-octave raised-cosine skirt below the low edge and above the high edge.
+// raised-cosine skirt below the low edge and above the high edge.
+//
+// The low skirt is always half an octave: there is room for it below any
+// sensible low edge. The high one is COMPRESSED to whatever fits under
+// Nyquist. A half octave above a 20 kHz edge would end at 28.3 kHz, past
+// Nyquist at 44.1 and 48 kHz, so the skirt never completed and the correction
+// was still applying real boost at the last bin — 0.82 of full weight at
+// 22.05 kHz, 0.46 at 24 kHz. That boost is aimed at the tweeter's roll-off and
+// the converter's anti-alias filter, neither of which an FIR can undo, and it
+// is what lengthens the rendered correction. Measured on a 4096-tap
+// linear-phase render at 48 kHz, letting the skirt finish at Nyquist moved the
+// pre-echo from -42 to -64 dB and cut the taps above -60 dB from 1795 to 286,
+// leaving the gain at and below the high edge untouched. The narrower skirt
+// does not ring more: what rings is a correction that still has structure in
+// the last bin.
 float AnalysisEngine::bandWeight (double f) const
 {
     if (f <= 0.0)
@@ -531,10 +545,26 @@ float AnalysisEngine::bandWeight (double f) const
         return 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * x);
     };
 
+    // As much of the half octave above the high edge as fits below Nyquist.
+    // Unchanged (the full tw) at sample rates with room for it, e.g. 96 kHz,
+    // and while the sample rate is still unknown.
+    double twHigh = tw;
+    if (sampleRate > 0.0)
+    {
+        const double end = std::min ((double) analysisHighHz * std::pow (2.0, tw),
+                                     0.5 * sampleRate);
+        twHigh = std::log2 (end / (double) analysisHighHz);
+    }
+
     const double dl = std::log2 (f / (double) analysisLowHz);    // >= 0 in band
     const double dh = std::log2 (f / (double) analysisHighHz);   // <= 0 in band
     const double wl = rc ((dl + tw) / tw);                       // low edge
-    const double wh = rc ((tw - dh) / tw);                       // high edge
+
+    // A high edge at or above Nyquist leaves no bins to taper: everything the
+    // spectrum actually holds is in band, so weight it fully rather than
+    // dividing by a zero skirt width.
+    const double wh = twHigh > 1.0e-6 ? rc ((twHigh - dh) / twHigh)
+                                      : (dh <= 0.0 ? 1.0 : 0.0);
     return (float) (wl * wh);
 }
 

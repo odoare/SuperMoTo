@@ -257,10 +257,16 @@ public:
     void setMicCalibration (const fxme::MicCalibration& cal);
     const fxme::MicCalibration& getMicCalibration() const noexcept { return micCal; }
 
-    /** Frequency band the analysis acts on. Outside [lowHz, highHz] (with a
-        half-octave skirt) the correction is faded to unity and the exported
-        measured IR is rolled off, so out-of-band room/mic noise and content
-        beyond the speaker's range neither pollute the IR nor get "corrected". */
+    /** Frequency band the analysis acts on. Outside [lowHz, highHz] the
+        correction is faded to unity and the exported measured IR is rolled
+        off, so out-of-band room/mic noise and content beyond the speaker's
+        range neither pollute the IR nor get "corrected".
+
+        The fade is a raised-cosine skirt, half an octave below lowHz and up to
+        half an octave above highHz — compressed so that it always COMPLETES at
+        or before Nyquist, since a skirt that runs past it leaves the correction
+        boosting in the last bins where nothing can be corrected anyway. See
+        bandWeight() for the measurements behind that. */
     void setAnalysisRange (float lowHz, float highHz);
     float getAnalysisLowHz() const noexcept     { return analysisLowHz; }
     float getAnalysisHighHz() const noexcept    { return analysisHighHz; }
