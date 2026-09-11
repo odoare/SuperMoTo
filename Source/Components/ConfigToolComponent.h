@@ -598,6 +598,20 @@ private:
             }
         }
 
+        // Grow the visible/processed matrix to expose every channel the rig just
+        // routed. Frames outside the active size are stored but never reach the
+        // engine, so without this a 5.1 rig applied to a stereo-sized matrix
+        // would silently play back as stereo.
+        int neededIns = 0, neededOuts = 0;
+        for (const auto& row : rows)
+        {
+            neededOuts = juce::jmax (neededOuts, row->output.getSelectedId());
+            if (row->input.getSelectedId() != smt::numChannels + 1)   // not "sum of mains"
+                neededIns = juce::jmax (neededIns, row->input.getSelectedId());
+        }
+        model.setMatrixSize (juce::jmax (model.getNumIns(), neededIns),
+                             juce::jmax (model.getNumOuts(), neededOuts));
+
         status.setText ("Written to configuration " + smt::configName (target)
                         + juce::String::fromUTF8 (" \xe2\x80\x94 fine-tune it in the matrix view."),
                         juce::dontSendNotification);

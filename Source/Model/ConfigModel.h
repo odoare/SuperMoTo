@@ -43,7 +43,12 @@ namespace smt
 {
 
 constexpr int numChannels = 32;   // maximum inputs and outputs (matrix dimension)
-constexpr int defaultChannels = 8; // active in/out count on a fresh instance
+// Active matrix size on a fresh instance, independent of the fixed 32-channel
+// bus. Stereo in, because the common case is a stereo mixing room; eight out,
+// because a monitor controller's job is feeding several destinations from it
+// (two speaker pairs, a subwoofer and headphones is already seven).
+constexpr int defaultIns  = 2;
+constexpr int defaultOuts = 8;
 constexpr int numConfigs  = 6;    // A..F
 constexpr float maxDelayMs = 100.0f;
 constexpr int maxFrameTaps = 8;   // simultaneous frame traces on the analyzer
@@ -348,7 +353,7 @@ private:
     mutable juce::SpinLock lock;
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frames {};
     std::array<OutputSettings, numChannels> outputs {};
-    std::atomic<int> numIns { defaultChannels }, numOuts { defaultChannels };
+    std::atomic<int> numIns { defaultIns }, numOuts { defaultOuts };
     std::atomic<int> version { 1 };
 
     juce::ListenerList<Listener> listeners;

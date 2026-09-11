@@ -104,8 +104,8 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
     if (! tree.hasType (idConfigurations))
         return;
 
-    numIns.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numIns", defaultChannels)));
-    numOuts.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numOuts", defaultChannels)));
+    numIns.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numIns", defaultIns)));
+    numOuts.store (juce::jlimit (1, numChannels, (int) tree.getProperty ("numOuts", defaultOuts)));
 
     {
         const juce::SpinLock::ScopedLockType sl (lock);
