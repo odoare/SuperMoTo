@@ -368,9 +368,8 @@ namespace ana
     inline constexpr auto display =
         "Impulse response traces:\n"
         "measured: the speaker as it is now.\n"
-        "correction: the FIR that will be exported, at the chosen length and "
-        "Phase type.\n"
-        "corrected: the speaker predicted with that FIR loaded.\n"
+        "corrected: the speaker predicted with the exported FIR loaded, at the "
+        "chosen length and Phase type.\n"
         "+ sub: the same, summed with the subwoofer at the Mains-delay offset "
         "and at the level it was measured at (this pane does no level matching).\n\n"
         "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises its "
@@ -469,16 +468,16 @@ namespace grp
 
     inline constexpr auto subSuggest =
         "Set the trim from the measured crossover-band phase slope "
-        "instead of the arrival times. The two disagree by the "
+        "instead of the arrival times. The two disagree (generally slightly) "
+        "by the "
         "subwoofer's own group delay (its low-pass and box "
         "alignment), which arrival times cannot see.";
 
     inline constexpr auto display =
         "Impulse response traces:\n"
         "measured: the speaker as it is now.\n"
-        "correction: the FIR that will be exported, at the chosen length "
-        "and Phase type.\n"
-        "corrected: the speaker predicted with that FIR loaded.\n"
+        "corrected: the speaker predicted with the exported FIR loaded, at the "
+        "chosen length and Phase type.\n"
         "+ sub (1 main): the same, summed with the subwoofer at its aligned "
         "delay and its suggested level trim.\n\n"
         "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises "
