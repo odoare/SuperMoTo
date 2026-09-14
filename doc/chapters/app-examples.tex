@@ -1,0 +1,92 @@
+%==============================================================================
+\chapter{Use case examples}\label{ch:examples}
+%==============================================================================
+
+This appendix works three realistic setups end to end, extending the short recipes of Chapter~\ref{ch:workflows}. The recurring idea is the split between per-output and per-configuration processing:
+
+\begin{itemize}[nosep]
+  \item A \textbf{configuration} (A-F) stores the routing, meaning which inputs feed which outputs, with a gain, a phase flip, a small 2-band EQ and an active state per frame (Chapter~\ref{ch:matrix}).
+  \item Everything that characterises a physical loudspeaker, that is its trim, its own 2-band EQ, its time-alignment delay and its \gterm{fir}{FIR} correction, lives on the output. It is therefore shared by every configuration that uses that output (Section~\ref{sec:outputchain}).
+\end{itemize}
+
+That split is what makes multi-configuration monitoring cheap. Correct and align each speaker once, then describe each way of listening as a different routing over the same corrected outputs. Engage one configuration at a time with "Exclusive", or sum several with it off.
+
+%------------------------------------------------------------------------------
+\section{Two monitor pairs, a subwoofer and headphones}\label{sec:ex-studio}
+%------------------------------------------------------------------------------
+
+A typical control room has two stereo pairs, mains on outputs 1-2 and nearfields on 3-4, a subwoofer on output~5, and a headphone output on 7-8. The source is stereo on inputs 1-2. Each speaker is corrected once (workflow~A) and the subwoofer is phase-aligned to each pair (workflow~B). Those \gterm{fir}{FIRs} and delays then stay on outputs 1-5. Five configurations describe the ways to listen:
+
+\begin{table}[h]\centering
+\begin{tabular}{lll}
+\toprule
+Config & Listen on & Routing \\
+\midrule
+A & Mains + sub      & in1$\rightarrow$1,\; in2$\rightarrow$2,\; (in1+in2)$\rightarrow$5 \\
+B & Nearfields + sub & in1$\rightarrow$3,\; in2$\rightarrow$4,\; (in1+in2)$\rightarrow$5 \\
+C & Mains alone      & in1$\rightarrow$1,\; in2$\rightarrow$2 \\
+D & Nearfields alone & in1$\rightarrow$3,\; in2$\rightarrow$4 \\
+E & Headphones       & in1$\rightarrow$7,\; in2$\rightarrow$8 \\
+\bottomrule
+\end{tabular}
+\caption{Five configurations over the same corrected outputs.}
+\end{table}
+
+\begin{enumerate}[nosep]
+  \item The default matrix size, 2 in / 8 out, already suits this rig, and the plugin bus itself is always a fixed 32 in / 32 out. Wire mains to 1-2, nearfields to 3-4, sub to 5 and headphones to 7-8.
+  \item Correct each of outputs 1-4 (workflow~A). Measure the sub and align it to each pair (workflow~B). The main/sub delay sits on the per-output delays, and the FIRs on the per-output correction slots.
+  \item \textbf{Config A.} The quickest start is Config tool $\rightarrow$ Stereo~2.1 $\rightarrow$ Apply to~A. Then check in the matrix view that in1/in2 reach outputs 1/2 and the sub.
+  \item \textbf{Config B.} Same as A, but route the pair to outputs 3/4 by editing the two frames in the matrix view. The sub frame is unchanged.
+  \item \textbf{Configs C and D.} Copy A and B but deactivate the sub frame by double-clicking it, so the mains play on their own.
+  \item \textbf{Config E.} Route in1/in2 to outputs 7/8.
+  \item Engage "Exclusive" and switch sets from the top bar. For daily use, collapse the window (\textbf{$\blacktriangle$}) to a compact output-strip view.
+\end{enumerate}
+
+\paragraph{Full range vs.\ bass management.} The highpass that bass management puts on the mains is an output filter, so it is shared by every configuration that drives those outputs. There is no separate "highpassed" and "full-range" version of output~1. For a room that really switches between with-sub and without-sub on the same speakers, run the mains full range and let the subwoofer augment below the \gterm{crossover}{crossover}, with a lowpass on the sub output only that never touches the mains. Configs C and D are then genuinely full-range. Reserve the highpass form of bass management for small satellites that must never see deep bass, in which case "mains alone" loses the bottom octave and is rarely engaged.
+
+%------------------------------------------------------------------------------
+\section{An aligned 5.1 system, switchable to 2.1 / 5.0 / 2.0}\label{sec:ex-surround}
+%------------------------------------------------------------------------------
+
+A 5.1 rig with L, R, C, L\textsubscript{s}, R\textsubscript{s} on outputs 1-5 and the subwoofer on output~6. The 5.1 feed is on inputs 1-6 (L, R, C, L\textsubscript{s}, R\textsubscript{s}, LFE). Correct outputs 1-5 once and align the sub (workflows~A and~B). Four configurations then cover the common downmixes:
+
+\begin{table}[h]\centering
+\begin{tabular}{lll}
+\toprule
+Config & Mode & Routing \\
+\midrule
+A & 5.1 & in1$\rightarrow$1 \dots in5$\rightarrow$5,\; (in6 + sat.\ bass)$\rightarrow$6 \\
+B & 2.1 & in1$\rightarrow$1,\; in2$\rightarrow$2,\; (in6+in1+in2)$\rightarrow$6 \\
+C & 5.0 & in1$\rightarrow$1 \dots in5$\rightarrow$5 \\
+D & 2.0 & in1$\rightarrow$1,\; in2$\rightarrow$2 \\
+\bottomrule
+\end{tabular}
+\caption{One corrected 5.1 rig, four listening modes.}
+\end{table}
+
+\begin{enumerate}[nosep]
+  \item Wire the channels as above. The plugin bus itself is always a fixed 32 in / 32 out. The matrix size needs 6 inputs here, which the Config tool sets in the next step.
+  \item Config tool $\rightarrow$ "5.1" $\rightarrow$ set the \gterm{crossover}{crossover} $\rightarrow$ Apply to~A. This routes the six inputs and sends the LFE, and with bass management the satellites' low end, to the sub.
+  \item Correct each satellite (workflow~A) and phase-align the sub to the front pair (workflow~B).
+  \item \textbf{Config B (2.1).} Route only in1/in2 to outputs 1/2 and keep the sub frame, folding the LFE and, if wanted, the L/R bass into output~6.
+  \item \textbf{Configs C and D.} Copy A and B and deactivate the sub frame.
+  \item Switch modes from the top bar, with "Exclusive" on.
+\end{enumerate}
+
+The note on full range and bass management in Section~\ref{sec:ex-studio} applies unchanged. If the satellites are full-range and you want true 5.0/2.0, run them full range and let the sub augment. If they are small, keep them highpassed and treat 5.0/2.0 as reduced-bass fallbacks.
+
+%------------------------------------------------------------------------------
+\section{An aligned Ambisonic rig with 8 monitors and a subwoofer}\label{sec:ex-ambi}
+%------------------------------------------------------------------------------
+
+Eight monitors are arranged around the listener, for instance as a cube with four at ear height and four above, plus a subwoofer. Eight speakers decode first order robustly, since it needs at least four. Second order needs nine, so stay at order~1 here unless you add speakers. The B-format (AmbiX) feed is on inputs 1-4, the speakers on outputs 1-8 and the sub on output~9.
+
+\begin{enumerate}[nosep]
+  \item Raise the matrix size to at least 4 in / 9 out, or 16/16 for convenience. The plugin bus itself is always fixed at 32 in/32 out. Wire the eight monitors to outputs 1-8 and the sub to output~9, and feed your AmbiX B-format onto inputs 1-4.
+  \item Config tool $\rightarrow$ "Ambisonics", with "Order"~1 and "Speakers"~8. Enter each loudspeaker's azimuth, elevation, radius and output channel, starting from the default rig. Set the sub output and the \gterm{crossover}{crossover}, keep "Bass management" on, then apply to~A (Section~\ref{sec:ambisonics}). The tool writes the harmonic\,$\rightarrow$\,speaker decode frames, lowpasses W to the sub, highpasses the eight speakers, and applies the radius compensation on the outputs, delaying and attenuating the closer speakers.
+  \item Measure and correct each of the eight monitors (workflow~A) and phase-align the sub (workflow~B). Because the decode, the per-output corrections, the radius delays and the \gterm{latencycomp}{latency compensation} all run in the same engine, no double-counting occurs. The per-output measured alignment already carries each speaker's path-length delay.
+  \item For an irregular rig with uneven radii or angles, prefer "Load IEM decoder\ldots" to import an AllRAD matrix instead of the built-in sampling decoder. The radius toggles still apply.
+  \item Optionally keep a second configuration (B) that routes only W and the front pair to two monitors for a quick non-periphonic check, switched from the top bar.
+\end{enumerate}
+
+The background behind the decoder (spherical harmonics, orders, the AmbiX convention and the max-\(r_E\) weighting) is in Appendix~\ref{ch:ambiprimer}.

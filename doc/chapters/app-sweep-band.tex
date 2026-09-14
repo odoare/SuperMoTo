@@ -1,0 +1,218 @@
+%==============================================================================
+\chapter{Why the sweep runs to Nyquist}\label{ch:sweepband}
+%==============================================================================
+
+The \gterm{ir}{impulse response} recovered by deconvolving a logarithmic sweep (Section~\ref{sec:thsweep}) is surrounded by ringing, and the level of that ringing is set almost entirely by where the sweep stops. On an ideal system, a sweep that stops at \SI{20}{\kilo\hertz} leaves the ringing only 15 to 21 dB below the peak, while the same sweep run up to Nyquist over a whole number of octaves pushes it 53 to 62 dB down. This appendix explains where the ringing comes from, gives the simulation data that separates its possible causes, and derives the band and fades SuperMoTo uses for the sweep stimulus.
+
+\section{The inverse filter and its group delay}
+The recording is deconvolved by the analytic inverse~\eqref{eq:sweepinv}. Write $\varphi(f)$ for its phase. Since $\frac{\mathrm{d}}{\mathrm{d}f}\bigl[f\,(1-\ln(f/f_1))\bigr] = -\ln(f/f_1)$, the phase slope is $\mathrm{d}\varphi/\mathrm{d}f = 2\pi L \ln(f/f_1)$, and the \gterm{groupdelay}{group delay} of the inverse is
+\begin{equation}
+  \tau(f) = -\frac{1}{2\pi}\,\frac{\mathrm{d}\varphi}{\mathrm{d}f}
+          = -\,L \ln\frac{f}{f_1} = -\,t(f),
+  \label{eq:sweepgd}
+\end{equation}
+with $t(f)$ the arrival time~\eqref{eq:sweeptime}. The inverse undoes exactly the dispersion the sweep introduced. Content that the sweep placed at frequency $f$ at time $t(f)$ is returned to time zero, which is what makes the method work.
+
+Two properties of the inverse matter for what follows. First, \eqref{eq:sweepgd} is a property of the filter, not of the recording, so it applies to everything in the recording, including content at frequencies the sweep never visited. Second, the magnitude of~\eqref{eq:sweepinv} grows as $\sqrt{f}$ without bound, and the inverse is applied to every FFT bin from $f_s/N$ up to Nyquist with no \gterm{regularization}{regularisation} and no band limit. Only the DC bin is zeroed.
+
+\section{Where the ringing can come from}
+Take as a reference a \SI{10}{\second} sweep from \SI{10}{\hertz} to \SI{20}{\kilo\hertz} at \SI{48}{\kilo\hertz}, with a \SI{20}{\milli\second} linear fade at each end. The quantization~\eqref{eq:sweepL} gives $L = \SI{1.30}{\second}$. Three mechanisms can plausibly produce ringing around the peak of its deconvolved \gterm{ir}{impulse response}.
+
+\paragraph{The fade-out.} The literature on the exponential sweep attributes pre-ringing mainly to the fade-out applied to the end of the stimulus~\cite{Farina2007}. Its effect is easy to bound. The instantaneous frequency at the end of the sweep advances at $\mathrm{d}f/\mathrm{d}t = f/L$, so a fade of duration $\Delta t$ tapers a band of width $\Delta f \approx f_2\,\Delta t/L$, here
+\begin{equation}
+  \Delta f \approx \frac{20000 \times 0.02}{1.30} \approx \SI{308}{\hertz},
+\end{equation}
+that is from \SI{19695}{\hertz} to \SI{20}{\kilo\hertz}, a span of \num{0.022} octave at the very top of an eleven-octave stimulus. The fade-in, by the same argument, tapers \SI{10}{\hertz} to \SI{10.15}{\hertz}. The emphasis on the fade-out comes from sweeps that run essentially to Nyquist, \SI{22}{\kilo\hertz} at \SI{44.1}{\kilo\hertz} in~\cite{Farina2007}, where the fade-out is the only thing shaping the top edge of the stimulus band. A sweep that stops \SI{4}{\kilo\hertz} short of Nyquist has a hard band edge at \SI{20}{\kilo\hertz} whatever the fade does, and the fade merely rounds its last \num{0.022} octave.
+
+\paragraph{Content above the stimulus band.} Content in the recording above $f_2$ has no counterpart in the stimulus. It includes harmonic distortion of the sweep's upper region, converter and preamplifier noise, and whatever splatter the end of the stimulus produces. By~\eqref{eq:sweepgd} the inverse assigns it a \gterm{groupdelay}{group delay} $\tau(f) < -L\ln(f_2/f_1) = -T$, and amplifies it by $\sqrt{f}$ on the way. A displacement beyond $-T$ wraps circularly in the deconvolution's FFT buffer, so where it lands depends on the transform length. With a \SI{1}{\second} silent tail the recording is \SI{10.88}{\second} long and the FFT is $N = 2^{19}$ samples, or \SI{10.923}{\second}. Table~\ref{tab:sweepwrap} evaluates~\eqref{eq:sweepgd} just above $f_2$.
+
+\begin{table}[ht]
+\centering
+\caption{Where content above $f_2$ lands after deconvolution.
+$f_s = \SI{48}{\kilo\hertz}$, $f_1 = \SI{10}{\hertz}$,
+$f_2 = \SI{20}{\kilo\hertz}$, $L = \SI{1.30}{\second}$,
+$N = \SI{10.923}{\second}$. The analysis keeps the first
+$W = \num{65536}$ samples, that is \SI{1.365}{\second}.}
+\label{tab:sweepwrap}
+\begin{tabular}{rrrl}
+\toprule
+$f$ (Hz) & $\tau(f)$ (s) & wraps to (s) & \\
+\midrule
+20000 & $-9.881$  & 1.041 & inside the analysis window \\
+21000 & $-9.945$  & 0.978 & inside \\
+22000 & $-10.005$ & 0.918 & inside \\
+24000 & $-10.118$ & 0.804 & inside \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All of it lands inside the part of the deconvolved response the analysis keeps. It does not appear as a recognisable pre-echo at a particular time, but as junk distributed through the retained impulse response, which after the forward transform contaminates the \gterm{tf}{transfer function} at every frequency, the region around the peak included.
+
+\paragraph{The band edge.} A stimulus occupying $[f_1, f_2]$ identifies the system only over that band. The recovered impulse response is the true one convolved with the impulse response of an ideal band-pass, whose symmetric sinc rings on both sides of the peak with a decay set by the sharpness of the edges. This is not an artefact in the sense the other two are. It is the resolution limit of the measurement, and the only way to reduce it is to widen the band.
+
+\section{How the mechanisms are separated}
+The three are separated by simulating SuperMoTo's signal path on a system whose true \gterm{ir}{impulse response} is known exactly. It is a pure delay of 480 samples, standing for a loopback cable with a microphone about \SI{3.4}{\metre} away. Deconvolving a stimulus that has passed through nothing should return a Dirac pulse~\cite{Farina2007}, so everything else in the result is attributable to the method. The stimulus follows~\eqref{eq:sweep} with $L$ quantized by~\eqref{eq:sweepL}, a \SI{1}{\second} silent tail is appended, and the deconvolution applies~\eqref{eq:sweepinv} over the full spectrum with only the DC bin zeroed.
+
+The reported figure is the largest sample magnitude in the \SI{20}{\milli\second} preceding the peak, in dB relative to the peak, excluding the three samples adjacent to it. Both sides of the peak were measured throughout and agree to within a few tenths of a dB. That symmetry is itself evidence for the band edge, since a fade artefact would appear on one side only.
+
+The simulation contains no distortion, no room and no converter, so it measures the floor the method imposes, not what a real measurement achieves. Its purpose is comparative. Every configuration sees exactly the same idealised system, so differences between them are attributable to the stimulus and the deconvolution alone.
+
+\section{Results}
+\paragraph{The band dominates.} Table~\ref{tab:sweepband} varies only the stimulus band. The second row runs to Nyquist over a whole number of octaves, eleven at \SI{44.1}{} and \SI{48}{\kilo\hertz} and twelve at \SI{96}{\kilo\hertz}.
+
+\begin{table}[ht]
+\centering
+\caption{Worst ringing within \SI{20}{\milli\second} of the peak, relative to the
+peak, for a \SI{10}{\second} sweep on a pure delay.}
+\label{tab:sweepband}
+\begin{tabular}{lrrr}
+\toprule
+Stimulus band & \SI{44.1}{\kilo\hertz} & \SI{48}{\kilo\hertz} & \SI{96}{\kilo\hertz} \\
+\midrule
+\SI{10}{\hertz} to \SI{20}{\kilo\hertz}       & $-21.0$ & $-17.9$ & $-14.9$ \\
+$f_1$ to Nyquist, whole number of octaves     & $-52.9$ & $-61.0$ & $-62.2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Running to Nyquist gains about \SI{43}{\dB} at \SI{48}{\kilo\hertz}. The band stopping at \SI{20}{\kilo\hertz} also degrades as the sample rate rises, from \SI{-21.0}{\dB} to \SI{-14.9}{\dB}, because the gap between \SI{20}{\kilo\hertz} and Nyquist grows and the content above the band has more room to work in. A fixed band is therefore worst exactly where the interface offers the most bandwidth. Figure~\ref{fig:sweepir} shows both \gterm{ir}{impulse responses} around the peak, and the symmetry of the \SI{20}{\kilo\hertz} trace is the signature of a band edge.
+
+A low-frequency defect in the chain does not change this picture. Adding a second-order high-pass at \SI{15}{\hertz}, as an AC-coupled input would, moves the \SI{20}{\kilo\hertz} result from \SI{-17.9}{\dB} to \SI{-17.8}{\dB}, which is indistinguishable from the band edge alone.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.92\textwidth, height=6.4cm,
+  xlabel={time relative to the peak (ms)},
+  ylabel={magnitude (dB rel.\ peak)},
+  xmin=-0.6, xmax=0.6, ymin=-80, ymax=3,
+  grid=both, grid style={line width=0.2pt,draw=gray!25},
+  legend style={at={(0.5,-0.28)},anchor=north,legend columns=2,draw=none,/tikz/every even column/.append style={column sep=1.5em}},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[smtred,thick,mark=none] coordinates {
+(-0.5833,-43.37) (-0.5625,-38.98) (-0.5417,-36.68) (-0.5208,-38.40) (-0.5000,-42.51) (-0.4792,-55.43) (-0.4583,-40.64) (-0.4375,-35.48) (-0.4167,-34.85) (-0.3958,-35.93) (-0.3750,-43.41) (-0.3542,-48.72) (-0.3333,-35.75) (-0.3125,-32.51) (-0.2917,-31.43) (-0.2708,-33.93) (-0.2500,-41.95) (-0.2292,-39.21) (-0.2083,-30.99) (-0.1875,-27.45) (-0.1667,-27.08) (-0.1458,-29.31) (-0.1250,-42.94) (-0.1042,-30.14) (-0.0833,-21.97) (-0.0625,-17.89) (-0.0417,-15.34) (-0.0208,-14.04) (0.0000,0.00) (0.0208,-14.04) (0.0417,-15.34) (0.0625,-17.89) (0.0833,-21.98) (0.1042,-30.16) (0.1250,-42.82) (0.1458,-29.28) (0.1667,-27.07) (0.1875,-27.46) (0.2083,-31.03) (0.2292,-39.34) (0.2500,-41.75) (0.2708,-33.87) (0.2917,-31.41) (0.3125,-32.54) (0.3333,-35.85) (0.3542,-49.37) (0.3750,-43.08) (0.3958,-35.84) (0.4167,-34.84) (0.4375,-35.55) (0.4583,-40.91) (0.4792,-57.48) (0.5000,-42.14) (0.5208,-38.26) (0.5417,-36.68) (0.5625,-39.15) (0.5833,-43.87)
+};
+\addlegendentry{\SI{10}{\hertz} to \SI{20}{\kilo\hertz}, \SI{20}{\milli\second} fade-out}
+\addplot[smtgreen,thick,mark=none] coordinates {
+(-0.5833,-70.41) (-0.5625,-63.43) (-0.5417,-70.15) (-0.5208,-63.55) (-0.5000,-69.89) (-0.4792,-63.67) (-0.4583,-69.64) (-0.4375,-63.80) (-0.4167,-69.38) (-0.3958,-63.94) (-0.3750,-69.13) (-0.3542,-64.08) (-0.3333,-68.88) (-0.3125,-64.22) (-0.2917,-68.63) (-0.2708,-64.38) (-0.2500,-68.38) (-0.2292,-64.53) (-0.2083,-68.13) (-0.1875,-64.70) (-0.1667,-67.88) (-0.1458,-64.87) (-0.1250,-67.64) (-0.1042,-65.05) (-0.0833,-67.39) (-0.0625,-65.24) (-0.0417,-67.15) (-0.0208,-65.44) (0.0000,0.00) (0.0208,-65.62) (0.0417,-66.65) (0.0625,-65.83) (0.0833,-66.41) (0.1042,-66.06) (0.1250,-66.18) (0.1458,-66.29) (0.1667,-65.94) (0.1875,-66.54) (0.2083,-65.71) (0.2292,-66.80) (0.2500,-65.48) (0.2708,-67.07) (0.2917,-65.25) (0.3125,-67.36) (0.3333,-65.02) (0.3542,-67.66) (0.3750,-64.80) (0.3958,-67.98) (0.4167,-64.57) (0.4375,-68.32) (0.4583,-64.35) (0.4792,-68.68) (0.5000,-64.13) (0.5208,-69.06) (0.5417,-63.91) (0.5625,-69.47) (0.5833,-63.69)
+};
+\addlegendentry{\SI{11.72}{\hertz} to Nyquist, \SI{0.5}{\milli\second} fade-out}
+\end{axis}
+\end{tikzpicture}
+\caption{Deconvolved impulse response of a pure delay, \SI{48}{\kilo\hertz},
+\SI{10}{\second} sweep. A band stopping at \SI{20}{\kilo\hertz} shows the slowly
+decaying symmetric sinc of a band edge four kilohertz below Nyquist. A band
+running to Nyquist falls to the floor within one sample.}
+\label{fig:sweepir}
+\end{figure}
+
+\paragraph{The fade-out matters only once the band reaches Nyquist.} Removing the \SI{20}{\milli\second} fade-out from the \SI{20}{\kilo\hertz} band changes the result by less than \SI{0.5}{\dB}, consistent with the \num{0.022} octave estimate above, and cutting the sweep at its last zero crossing on top of that changes nothing further. Once the sweep runs to Nyquist the situation inverts, because the fade-out becomes the only thing shaping the top edge. Figure~\ref{fig:sweepfade} scans its length at three sample rates. The curves are flat to the left and steep to the right. Anything up to about \SI{1}{\milli\second} sits within \SI{1}{\dB} of the optimum, beyond \SI{4}{\milli\second} the cost is real, and \SI{20}{\milli\second} costs \SI{15}{} to \SI{25}{\dB}.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.92\textwidth, height=6.2cm,
+  xlabel={sweep fade-out length (ms)},
+  ylabel={ringing (dB rel.\ peak)},
+  xmin=0, xmax=20, ymin=-65, ymax=-38,
+  grid=both, grid style={line width=0.2pt,draw=gray!25},
+  legend style={at={(0.98,0.03)},anchor=south east,draw=none,font=\small},
+  tick label style={font=\small}, label style={font=\small},
+]
+\addplot[smtblue,thick,mark=*,mark size=1.4] coordinates {
+(0,-52.90) (0.25,-52.83) (0.5,-52.76) (1,-52.63) (2,-52.44) (3,-52.35) (4,-52.29) (6,-51.25) (8,-48.89) (12,-45.83) (20,-41.75) };
+\addlegendentry{\SI{44.1}{\kilo\hertz}}
+\addplot[smtgreen,thick,mark=square*,mark size=1.4] coordinates {
+(0,-59.98) (0.25,-60.32) (0.5,-60.68) (1,-61.42) (2,-59.34) (3,-55.95) (4,-53.44) (6,-50.58) (8,-48.87) (12,-45.69) (20,-41.63) };
+\addlegendentry{\SI{48}{\kilo\hertz}}
+\addplot[smtgold,thick,mark=triangle*,mark size=1.8] coordinates {
+(0,-62.18) (0.25,-62.18) (0.5,-62.17) (1,-62.13) (2,-61.41) (3,-59.20) (4,-55.92) (6,-51.80) (8,-49.25) (12,-45.72) (20,-41.36) };
+\addlegendentry{\SI{96}{\kilo\hertz}}
+\end{axis}
+\end{tikzpicture}
+\caption{Ringing against sweep fade-out length, \SI{10}{\second} sweep to
+Nyquist over a whole number of octaves. Everything up to about
+\SI{1}{\milli\second} sits within \SI{1}{\dB} of the optimum; beyond
+\SI{4}{\milli\second} the cost is real, and a \SI{20}{\milli\second} fade-out
+costs \SI{15}{} to \SI{25}{\dB}.}
+\label{fig:sweepfade}
+\end{figure}
+
+\section{Why the sweep cannot be cut at a zero crossing}
+Cutting the sweep at its last zero crossing is the remedy usually proposed alongside sweeping to Nyquist~\cite{Farina2007}, but the two are incompatible. The synchronization condition already places the end of the sweep at a zero crossing in continuous time whenever the frequency ratio is an integer. From~\eqref{eq:sweep}, with $k = f_1 L$ an integer, the total phase is
+\begin{equation}
+  \Phi(T) = 2\pi f_1 L \left( \frac{f_2}{f_1} - 1 \right)
+          = 2\pi k \left( \frac{f_2}{f_1} - 1 \right),
+  \label{eq:sweependphase}
+\end{equation}
+so if $f_2/f_1 = 2^P$ then $\Phi(T)/2\pi = k(2^P-1)$ is an integer and $x(T) = 0$ exactly. This is the phase-controlled chirp of Vetter and di Rosario~\cite{Vetter2011}, obtained here from the quantization~\eqref{eq:sweepL}.
+
+That does not carry over to discrete time. The last emitted sample sits at index $n-1$ with $n = \operatorname{round}(T f_s)$, a fraction $\delta = T f_s - (n-1)$ of a sample before the true end. At the end of the sweep the instantaneous frequency is Nyquist, so the phase advances by $2\pi f_2/f_s = \pi$ radians per sample, and the residual amplitude is
+\begin{equation}
+  \bigl| x[n-1] \bigr| = \bigl| \sin(\pi\delta) \bigr|.
+  \label{eq:sweepresidual}
+\end{equation}
+Table~\ref{tab:sweepresidual} checks~\eqref{eq:sweepresidual} against the generated signal.
+
+\begin{table}[ht]
+\centering
+\caption{Residual amplitude of the last emitted sample, predicted by
+\eqref{eq:sweepresidual} and measured on the generated sweep.}
+\label{tab:sweepresidual}
+\begin{tabular}{llrrr}
+\toprule
+$f_s$ & $T$ & $\delta$ & $|\sin(\pi\delta)|$ & measured \\
+\midrule
+\SI{48}{\kilo\hertz}   & \SI{10}{\second} & 0.5905 & 0.9598 & 0.9598 \\
+\SI{48}{\kilo\hertz}   & \SI{5}{\second}  & 0.5149 & 0.9989 & 0.9989 \\
+\SI{44.1}{\kilo\hertz} & \SI{10}{\second} & 1.1511 & 0.4572 & 0.4572 \\
+\SI{96}{\kilo\hertz}   & \SI{10}{\second} & 0.9661 & 0.1062 & 0.1062 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The consequence is structural, not numerical. Near Nyquist the sampled sweep is $x[n] \approx (-1)^n \sin\varphi_0$, so consecutive samples differ only in sign and all share the magnitude $|\sin\varphi_0|$. No sample is closer to a zero crossing than any other, so searching backwards for one is meaningless. Truncating anyway leaves both the last sample at \num{0.960} and the ringing at \SI{-61.0}{\dB}, entirely unchanged.
+
+At \SI{48}{\kilo\hertz} and \SI{10}{\second} the stimulus therefore ends by stepping from \num{0.96} to silence. Figure~\ref{fig:sweepfade} shows the deconvolution tolerates this, since a zero-length fade-out is within a decibel of the best result. The converter's reconstruction filter, however, turns that step into a wideband transient delivered to the tweeter at measurement level, which is the reason to keep a short fade-out rather than none.
+
+\section{The band and fades SuperMoTo uses}
+The sweep band is derived from the sample rate. SuperMoTo sets $f_2 = f_s/2$ and $f_1 = f_2/2^P$, choosing $P$ to place $f_1$ as near as possible to \SI{10.5}{\hertz},
+\begin{equation}
+  P = \operatorname{round}\bigl( \log_2 (f_2 / \SI{10.5}{\hertz}) \bigr),
+\end{equation}
+clamped to $[4, 16]$. Table~\ref{tab:sweepbands} lists the resulting bands.
+
+\begin{table}[ht]
+\centering
+\caption{Sweep band at common sample rates.}
+\label{tab:sweepbands}
+\begin{tabular}{lrrr}
+\toprule
+$f_s$ (Hz) & $P$ & $f_1$ (Hz) & $f_2$ (Hz) \\
+\midrule
+\num{44100}  & 11 & 10.767 & 22050 \\
+\num{48000}  & 11 & 11.719 & 24000 \\
+\num{88200}  & 12 & 10.767 & 44100 \\
+\num{96000}  & 12 & 11.719 & 48000 \\
+\num{192000} & 13 & 11.719 & 96000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two constraints are met at once. An integer $P$ makes $f_2/f_1$ a power of two, so~\eqref{eq:sweependphase} holds and the sweep ends in sine phase. And $f_1$ stays near \SI{11}{\hertz} at every rate, below the half-octave skirt under the default \SI{20}{\hertz} lower edge of the analysis band (Section~\ref{sec:thcorrection}), which reaches down to \SI{14.1}{\hertz}.
+
+The fade-in is \SI{20}{\milli\second}. It tapers only the bottom \num{0.02} octave, and a fade-in, unlike a fade-out, does not raise the deconvolved coefficients around the central pulse~\cite{Vetter2011}, which the simulations here agree with. The sweep's fade-out is \SI{0.5}{\milli\second}, the shortest value that removes the step of~\eqref{eq:sweepresidual} while staying on the flat part of every curve in Figure~\ref{fig:sweepfade}. Its cost against the best available value is at most \SI{0.6}{\dB}, at \SI{48}{\kilo\hertz} and \SI{5}{\second}, and is not measurable at \SI{96}{\kilo\hertz}.
+
+The white-noise stimulus keeps a fixed \SI{10}{\hertz} to \SI{20}{\kilo\hertz} band with \SI{20}{\milli\second} fades at both ends. It is analysed by the \gterm{welch}{Welch} estimator (Section~\ref{sec:thwelch}), which never deconvolves anything, so none of the above applies to it.
+
+\section{What the figures mean for a real measurement}
+The figures describe an idealised chain. In a real measurement the floor is set by room noise, by the loudspeaker's own distortion and by time variance, long before the \SI{-61}{\dB} of Table~\ref{tab:sweepband}. What sweeping to Nyquist buys is that the method's own contribution sits far enough below those floors to be ignored, which is not the case at \SI{-17.9}{\dB}.
+
+Two side effects of the wider band are worth knowing.
+\begin{itemize}[nosep]
+  \item \textbf{Driver loading.} An exponential sweep spends the same time in every octave, $L \ln 2$, which is about \SI{0.9}{\second} per octave in a \SI{10}{\second} sweep. Running to Nyquist adds the band above \SI{20}{\kilo\hertz} at that same energy per octave, and the converter's reconstruction filter attenuates its extreme top. A first run at reduced level remains sensible on a delicate tweeter.
+  \item \textbf{Harmonic curves.} The order-$m$ harmonic of any fundamental above $f_s/(2m)$ lies above Nyquist and aliases. This holds whatever the band, but a sweep that reaches Nyquist carries more fundamentals in that region, so the H2 to H5 curves (Section~\ref{sec:sweepharm}) are less reliable in the top octaves.
+\end{itemize}

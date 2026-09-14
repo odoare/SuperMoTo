@@ -1,0 +1,62 @@
+%==============================================================================
+\chapter{Spatial averaging and microphone positions}\label{ch:spatial}
+%==============================================================================
+
+This appendix gives the reasoning behind the microphone-position recommendations of Section~\ref{sec:howmany}. The analysis averages the measurements of one loudspeaker across microphone positions as complex quantities, after removing each one's own arrival delay (Section~\ref{sec:thavg}). How many positions to take, and how widely to spread them, then decides what that average actually represents. The two questions have different answers, and the second matters more than the first.
+
+\section{Spacing and the correlation length}
+Two microphones a distance $d$ apart in a diffuse field do not measure independent pressures. The spatial correlation coefficient follows~\cite{Cook1955}
+\begin{equation}
+  R(d) = \frac{\sin kd}{kd}, \qquad k = \frac{2\pi f}{c},
+  \label{eq:spatialcorr}
+\end{equation}
+whose first zero is at $d = \lambda/2$. Below that separation the two measurements are largely the same measurement, while above it they are effectively independent samples. The separation needed is therefore frequency dependent, and at low frequencies it is large:
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+Frequency & \SI{40}{\hertz} & \SI{100}{\hertz} & \SI{250}{\hertz}
+          & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{4}{\kilo\hertz}\\
+$\lambda/2$ & \SI{4.3}{\metre} & \SI{1.7}{\metre} & \SI{69}{\centi\metre}
+            & \SI{34}{\centi\metre} & \SI{17}{\centi\metre} & \SI{4.3}{\centi\metre}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent A cluster of positions spanning \SI{30}{\centi\metre} around the seat, which is the usual choice, therefore reaches $\lambda/2$ only above about \SI{570}{\hertz}. Everything below that is sampled inside a single correlation cell. Measured on a real five-position set in a small studio, the vector coherence $|\overline{H}| / \overline{|H|}$ (unity when every position agrees, zero when they are independent) bears this out:
+
+\begin{center}
+\begin{tabular}{lcccccc}
+\toprule
+Frequency & \SI{63}{\hertz} & \SI{160}{\hertz} & \SI{250}{\hertz}
+          & \SI{630}{\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz}\\
+Coherence & 0.997 & 0.98 & 0.98 & 0.73 & 0.75 & 0.36\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The consequence is worth stating plainly, because it is easy to expect otherwise. A cluster of positions around one seat cannot average out \gterm{roommode}{room modes}. To decorrelate \SI{100}{\hertz} the microphone would have to move \SI{1.7}{\metre}, which is no longer the same listening position. Below a few hundred hertz the average is the response at that seat, modes included, and the correction derived from it is correspondingly seat specific. That is a property of the physics rather than a shortcoming of the method. A modal null cannot be filled by boosting anyway, which is what the "Max boost" ceiling (Section~\ref{sec:correction}) is there to prevent.
+
+What the \gterm{spatialavg}{spatial averaging} does buy, in the range where it works, is protection against over-fitting. The narrow peaks and nulls of a single-point measurement move with the microphone, and correcting them would make the response worse everywhere else.
+
+\section{How many positions are enough}
+The useful test is not a rule of thumb but whether the result still changes when a position is added or removed. Taking the same five-position set and dropping each position in turn, the designed correction moves by:
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Band & RMS deviation & Worst case\\
+\midrule
+\SIrange{30}{80}{\hertz}       & \SI{0.22}{\dB} & \SI{0.57}{\dB}\\
+\SIrange{80}{200}{\hertz}      & \SI{0.36}{\dB} & \SI{1.52}{\dB}\\
+\SIrange{200}{500}{\hertz}     & \SI{0.25}{\dB} & \SI{1.27}{\dB}\\
+\SI{500}{\hertz} to \SI{2}{\kilo\hertz}   & \SI{0.50}{\dB} & \SI{1.82}{\dB}\\
+\SIrange{2}{8}{\kilo\hertz}    & \SI{1.11}{\dB} & \SI{6.90}{\dB}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent Below \SI{500}{\hertz} the answer is settled to a quarter of a decibel, which follows directly from the coherence above. Those positions are not independent, so adding more of them changes nothing. The only band that has not converged is above \SI{2}{\kilo\hertz}, and that is also the band where a detailed correction is least useful, since it will not hold a few centimetres away. The effective remedy there is broader high-frequency \gterm{smoothing}{smoothing} (Section~\ref{sec:smoothing}), not more measurements. Reducing the set from five positions to three roughly doubles these figures, consistent with the $1/\sqrt N$ one would expect from averaging independent samples.
+
+\section{Why a subwoofer argues for a tight cluster}\label{sec:subcluster}
+When a subwoofer set is loaded, each of its measurements is anchored on the delay of the main measurement taken at the same position (Section~\ref{sec:thsubalign}), which is what preserves the main-to-sub timing. The residual offsets $\tau^{(n)}_\mathrm{sub} - \tau^{(n)}_\mathrm{main}$ differ from position to position, and the anchored average is only well conditioned while that spread is small compared with a period at the \gterm{crossover}{crossover}. On the five-position set above the spread is \SI{0.57}{\milli\second}, about \SI{35}{\degree} at \SI{170}{\hertz}, which is harmless. Spreading the same positions over a metre or more would grow it several-fold, the anchored average would partially cancel, and the crossover-region estimates (Section~\ref{sec:thsubalign}) would degrade. Widening the array to improve the subwoofer integration makes it worse.

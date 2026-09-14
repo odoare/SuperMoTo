@@ -1,0 +1,64 @@
+%==============================================================================
+\chapter{Group analysis and multi-speaker alignment}\label{ch:groupanalysis}
+%==============================================================================
+
+\section{Overview}
+Chapter~\ref{ch:analysis} designs one speaker's correction at a time. Once a rig has more than a couple of drivers, two things become impractical to do by hand. One is comparing every speaker's measured arrival time to work out the delays that time-align them all. The other is repeating the whole load, tune and export cycle once per speaker with the same settings. Group analysis addresses both. It holds one group of speaker analyses, plus one shared subwoofer, side by side, shares the correction-design settings across all of them, computes the relative delays that align the whole group, and exports every speaker's correction filter in one step.
+
+For each speaker, Group analysis runs exactly what the single-speaker Analysis pane does to one measurement set, namely \gterm{welch}{Welch} estimation (Section~\ref{sec:welch}), fractional-octave \gterm{smoothing}{smoothing} (Section~\ref{sec:varsmooth}), correction design (Section~\ref{sec:correction}) and \gterm{fir}{FIR} rendering (Section~\ref{sec:render}). Nothing about the underlying DSP differs. What Group analysis adds is the delay computation across the whole group and the batch apply/export step.
+
+\screenshot{group-analysis-view.png}{The Group analysis view: speaker count
+and Compute alignment / Apply \& export controls; the shared correction-design
+row; the per-speaker rows (Load..., measured delay, output assignment) and
+the dedicated Sub row; the Preview selector and the shared transfer-function
+plot.}
+
+\section{Loading measurements}
+\begin{itemize}[nosep]
+  \item \textbf{Speakers} sets how many drivers to align (1 to 16). Each gets its own row with a "Load..." button, a file-count / measured-delay read-out, and an output assignment combo. "Load..." takes the same multi-position, stereo sent/recorded measurements as Section~\ref{sec:spatialavg}, one file per microphone position, at the same positions across every speaker.
+  \item A \textbf{Sub} switch (top row, next to "Speakers") turns subwoofer handling on or off for the whole group. When it is off, the Sub row is disabled and the subwoofer is left out of alignment and export entirely (Section~\ref{sec:groupsub}). One dedicated "Sub" row takes the shared subwoofer measurement set, at the same microphone positions as the speakers.
+  \item Past six speakers the rows lay out in two columns instead of one long scrolling list, so a large rig stays legible.
+\end{itemize}
+
+\section{Loading a whole measurement folder in one step}\label{sec:grouploadfolder}
+Loading every speaker (and the sub) by hand with individual "Load..." clicks works, but is tedious for a large rig and depends on picking files in the right order in each dialog. "Load measurement folder\ldots" does the whole thing in one step. Point it at a folder written by the Calibration view's folder-based capture (Section~\ref{sec:measfolder}) and it reads that folder's \texttt{measurement.xml} manifest to find which channels were measured and which one is the subwoofer. Folders recorded before the XML manifest existed fall back to parsing \texttt{readme\_measurement.md}. It then sets "Speakers" to match and loads every speaker's files, and the sub's, sorted by position rather than by file-dialog order, so the main/sub pairing is always correct. Each channel's output assignment is set automatically to that same channel number. The "Sub" switch is set to match the folder, on if it contains a subwoofer measurement and off otherwise.
+
+\section{One set of correction settings for the whole group}
+The \gterm{welch}{Welch} window, the low/high-frequency \gterm{smoothing}{smoothing}, the correction level, the max boost, the \gterm{fir}{FIR} length, the phase type, the analysis range, the \gterm{crossover}{crossover} and the sub \gterm{polarity}{polarity} are shared. They form one "tone" applied to every speaker in the group, and to the sub apart from the analysis range (Section~\ref{sec:groupsub}), using the same controls described in Sections~\ref{sec:welch}-\ref{sec:render}. A "Preview" selector picks which speaker's curves, or the sub's, the single plot at the bottom shows while these are tuned. Switching it never changes what is computed, only what is displayed. The "TF" estimator (Section~\ref{sec:sweep}), the mic calibration source (Section~\ref{sec:micsource}), and the "View" and "Level" display selectors (Sections~\ref{sec:irview} and~\ref{sec:levelref}) behave exactly as in the single-speaker Analysis view, the first two applying to every engine in the group and the last two following the previewed speaker.
+
+\section{Computing the alignment}\label{sec:groupalign}
+"Compute alignment" reads the propagation delay of every loaded speaker and of the sub, using the same impulse-response-peak estimate Section~\ref{sec:thavg} describes for a single speaker, and proposes the delay that time-aligns the whole group. The most-distant driver is left at \SI{0}{ms} and every other driver is pushed back by the difference, so every proposed delay is non-negative and everyone arrives together at the reference position. The result is shown next to each row and is what "Apply \& export" later writes onto the corresponding output.
+
+For any speaker that also has a subwoofer measurement loaded (i.e.\ whose own row was analyzed together with the Sub row's files), the newly computed delay is fed back into that speaker's own subwoofer phase alignment (Section~\ref{sec:timealign}) so the correction's \gterm{crossover}{crossover} \gterm{allpass}{all-pass} is designed for the delay that will actually be applied, not the raw, unaligned one. What is fed back is the speaker's delay relative to the subwoofer. The Sub row also carries a trim that offsets the subwoofer against the whole group, and a "Use x-over" button that sets it from the crossover-band phase slope. Appendix~\ref{ch:delays} explains both, and why the default trim of zero means pure arrival-time alignment.
+
+\section{Level matching between speakers}\label{sec:grouplevel}
+Speakers of different models (or the same model driven by different amplifier gains) rarely play at the same level for the same input. "Compute alignment" therefore also derives a suggested level-matching trim per speaker, shown next to each row's delay and recorded in the report.
+
+The level estimate is the mean power of each speaker's corrected response, over the band \SIrange{500}{2000}{\hertz}. The corrected response is the \gterm{spatialavg}{spatially averaged} \gterm{tf}{transfer function} (Section~\ref{sec:spatialavg}) multiplied by its designed correction, i.e.\ the level that speaker will actually play at once its \gterm{fir}{FIR} is applied. That mid-band restriction is deliberate, and is standard practice rather than a SuperMoTo invention. SMPTE~ST~2095-1 specifies band-limited pink noise over exactly \SIrange{500}{2000}{\hertz} as the calibration signal for setting channel levels~\cite{SMPTE2095}, and CTA-2034-A rates loudspeaker sensitivity over a similar mid-band average (\SIrange{300}{3000}{\hertz})~\cite{CTA2034}. The reasoning is that below a few hundred hertz the reading is dominated by the room's position-dependent modal field, and by how far each model's bass extends, rather than by channel gain, while above a few kilohertz rising loudspeaker directivity makes the level a function of toe-in and microphone orientation~\cite{Toole}. In between, the estimate is robust.
+
+The quietest speaker is the reference, so every suggested trim is $\le$ \SI{0}{dB} and attenuates the louder channels down to it, which preserves headroom. This is the same convention as the delays, where the most-distant driver is the one left untouched. The suggestion is informational only. "Apply \& export" never writes it, so an intentional level offset, such as a rear-channel shelf you set by ear, is never silently overwritten. To apply one, enter it in that output's "Trim" in the matrix view (Section~\ref{sec:outputchain}).
+
+The subwoofer gets no trim suggestion, because the matching band sits above its passband and a sub's level against the mains is a \gterm{crossover}{crossover}-balance decision made by ear or by an SPL measurement, not a sensitivity-matching one.
+
+\section{The subwoofer is delay-only}\label{sec:groupsub}
+Group analysis never designs a correction \gterm{fir}{FIR} for the subwoofer. Above a subwoofer's real passband, a broadband measurement (sent full-band, recorded through a driver that reproduces only the low end) is just noise. The cross-spectrum $\hat P_{xy}$ (Section~\ref{sec:thwelch}) has no coherent content there, so the "correction" the same math would propose above a few hundred hertz would be an inverse filter fitted to noise. That is pointless at best, and at worst a soft-knee boost (Section~\ref{sec:correction}) applied to noise. The sub's own analysis range is therefore automatically capped at \SI{300}{Hz} regardless of the shared "Range" control, so even its diagnostic-only, never-exported preview curve stays meaningful. Only the sub's computed time-alignment delay (Section~\ref{sec:groupalign}) is ever written to its assigned output.
+
+Not every rig has a subwoofer, so handling it at all is optional. While off, the "Sub" switch (Section~\ref{sec:grouploadfolder}) leaves any already-loaded sub measurement in place but excludes it from "Compute alignment" and "Apply \& export", so turning it back on later resumes using whatever was loaded before.
+
+\section{Applying and exporting}
+"Apply \& export..." asks for a destination folder. For every speaker assigned to an output, it then renders and writes the correction IR (Section~\ref{sec:render}) into that folder, and writes the computed delay together with the \gterm{fir}{FIR} path onto that output's settings. Those settings are global, exactly as with the single-speaker Analysis pane, because an output's processing is shared by every configuration A-F (Section~\ref{sec:outputchain}). The sub, if assigned to an output, gets only its delay written (Section~\ref{sec:groupsub}).
+
+A \texttt{report.md} is written alongside the exported \gterm{ir}{impulse responses}. It records the group's shared settings and, for each speaker and the sub, the full path of every measurement file used, the measured and applied delay, the corrected in-band level and suggested level-matching trim (Section~\ref{sec:grouplevel}), which output it was assigned to, and the exported file name, or why nothing was written, for instance because it was not measured or not assigned to an output.
+
+\subsection{The export prefix}\label{sec:groupprefix}
+Everything a run writes is named from the "Prefix" field, as in \texttt{<prefix>\_speaker1\_correction.wav}, \texttt{<prefix>\_report.md} and so on. Leave it empty and the names have no prefix at all.
+
+The point is that several alignments, for different rooms, different speaker sets or successive attempts at the same rig, can then share one folder instead of overwriting each other. That matters more than tidiness. A second run into the same folder with no prefix replaces the first run's impulse responses, including ones already assigned to outputs and in use. The field is pre-filled from the measurement folder's name when you load one, and never overwrites a prefix you have typed yourself.
+
+\subsection{Figures in the report}\label{sec:groupfigures}
+With "Figures" enabled, the report embeds two plots per measured speaker. The first is its frequency response, with the measurements, average, correction, corrected response, the sub curve and, for a sweep measurement, the distortion traces. The second is its impulse response, measured and correction, as the "View" selector shows them (Section~\ref{sec:irview}). They are rendered from the same display components the pane itself uses, so a figure looks exactly like what you saw on screen.
+
+The PNGs go into \texttt{<prefix>\_figs/} beside the report and are referenced relatively, so the report folder can be moved, copied or zipped and the markdown still resolves. Rendering adds a few seconds to a large group, which is why it can be switched off.
+
+\section{Background processing}
+Loading a speaker's measurement set, re-analyzing the whole group after changing the \gterm{welch}{Welch} window, and "Apply \& export" all run on background threads rather than blocking the editor. A progress bar appears, and every control that could otherwise touch an analysis engine mid-computation is disabled until the batch finishes. This keeps the editor responsive even with long, multi-position measurement sets across many speakers.

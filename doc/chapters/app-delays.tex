@@ -1,0 +1,135 @@
+%==============================================================================
+\chapter{Delay estimation and subwoofer alignment}\label{ch:delays}
+%==============================================================================
+
+The analysis measures how much later a loudspeaker arrives in two independent ways. One is the peak of the \gterm{ir}{impulse response}, used to align several loudspeakers to one listening position. The other is the slope of the subwoofer's phase around the \gterm{crossover}{crossover}, used to integrate a subwoofer with the mains. They are easily taken for two measurements of the same thing, but they measure different physical quantities, can differ by several milliseconds, and each is the wrong tool for the other's job. This appendix defines both, shows why they disagree, and derives the condition the output delays must satisfy for the subwoofer phase alignment of Section~\ref{sec:subalign} to be correct.
+
+Throughout, a pure delay $\tau$ contributes $e^{-j2\pi f\tau}$ to a \gterm{tf}{transfer function}, and the \gterm{groupdelay}{group delay} of a response with phase $\varphi(f)$ is $\tau_g = -\frac{1}{2\pi}\,\mathrm{d}\varphi/\mathrm{d}f$. The subscripts $m$ and $s$ denote a main loudspeaker and the subwoofer.
+
+\section{Two estimators}
+\paragraph{Time of arrival.} For each measurement file the analysis takes the largest sample of the \gterm{ir}{impulse response}, reads a peak in the second half of the buffer as a small negative delay, and removes that delay before \gterm{spatialavg}{spatial averaging} (Section~\ref{sec:thavg}). The arrival time of a loudspeaker is the median of these per-position delays $\delta^{(p)}$,
+\begin{equation}
+  d = \frac{1}{f_s}\,\operatorname{median}_p\,\delta^{(p)},
+  \label{eq:dlyarrival}
+\end{equation}
+so a single position that latches onto a reflection or a mode does not move the result. The sample grid gives a resolution of \SI{20.8}{\micro\second} at \SI{48}{\kilo\hertz}, but the real limit is the width of the impulse, about $1/f_{\max}$ for a signal band-limited to $f_{\max}$. That is \SI{50}{\micro\second} for a full-range loudspeaker measured to \SI{20}{\kilo\hertz}, and \SI{10}{\milli\second} for a subwoofer passing nothing above \SI{100}{\hertz}, where room modes and the subwoofer's own filtering also shift the peak. The accuracy of any delay estimate is bounded by the signal's bandwidth in this way~\cite{Knapp1976}, and no sample rate improves it. This estimator is excellent for full-range sources and weak for a subwoofer.
+
+\paragraph{Crossover-band group delay.} When a subwoofer set is loaded into a main's analysis, each subwoofer file is anchored on the delay of the main file taken at the same position instead of its own (Section~\ref{sec:thsubalign}). The averaged subwoofer response $S$ therefore keeps the main-to-sub timing as a residual phase. The analysis unwraps $\varphi_S = \arg S$ at 48 logarithmically spaced frequencies $f_n$ over $[f_x/2,\,2f_x]$, with $f_x$ the \gterm{crossover}{crossover}, and fits a least-squares slope weighted by the measured power $w_n = |S(f_n)|^2$,
+\begin{equation}
+  \tau_{\mathrm{grp}} = -\frac{1}{2\pi}\,
+  \frac{\sum_n w_n (f_n-\bar f)(\varphi_n-\bar\varphi)}{\sum_n w_n (f_n-\bar f)^2},
+  \label{eq:dlygrp}
+\end{equation}
+where $\bar f$ and $\bar\varphi$ are the weighted means. The result decomposes as
+\begin{equation}
+  \tau_{\mathrm{grp}} = \underbrace{(d_s - d_m)}_{\text{path difference}}
+  + \underbrace{\bigl\langle \tau_g[\text{subwoofer}] \bigr\rangle_{[f_x/2,\,2f_x]}}_{\text{own group delay in the band}} ,
+  \label{eq:dlydecomp}
+\end{equation}
+the total effective lateness of the subwoofer's energy in the crossover region, geometry and filtering together. That is exactly what decides whether the two sources add or cancel there. It is a band average of a frequency-dependent quantity, not the time at which anything arrives.
+
+The weighting is essential. The fit band reaches an octave above the crossover, where a subwoofer is already far down. On a real five-position measurement crossed at \SI{85}{\hertz}, $|S|$ falls from \SI{-6}{\dB} at \SI{60}{\hertz} to \SI{-50}{\dB} at \SI{170}{\hertz}, and the position-to-position coherence drops from 0.99 to 0.60 over the same span. An unweighted fit gives that noise the same say as the passband, and the estimate walks with the crossover setting:
+
+\begin{center}
+\begin{tabular}{lccccc}
+\toprule
+$f_x$ (Hz) & 60 & 85 & 100 & 120 & 150\\
+\midrule
+$\tau_{\mathrm{grp}}$, unweighted (ms) & 27.6 & 21.8 & 17.7 & 13.7 & 11.3\\
+$\tau_{\mathrm{grp}}$, weighted (ms)   & 26.4 & 31.3 & 32.3 & 34.8 & 30.7\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The weighted figure is stable and agrees with the arrival time measured on the same set, \SI{30.6}{\milli\second}.
+
+The estimate also depends on \gterm{smoothing}{smoothing}, because it is read off a complex-smoothed average. A window of $\beta$ octaves at frequency $f$ rotates the phasor of a residual delay $\tau$ by about
+\begin{equation}
+  \Delta\varphi \approx 2\pi\,\tau\,\beta f \ln 2
+  \label{eq:dlysmooth}
+\end{equation}
+across its width. As this approaches $\pi$ the complex average collapses and the phase slope stops meaning anything. At \SI{160}{\hertz} with one-octave smoothing, that happens for $\tau \approx \SI{4.5}{\milli\second}$, well within the range of offsets being measured.
+
+\section{Why the two disagree}
+Beyond geometry, the dominant term in~\eqref{eq:dlydecomp} is the \gterm{crossover}{crossover} filter itself. A fourth-order Linkwitz-Riley low-pass~\cite{Linkwitz1976} with $\Omega = f/f_x$ and $\omega_x = 2\pi f_x$ has the \gterm{groupdelay}{group delay}
+\begin{equation}
+  \tau_{\mathrm{LR4}}(\Omega) = \frac{2\sqrt{2}}{\omega_x}\,\frac{1+\Omega^2}{1+\Omega^4},
+  \label{eq:dlylr4}
+\end{equation}
+equal to $2\sqrt{2}/\omega_x$ both at DC and at the corner, with a maximum about 21\,\% higher at $\Omega \approx 0.64$. At $f_x = \SI{80}{\hertz}$ this is \SI{5.63}{\milli\second}, about \SI{1.9}{\metre} of apparent extra path from the filter alone (Figure~\ref{fig:dlylr4}). A loudspeaker's low-frequency acoustic centre is also frequency-dependent~\cite{Vanderkooy2006}, which adds a radiation term not treated here.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.72\textwidth, height=5.4cm,
+  xlabel={$f$ (Hz)}, ylabel={group delay (ms)},
+  xmode=log, xmin=20, xmax=320, ymin=0, ymax=8,
+  grid=both, grid style={gray!25},
+  legend pos=north east, legend cell align=left,
+  xtick={20,40,80,160,320}, xticklabels={20,40,80,160,320},
+]
+\addplot[smtblue, very thick, domain=20:320, samples=200]
+  {1000*2*sqrt(2)/(2*pi*80) * (1+(x/80)^2)/(1+(x/80)^4)};
+\addlegendentry{LR4 low-pass at \SI{80}{\hertz}}
+\addplot[smtgold, dashed, thick] coordinates {(40,0) (40,8)};
+\addplot[smtgold, dashed, thick] coordinates {(160,0) (160,8)};
+\addlegendentry{crossover-band fit}
+\end{axis}
+\end{tikzpicture}
+\caption{Group delay of a fourth-order Linkwitz-Riley low-pass at \SI{80}{\hertz},
+equation~\eqref{eq:dlylr4}, with the band over which the crossover-band estimate
+fits its slope.}
+\label{fig:dlylr4}
+\end{figure}
+
+Both estimators contain the path difference. The arrival time adds wherever the subwoofer's band-limited impulse happens to peak, while the crossover-band estimate adds the average slope of its phase over an octave either side of the crossover, and there is no general relation between the two. Their difference $\tau_{\mathrm{grp}} - (d_s - d_m)$ is therefore diagnostic. Close to zero means the subwoofer behaves like a delayed copy of the main and the offset is pure geometry, so moving the box moves the number. Several milliseconds means the offset is dominated by the crossover and driver alignment, and moving the box will not fix it.
+
+\section{Which estimator for which problem}
+Between two full-range loudspeakers only the arrival time exists. Each loudspeaker's own per-file delay is removed before its positions are averaged, so the two averaged responses carry no information about the difference between their delays, and there is no phase slope left to fit. The arrival time is the right answer anyway, because two full-range sources share essentially the same filtering, its contribution cancels in the difference, and what remains is the path difference that makes transients arrive together.
+
+Between a main and the subwoofer the filtering does not cancel, and what governs summation at the \gterm{crossover}{crossover} is the \gterm{groupdelay}{group delay} there. The crossover-band estimate measures that directly, and it only exists for this pair because the anchoring deliberately preserves their relative timing.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+ & speaker to speaker & main to subwoofer \\
+\midrule
+Arrival time & correct and robust & available but weak \\
+Crossover-band group delay & not available & correct quantity \\
+Goal & transients arrive together & sources sum coherently at $f_x$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{The alignment condition}
+The correction of a main is designed assuming a delay $T$ between the main and the subwoofer, the "Mains delay" of Section~\ref{sec:timealign}. Its \gterm{allpass}{all-pass} term steers the main's phase onto the subwoofer advanced by that amount, $S\,e^{+j2\pi fT}$. When the outputs actually receive bulk delays $a_m$ on the main and $a_s$ on the subwoofer, the phase difference between the two acoustic paths in the \gterm{crossover}{crossover} region is $2\pi f\,[\,T - (a_m - a_s)\,]$. It vanishes at every frequency only if
+\begin{equation}
+  T_m = a_m - a_s .
+  \label{eq:dlyidentity}
+\end{equation}
+$T$ is therefore not the delay applied to the main, but the main's delay relative to the subwoofer. In the single-speaker Analysis view the subwoofer output receives no delay from the analysis, so the condition reduces to $T = a_m$, which is what the "Mains delay" control means.
+
+The condition only matters in \gterm{linphase}{linear-phase} rendering. The \gterm{minphase}{minimum-phase} rendering of Section~\ref{sec:minphase} rebuilds the filter from the correction's magnitude alone, and the all-pass has unit magnitude, so in that mode $T$, the crossover setting and "Invert sub" have no effect at all on the exported \gterm{fir}{FIR}. The bulk delays are still written to the outputs, so the loudspeakers stay time-aligned on arrival, but there is no phase steering through the crossover. The subwoofer phase curve on the plot is drawn as the correction sees it, with the polarity and the assumed delay applied, so the corrected main and the subwoofer can be read against each other.
+
+\section{Group alignment and the subwoofer trim}
+"Compute alignment" in Group analysis (Section~\ref{sec:groupalign}) aligns the group on arrival times. With $D$ the largest arrival time $d$ among the loaded entries and $\Delta$ the subwoofer trim set on the Sub row, the output delays are
+\begin{equation}
+  a_i = D - d_i + \Sigma, \qquad a_s = D - d_s + \Delta + \Sigma ,
+  \label{eq:dlytrim}
+\end{equation}
+where the group shift $\Sigma$ slides every delay so that the earliest entry sits at zero, which gives the least overall latency. Each speaker's correction is then designed with
+\begin{equation}
+  T_i = a_i - a_s = (d_s - d_i) - \Delta ,
+  \label{eq:dlyoffset}
+\end{equation}
+so~\eqref{eq:dlyidentity} holds for every trim value and the group shift cancels. A positive trim delays the subwoofer against the group, and because of the shift it shows up as less delay on the mains rather than more on the subwoofer. With mains at \SI{30.6}{\milli\second}, a \SI{9}{\milli\second} trim gives mains at \SI{21.4}{\milli\second} and the subwoofer at zero, the same alignment with \SI{9.2}{\milli\second} less latency. Output delays are limited to \SIrange{0}{100}{\milli\second}, and a very spread group that reaches that limit no longer satisfies the condition for the clamped output.
+
+The default trim of zero is pure arrival-time alignment. Setting $T_i = \tau_{\mathrm{grp},i}$ in~\eqref{eq:dlyoffset} instead gives the trim
+\begin{equation}
+  \Delta_i^\star = (d_s - d_i) - \tau_{\mathrm{grp},i},
+  \label{eq:dlysuggest}
+\end{equation}
+which is exactly the disagreement between the two estimators. The geometric term cancels, so $\Delta_i^\star$ should be nearly the same for every speaker, and a wide spread is itself a sign that one of the estimates is unreliable. The Sub row shows the median over the loaded speakers, and "Use x-over" writes it into the trim. It is usually negative, since the subwoofer's low-pass has already made it late and it needs less delay than arrival-time alignment would give it.
+
+The suggestion is withdrawn when the \gterm{smoothing}{smoothing} makes it untrustworthy. Evaluating~\eqref{eq:dlysmooth} at the top of the fit band, with the suggested trim as the offset and the smoothing fraction in force at $2f_x$, the estimate counts as usable only while the rotation stays below $\pi/2$, half the point at which the complex average collapses. Past that, "Use x-over" is disabled and the read-out says the estimate is unreliable at this smoothing. The trim slider itself, $\pm$\SI{40}{\milli\second}, stays available for setting by ear.

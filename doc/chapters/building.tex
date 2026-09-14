@@ -1,0 +1,21 @@
+%==============================================================================
+\chapter{Building from source}\label{ch:build}
+%==============================================================================
+
+SuperMoTo is CMake based and mirrors the MechanOdd project layout. JUCE and the FxmeJuceTools user module are expected as siblings of the repository:
+
+\begin{verbatim}
+../JUCE/                              juce-framework/JUCE checkout
+../JUCE/usermodules/FxmeJuceTools/    symlink to FxmeJuceTools/module/FxmeJuceTools
+\end{verbatim}
+
+\begin{verbatim}
+git submodule update --init --recursive   # FxmeFX + WDL
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+\end{verbatim}
+
+The build produces VST3, AU and Standalone formats, all with a fixed 32 in/32 out discrete bus. The active matrix size, 2 in / 8 out by default, is independent of the bus and set with the plugin's own "Inputs" and "Outputs" selectors. Continuous-integration builds for Linux, macOS (universal) and Windows are provided by the GitHub Actions workflow \texttt{.github/workflows/release.yml}, triggered by pushing a version tag (\texttt{v\textit{X.Y.Z}}).
+
+\section{License}
+LGPL-3.0-or-later. \textcopyright{} 2023-2026 Olivier Doaré.

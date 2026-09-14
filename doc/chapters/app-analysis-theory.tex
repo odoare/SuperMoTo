@@ -1,0 +1,216 @@
+%==============================================================================
+\chapter{Analysis and correction theory}\label{ch:anatheory}
+%==============================================================================
+
+This appendix gives the signal processing behind the Analysis view of Chapter~\ref{ch:analysis}, in the order the data flows. Each \gterm{tf}{transfer function} is estimated, the positions are aligned and averaged, the average is smoothed, the correction is designed and optionally aligned to a subwoofer, and the result is rendered as an \gterm{fir}{FIR}.
+
+\section{Welch estimation}\label{sec:thwelch}
+For each file the plugin estimates the loudspeaker-room \gterm{tf}{transfer function} $H(f)=Y(f)/X(f)$, where $x$ is the emitted stimulus (channel~1 of the file) and $y$ the captured microphone signal (channel~2). If a microphone calibration is in effect, it is divided out of $H$ at this stage (eq.~\eqref{eq:miccal}).
+
+\subsection{The $H_1$ estimator}
+A direct bin-by-bin division $Y/X$ is unusable in a room. It is dominated by measurement noise wherever $X$ is small, and a single FFT gives an estimate with $100\,\%$ standard error. SuperMoTo instead uses the classical \gterm{welch}{Welch} averaged-periodogram approach~\cite{Welch1967}. The recording is cut into overlapping segments, each is windowed and transformed, and the auto- and cross-spectra are averaged over the $L$ segments,
+\begin{equation}
+  \hat P_{xx}(f) = \frac{1}{L}\sum_{\ell=1}^{L} |X_\ell(f)|^2,
+  \qquad
+  \hat P_{xy}(f) = \frac{1}{L}\sum_{\ell=1}^{L} X_\ell^{*}(f)\,Y_\ell(f).
+\end{equation}
+The transfer function is then formed as the \gterm{h1}{$H_1$ estimator}
+\begin{equation}
+  \hat H(f) = \frac{\hat P_{xy}(f)}{\hat P_{xx}(f)} .
+  \label{eq:h1}
+\end{equation}
+$H_1$ is the least-squares estimator that is optimal when the noise is on the output (the microphone path), the realistic case for an acoustic measurement, and it rejects that noise as more segments are averaged. (Its companion $H_2=P_{yy}/P_{yx}$ assumes input noise. Both bracket the true response, and they coincide only when the \gterm{coherence}{coherence} is unity.) The derivation and noise properties of $H_1/H_2$ are standard material in \cite{BendatPiersol,ShinHammond,OppenheimSchafer}.
+
+\subsection{Windowing, overlap and resolution}
+Each segment is weighted by a Hann window before the FFT, to control spectral leakage~\cite{Harris1978}. Consecutive segments overlap by 50\,\%, the standard choice that makes the Hann-windowed segments use the recording almost uniformly (Welch's WOSA scheme). The window length $W$, from 16384 to 262144 samples, sets the frequency resolution
+\begin{equation}
+  \Delta f = \frac{f_s}{W},
+\end{equation}
+about \SI{0.67}{\hertz} at $f_s=\SI{44.1}{\kHz}$ with the default $W=65536$. Bins where $\hat P_{xx}$ is essentially zero are \gterm{regularization}{regularised} by a small term $\varepsilon = 10^{-10}\max_k \hat P_{xx} + 10^{-30}$ added to the denominator of~\eqref{eq:h1}, so silent bins do not blow up.
+
+\section{Delay removal and complex averaging}\label{sec:thavg}
+Each microphone position is at a different distance from the speaker, so each $\hat H$ carries a different bulk propagation delay, a linear phase term $e^{-j2\pi f \tau}$. Averaging the complex responses without removing it would let the position-dependent phase ramps cancel each other and destroy the result. The plugin therefore estimates the delay $\tau$ of each measurement from its \gterm{ir}{impulse response} (inverse FFT of $\hat H$), taken as the position of the peak of $|h(t)|$. A peak in the second half of the buffer is interpreted as a small negative delay that wrapped around. The linear phase is then removed,
+\begin{equation}
+  \hat H'(f) = \hat H(f)\, e^{+j 2\pi f \tau},
+\end{equation}
+which time-shifts every measurement so its main arrival sits at $t=0$. This is the excess-delay normalisation used in swept-sine room measurement practice~\cite{MullerMassarani}. Appendix~\ref{ch:delays} discusses what this arrival-time estimate measures, and where it fails.
+
+The delay-aligned responses of all $N$ positions are then averaged as complex quantities,
+\begin{equation}
+  \bar H(f) = \frac{1}{N}\sum_{n=1}^{N} \hat H'_n(f).
+\end{equation}
+Complex (vector) averaging preserves phase and, more importantly, averages out the position-dependent \gterm{comb}{comb filtering} caused by reflections, which is the approach advocated for room and loudspeaker correction in~\cite{Toole,Mourjopoulos1994}.
+
+\section{Synchronized swept-sine deconvolution}\label{sec:thsweep}
+With the sweep stimulus, the \gterm{tf}{transfer function} can be estimated by deconvolution instead of by \gterm{welch}{Welch} averaging. The implementation follows the synchronized swept-sine formulation of Novak, Lotton and Simon~\cite{Novak2015}.
+
+\subsection{The synchronized sweep}\label{sec:syncsweep}
+The stimulus is the exponential (logarithmic) sweep
+\begin{equation}
+  x(t) = \sin\!\left( 2\pi f_1 L \left( e^{t/L} - 1 \right) \right),
+  \label{eq:sweep}
+\end{equation}
+from $f_1$ to $f_2$, where $f_2$ is the Nyquist frequency and $f_1$ lies a whole number of octaves below it, near \SI{11}{\hertz} at every sample rate (Appendix~\ref{ch:sweepband} explains why). Its instantaneous frequency is $f(t) = f_1 e^{t/L}$, so the sweep rate $L$ is the time the stimulus takes to multiply its frequency by $e$, and the sweep reaches frequency $f$ at
+\begin{equation}
+  t(f) = L \ln \frac{f}{f_1}.
+  \label{eq:sweeptime}
+\end{equation}
+
+What makes the sweep synchronized is that $L$ is not taken directly from the requested duration $T$, but quantized so that $f_1 L$ is an integer:
+\begin{equation}
+  L = \frac{1}{f_1}\,
+      \operatorname{round}\!\left( \frac{f_1 T}{\ln (f_2/f_1)} \right).
+  \label{eq:sweepL}
+\end{equation}
+The actual sweep duration is then $L \ln (f_2/f_1)$, slightly different from the $T$ requested.
+
+\subsection{Deconvolution by the analytic inverse}
+The recorded response is deconvolved by the sweep's analytic spectral inverse, the closed form obtained from the stationary-phase approximation of the sweep's spectrum~\cite{Novak2015},
+\begin{equation}
+  X^{-1}(f) = 2\sqrt{\frac{f}{L}}\;
+    \exp\!\left( -\,j\,2\pi f L
+      \left( 1 - \ln\frac{f}{f_1} \right) + j\,\frac{\pi}{4} \right).
+  \label{eq:sweepinv}
+\end{equation}
+The recording is transformed, multiplied by~\eqref{eq:sweepinv}, and transformed back. Because the inverse is known in closed form, nothing is divided by a measured spectrum. There is no ill-conditioned denominator to \gterm{regularization}{regularise} (contrast the $\varepsilon$ term in~\eqref{eq:h1}), and the whole band arrives in one shot with its true phase, from a single sweep rather than from an average over segments.
+
+\subsection{Why the harmonic orders separate}\label{sec:sweepharm}
+A distortion product of order $m$ at frequency $f$ is generated while the sweep is passing $f/m$. By~\eqref{eq:sweeptime} that happens
+\begin{equation}
+  \Delta t_m = L \ln m
+  \label{eq:sweepharmoffset}
+\end{equation}
+seconds before the linear response at the same frequency. After deconvolution, therefore, the \gterm{ir}{impulse responses} of the different orders sit at different places on the time axis. The linear impulse response lands at the system's propagation delay, and the order-$m$ impulse response lands $L \ln m$ seconds before it, wrapping circularly towards the end of the buffer.
+
+This is where the quantization~\eqref{eq:sweepL} earns its place. With $f_1 L$ an integer, the sweep's phase at every arrival time $\Delta t_m$ is an exact multiple of $2\pi$, so the harmonic impulse responses emerge not merely separated in time but with their true phase. Deconvolving a recording whose $L$ was not quantized (a file from another tool, say) still separates the orders in time, but their phase relationship is lost. Under the Welch estimator, by contrast, the distortion products are simply part of the measured output and end up folded into the linear estimate.
+
+\subsection{Extracting the linear and harmonic responses}
+The deconvolution uses an FFT the next power of two at least as long as the recording, and never shorter than the sweep, so the wrapped harmonic responses land far from the linear one. The first $W$ samples of the deconvolved response hold the linear impulse response. They are transformed onto exactly the same $W/2+1$ bin grid the Welch path produces, so everything downstream is method-agnostic.
+
+Harmonic orders \numrange{2}{5} are extracted, each centred $L \ln m$ seconds before the linear peak. The extraction half-width is bounded by $0.45$ times the spacing to the next order, which shrinks as $L \ln\!\big(m/(m-1)\big)$, so neighbouring orders cannot leak into one another. An order is dropped when the sweep is too short to separate it cleanly. Across microphone positions the harmonic magnitudes are averaged in power, because distortion phase is not coherent from one position to the next and the vector average of Section~\ref{sec:thavg} would cancel the distortion instead of measuring it.
+
+\section{Fractional-octave smoothing}\label{sec:thsmooth}
+The $1/n$-octave \gterm{smoothing}{smoothing} is a complex moving average, magnitude and phase together, over a logarithmic band $[\,k/r,\;k\,r\,]$ around each bin $k$, with $r = 2^{\text{fraction}/2}$, evaluated in $O(n)$ with a prefix sum. Working on a constant-$Q$ grid follows Hatziantoniou and Mourjopoulos~\cite{Hatziantoniou2000}. The $1/2$-octave setting fills the large perceptual gap between $1/3$ and $1$~octave.
+
+With frequency-dependent smoothing, the octave fraction used at bin $k$ is interpolated log-linearly in frequency between the low- and high-frequency settings,
+\begin{equation}
+  \mathrm{frac}(f) = \mathrm{frac}_{\mathrm{LF}}
+    + t(f)\,\bigl(\mathrm{frac}_{\mathrm{HF}}-\mathrm{frac}_{\mathrm{LF}}\bigr),
+  \quad
+  t(f) = \mathrm{clamp}\!\left(\frac{\log_2 f - \log_2 f_{\mathrm{lo}}}
+                                     {\log_2 f_{\mathrm{hi}} - \log_2 f_{\mathrm{lo}}},\,0,\,1\right),
+\end{equation}
+with anchors $f_{\mathrm{lo}}=\SI{100}{\hertz}$ and $f_{\mathrm{hi}}=\SI{10}{\kHz}$. This is distinct from the constant-$Q$ widening that any fractional-octave window already has. That widening grows the window in \si{\hertz} as frequency rises but keeps the octave fraction constant, whereas here the octave fraction itself varies with frequency.
+
+\section{Correction design}\label{sec:thcorrection}
+Starting from the normalised smoothed average $h = \bar H_s / g_{\mathrm{ref}}$, with $g_{\mathrm{ref}}$ the \SIrange{200}{2000}{\hertz} mean magnitude, the ideal inverse is the complex reciprocal
+\begin{equation}
+  C_0(f) = \frac{1}{h(f)} = \frac{\overline{h(f)}}{|h(f)|^{2}} ,
+  \label{eq:inverse}
+\end{equation}
+which flattens magnitude and zeroes phase at once. Four mechanisms \gterm{regularization}{regularise} and shape $C_0$ into the correction that is actually applied.
+
+\paragraph{1. Soft-knee boost ceiling.} Rather than hard-clamping the boost, which leaves a kink at every notch, the boost portion of the correction magnitude in dB is bent towards a ceiling $L$ (default $+12\,\si{\dB}$) with a $\tanh$ knee of width $\kappa=\min(6,L)\,\si{\dB}$:
+\begin{equation}
+  C_{\mathrm{dB}} \;\longmapsto\;
+  \begin{cases}
+    C_{\mathrm{dB}}, & C_{\mathrm{dB}} \le L-\kappa,\\[2pt]
+    (L-\kappa) + \kappa\,\tanh\!\dfrac{C_{\mathrm{dB}}-(L-\kappa)}{\kappa}, & C_{\mathrm{dB}} > L-\kappa.
+  \end{cases}
+\end{equation}
+The boost passes untouched up to $L-\kappa$, then saturates smoothly and asymptotes to $L$. Cuts ($|C|<1$) are left alone. This is the practical form of regularised inversion discussed in~\cite{Kirkeby1999}.
+
+\paragraph{2. Low-frequency slope.} $C$ is multiplied by a 2nd-order Butterworth high-pass target at $f_c=\SI{30}{\hertz}$,
+\begin{equation}
+  H_{\mathrm{hp}}(f) = \frac{(j\omega)^2}{(j\omega)^2 + \sqrt{2}\,(j\omega) + 1},
+  \qquad \omega = f/f_c ,
+\end{equation}
+so below $f_c$ the correction rolls off rather than chasing the woofer's natural roll-off to infinity.
+
+\paragraph{3. Correction level.} The correction level $\lambda$ morphs continuously from bypass to full correction by raising the correction to a power in the log/phase domain,
+\begin{equation}
+  C \;\longmapsto\; |C|^{\lambda}\, e^{\,j\lambda\arg C},
+  \qquad \lambda \in [0,1],
+\end{equation}
+so $\lambda=0$ gives unity and $\lambda=1$ the full inverse.
+
+\paragraph{4. Analysis band.} Outside the user range $[f_{\mathrm{lo}},f_{\mathrm{hi}}]$ the correction is faded back to unity through a half-octave raised-cosine skirt $w(f)$,
+\begin{equation}
+  C \;\longmapsto\; \bigl(1-w(f)\bigr) + w(f)\,C .
+\end{equation}
+
+\section{Subwoofer phase alignment}\label{sec:thsubalign}
+\paragraph{Preserving the relative timing.} The subwoofer set is taken at the same positions as the main and paired by load order. Each subwoofer measurement is delay-anchored on the corresponding main measurement's delay rather than having its own delay estimated and removed. If each file were independently zeroed, the physically meaningful main-vs-sub arrival-time difference at each position would be discarded. Anchoring keeps it, so the averaged subwoofer response $\bar S(f)$ retains its true phase relative to $\bar H$.
+
+\paragraph{The all-pass alignment term.} From the unit-magnitude phasor of the subwoofer, $\hat s$, an \gterm{allpass}{all-pass} factor is built and blended towards "no change" above the \gterm{crossover}{crossover},
+\begin{equation}
+  A(f) = \frac{(1-w_x) + w_x\,\hat s(f)}{\bigl|(1-w_x) + w_x\,\hat s(f)\bigr|},
+  \qquad C \longmapsto C\cdot A(f),
+\end{equation}
+where the alignment weight $w_x(f)$ is 1 at and below the crossover and is released to 0 over one octave above it (raised cosine). The renormalisation makes $A$ strictly phase-only, leaving the main's magnitude correction unchanged. Blending the phasors, rather than scaling an unwrapped phase angle, keeps the rotation on the short arc between $1$ and $\hat s$, so $A$ applies only the minimal phase shift and never unwinds the subwoofer's large accumulated low-frequency phase. The \gterm{polarity}{polarity} inversion negates $\bar S$.
+
+\paragraph{Bulk time alignment.} The subwoofer phasor entering the blend is advanced by the Mains delay $t_a$ before its phase is taken,
+\begin{equation}
+  \hat s(f) = \frac{\hat S(f)}{|\hat S(f)|},\qquad
+  \hat S(f) = \pm\,\bar S_s(f)\,e^{\,j 2\pi f\, t_a},
+\end{equation}
+so when $t_a$ matches the measured offset the corrected main's phase is already flat through the crossover and $A\to 1$. The recommended $t_a$ comes from a power-weighted least-squares fit of the unwrapped, delay-anchored subwoofer phase over $[\,f_c/2,\,2f_c\,]$, the local \gterm{groupdelay}{group delay} $\hat\tau=-\,\mathrm{d}\varphi/\mathrm{d}\omega$. Appendix~\ref{ch:delays} develops this estimator and the condition the applied delays must satisfy.
+
+\section{The complete correction filter}\label{sec:fullfilter}
+Collecting the stages of Sections~\ref{sec:thcorrection} and~\ref{sec:thsubalign}, the correction applied at each frequency bin is the single complex expression
+\begin{equation}
+  \boxed{\;
+  C(f) = \bigl(1-w(f)\bigr)
+       + w(f)\,A(f)\,
+         \mathcal{P}_{\lambda}\!\Bigl[\,
+           H_{\mathrm{hp}}(f)\;\mathcal{B}\!\bigl[\,1/h(f)\,\bigr]
+         \Bigr]\; }
+  \label{eq:fullfilter}
+\end{equation}
+evaluated on the \gterm{welch}{Welch} bin grid ($f_k = k\,f_s/W$). Section~\ref{sec:threnders} resamples and inverse-transforms this spectrum $C(f)$, not an analytic filter, into the exported \gterm{fir}{FIR}. Reading~\eqref{eq:fullfilter} from the inside out, the operators are exactly the design steps above:
+\begin{align}
+  h(f) &= \frac{\bar H_s(f)}{g_{\mathrm{ref}}}
+        && \text{normalised smoothed average,}\\[2pt]
+  \tfrac{1}{h(f)} &= \frac{\overline{h(f)}}{|h(f)|^{2}}
+        && \text{exact complex inverse, eq.~\eqref{eq:inverse},}\\[2pt]
+  \mathcal{B}[z] &= z\,10^{\,\bigl(\ell(z_{\mathrm{dB}})-z_{\mathrm{dB}}\bigr)/20},\quad
+        z_{\mathrm{dB}}=20\log_{10}|z|
+        && \text{soft-knee boost limit (phase kept),}\\[2pt]
+  \ell(g) &= \begin{cases}
+               g, & g \le L-\kappa,\\
+               (L-\kappa) + \kappa\tanh\!\dfrac{g-(L-\kappa)}{\kappa}, & g > L-\kappa,
+             \end{cases}
+        && \kappa=\min(6,L),\ L=\text{max boost (dB)},\\[2pt]
+  H_{\mathrm{hp}}(f) &= \frac{(j\omega)^2}{(j\omega)^2+\sqrt{2}\,(j\omega)+1},\quad
+        \omega=\frac{f}{f_c}
+        && \text{LF slope, } f_c=\SI{30}{\hertz},\\[2pt]
+  \mathcal{P}_{\lambda}[z] &= |z|^{\lambda}\,e^{\,j\lambda\arg z}
+        && \text{correction level } \lambda\in[0,1],\\[2pt]
+  \hat s(f) &= \frac{\pm\,\bar S_s(f)\,e^{\,j2\pi f t_a}}{\bigl|\bar S_s(f)\bigr|}
+        && \text{time-aligned sub phasor, } t_a=\text{Mains delay,}\\[2pt]
+  A(f) &= \frac{(1-w_x)+w_x\,\hat s(f)}{\bigl|(1-w_x)+w_x\,\hat s(f)\bigr|}
+        && \text{sub phase alignment } (A\equiv 1 \text{ if no sub}),\\[2pt]
+  w(f) &\in [0,1]
+        && \text{analysis-band weight (raised-cosine skirts).}
+\end{align}
+Two boundary cases complete the definition. Where $|h(f)|$ is negligible, the inverse is replaced by the boost ceiling rather than diverging. Cuts ($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$, so only boosts are limited. Setting $\lambda=1$, no subwoofer ($A\equiv1$) and a fully open analysis band ($w\equiv1$) reduces~\eqref{eq:fullfilter} to the boost-limited, LF-sloped exact inverse $H_{\mathrm{hp}}\,\mathcal{B}[1/h]$.
+
+\section{Rendering the FIR}\label{sec:threnders}
+Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} on the \gterm{fir}{FIR}'s frequency grid, with $N=\text{nextPow2}(\text{firLength})$ bins.
+
+\subsection{Linear- and mixed-phase rendering}
+The resampled spectrum is given a half-length linear phase shift, multiplying bin $k$ by $e^{-j\pi k}=(-1)^k$, before the inverse FFT. Because the correction is a mixed-phase filter, deliberately carrying phase and \gterm{allpass}{all-pass} content including the subwoofer alignment, it is not causal on its own, and centring its energy at sample $N/2$ is what makes it realisable as an ordinary FIR. A Tukey window (10\,\% taper) centred on $N/2$ then cleans up the edges. FIR design by frequency sampling and windowing is standard~\cite{OppenheimSchafer}.
+
+The cost of centring is a constant latency of $\approx N/2$ samples on that output. SuperMoTo's per-output convolution uses the WDL zero-latency (uniformly partitioned) convolution engine~\cite{Gardner1995}, so the filter adds no algorithmic block latency beyond that fixed $N/2$ offset.
+
+\subsection{Minimum-phase rendering}\label{sec:minphase}
+As defined in Appendix~\ref{ch:minphasedef}, a \gterm{minphase}{minimum-phase} response is the unique causal, stable response whose log-magnitude and phase form a \gterm{hilbert}{Hilbert-transform} pair (eq.~\eqref{eq:hilbert}), so it is fully determined by $|C(f)|$~\cite{OppenheimSchafer}. SuperMoTo computes it by the real-\gterm{cepstrum}{cepstrum} method. With $c[n]=\mathcal{F}^{-1}\{\log|C|\}$ the real cepstrum, the minimum-phase log-spectrum is recovered by keeping its causal part,
+\begin{equation}
+  \hat c[n] = c[n]\,\ell[n], \qquad
+  \ell[n] = \begin{cases}
+              1, & n=0,\ n=N/2,\\
+              2, & 1\le n < N/2,\\
+              0, & N/2 < n \le N-1,
+            \end{cases}
+\end{equation}
+and the impulse response is $\mathcal{F}^{-1}\bigl\{\exp \mathcal{F}\{\hat c\}\bigr\}$, tapered only at the tail since its energy is front-loaded near $n=0$~\cite{OppenheimSchafer}. Only $|C|$ enters this construction, and the all-pass term $A$ has unit magnitude, so the subwoofer alignment has no effect on a minimum-phase export.

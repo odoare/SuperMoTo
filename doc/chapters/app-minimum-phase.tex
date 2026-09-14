@@ -1,0 +1,26 @@
+%==============================================================================
+\chapter{Minimum phase, excess phase and invertibility}\label{ch:minphasedef}
+%==============================================================================
+
+Whether an error can be undone by a filter hinges on a single property of the response, namely whether it is \gterm{minphase}{minimum-phase}. Section~\ref{sec:cando} says which phenomena fall on each side of that line. This appendix explains why, first physically and then in terms of poles and zeros.
+
+\section{Physically}
+A response is \gterm{minphase}{minimum-phase} when, for its given magnitude, its energy arrives as early as possible. It has the least phase lag and the least \gterm{groupdelay}{group delay} (the frequency-derivative of phase, i.e.\ the delay the response imposes near each frequency) consistent with that magnitude. Equivalently, both the response and its inverse are causal and stable, which is exactly what makes it correctable, because undoing it does not require predicting the future. A single loudspeaker resonance, a driver roll-off and an isolated low-frequency \gterm{roommode}{room mode} are essentially minimum-phase, since the magnitude bump or dip and the phase rotation around it are two views of the same event. A pure propagation delay, a discrete reflection arriving after the direct sound, and the deep cancellation notch where two out-of-phase sources sum are not minimum-phase. They carry \gterm{allpass}{excess phase}, a lag beyond the minimum that no stable causal filter can remove.
+
+\section{Mathematically}
+For a discrete linear time-invariant system with rational \gterm{tf}{transfer function} $H(z)$, \gterm{minphase}{minimum-phase} means every pole and every zero lies strictly inside the unit circle. Poles inside make $H$ causal and stable. Zeros inside make the inverse $1/H(z)$, whose poles are $H$'s zeros, causal and stable too, so $H$ can be inverted by a realisable filter. Any stable response factors uniquely into a minimum-phase and an \gterm{allpass}{all-pass} part,
+\begin{equation}
+  H(z) = H_{\min}(z)\,H_{\mathrm{ap}}(z),
+  \qquad \bigl|H_{\mathrm{ap}}(e^{j\omega})\bigr| = 1,
+  \label{eq:minap}
+\end{equation}
+where the all-pass factor $H_{\mathrm{ap}}$ (unit magnitude, so it changes only the phase) carries all the excess phase, obtained by reflecting each zero $z_0$ outside the unit circle to $1/\bar z_0$ inside. The minimum-phase factor alone sets the magnitude, $|H| = |H_{\min}|$, and for it alone magnitude and phase are not independent but a \gterm{hilbert}{Hilbert-transform} pair:
+\begin{equation}
+  \arg H_{\min}(e^{j\omega})
+    = \mathcal{H}\bigl\{\log\bigl|H_{\min}(e^{j\omega})\bigr|\bigr\},
+  \label{eq:hilbert}
+\end{equation}
+so the phase is completely determined by the magnitude. SuperMoTo uses this identity both ways, to design a flat-phase correction by conjugating the measured minimum-phase phase, and to render a low-latency filter from the magnitude alone (Section~\ref{sec:minphase}).
+
+\section{What it means for the correction}
+The practical consequence governs the whole correction design. SuperMoTo can invert the magnitude exactly and flatten the \gterm{minphase}{minimum-phase} phase. The \gterm{allpass}{all-pass} / excess part and any pure delay can only be pre-compensated, with a \gterm{linphase}{linear-phase} filter that is acausal and therefore adds latency (Section~\ref{sec:render}). A genuine non-minimum-phase cancellation, a zero on or outside the unit circle, has no stable inverse at all, so boosting into it merely wastes headroom. This one distinction is why the \gterm{spatialavg}{spatial average}, the boost ceiling and the frequency-dependent \gterm{smoothing}{smoothing} exist (Chapter~\ref{ch:analysis}). They keep the design on the minimum-phase part of the response that is actually invertible.

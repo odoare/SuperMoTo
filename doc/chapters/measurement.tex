@@ -1,0 +1,288 @@
+%==============================================================================
+\chapter{Measurement (Calibration view)}\label{ch:measure}
+%==============================================================================
+
+The Calibration view is where SuperMoTo emits a test signal, records the measurement microphone and writes the result to disk. This chapter takes the three measurement modes first, since they decide what everything else means, then the controls of the pane, then what a run leaves on disk, and finally the practical recommendations. The reasoning behind the microphone-position recommendations is in Appendix~\ref{ch:spatial}.
+
+% TODO(screenshot): the Calibration view: microphone input selector, measurement
+% type, channel selection, stimulus type, duration/level controls, the Sub
+% switch and sub-channel combo, the measurement-folder chooser, the Run button,
+% and the SPL meter section on the right with its dual dBFS/dB SPL bar.
+\screenshot{calibration-view.png}{The Calibration view: microphone input,
+measurement type, channel selection, stimulus (noise / sweep), duration,
+level, the \textbf{Sub} switch and sub-channel combo, the measurement
+\textbf{folder}, the Run control, and the right-hand SPL-meter section
+with its dual dBFS / dB\,SPL bar and test-signal generators.}
+
+\section{The three measurement modes}\label{sec:modes}
+The measurement type selector decides where the stimulus is injected and how much of the engine it passes through before reaching the loudspeaker and the microphone. The three modes form a natural progression. The first characterises a bare speaker ("Dry"), the second verifies its correction ("\gterm{fir}{FIR}"), and the third validates the whole monitored chain ("System"). Table~\ref{tab:measmodes} summarises them and Figure~\ref{fig:measmodes} shows the injection point of each.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Mode} & \textbf{What is exercised} \\
+\midrule
+\textbf{Dry} &
+  Stimulus written straight onto the measured \emph{output}, with no trim and
+  no FIR. The raw loudspeaker, as wired. The first step before designing a FIR. \\
+\textbf{FIR} &
+  Stimulus to the measured \emph{output} through its trim and FIR chain only,
+  to verify a correction by re-measuring. \\
+\textbf{System} &
+  Stimulus injected into a plugin \emph{input} and run through the whole engine
+  (matrix routing, frame EQ / crossover, output FIRs, inter-output latency
+  compensation), the complete system as heard. Channel selection means
+  \emph{inputs} in this mode; the "Sub" switch does not apply. \\
+\bottomrule
+\end{tabularx}
+\caption{Measurement modes. "Dry" characterises a bare speaker, "FIR"
+verifies its correction, "System" captures the complete monitored chain.
+What each mode writes to disk is in Section~\ref{sec:export}.}
+\label{tab:measmodes}
+\end{table}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+   node distance=5mm and 11mm,
+   block/.style={draw, rounded corners, fill=smtlight, minimum height=8mm,
+                 minimum width=17mm, align=center, font=\footnotesize},
+   io/.style={draw, fill=smtblue!15, minimum height=8mm, minimum width=15mm,
+              align=center, font=\footnotesize},
+   inj/.style={smtgold, font=\footnotesize\bfseries},
+   >={Stealth[]}]
+  \node[io] (in) {input};
+  \node[block, right=of in] (matrix) {matrix\\routing};
+  \node[block, right=of matrix] (eq) {frame EQ /\\crossover};
+  \node[block, right=of eq] (trim) {output\\trim};
+  \node[block, right=of trim] (fir) {output\\FIR};
+  \node[io, right=of fir] (out) {output\\(speaker)};
+  \draw[->] (in) -- (matrix);
+  \draw[->] (matrix) -- (eq);
+  \draw[->] (eq) -- (trim);
+  \draw[->] (trim) -- (fir);
+  \draw[->] (fir) -- (out);
+  % Injection points
+  \draw[->, smtgold, thick] ($(out.north)+(0,7mm)$) node[inj, above]{Dry} -- (out.north);
+  \draw[->, smtgold, thick] ($(trim.north)+(0,7mm)$) node[inj, above]{FIR} -- (trim.north);
+  \draw[->, smtgold, thick] ($(in.north)+(0,7mm)$) node[inj, above]{System} -- (in.north);
+\end{tikzpicture}
+\caption{Where each mode injects the stimulus. "Dry" drives the output directly (bypassing trim and FIR); "FIR" enters at the output trim so the signal passes trim + FIR; "System" enters at a plugin input and traverses the entire engine.}
+\label{fig:measmodes}
+\end{figure}
+
+\subsection{The raw loudspeaker (Dry)}
+The stimulus is written directly onto the selected output channel without trim and FIR applied. The capture therefore characterises the loudspeaker and room exactly as the speaker is physically driven, with no correction in the path. This is the measurement you feed to the analysis (Chapter~\ref{ch:analysis}) or group analysis (Chapter~\ref{ch:groupanalysis}) to design a correction. Run it for each output you intend to correct, at several microphone positions around the listening spot.
+
+\subsection{Verifying the correction (FIR)}
+The stimulus is emitted to the selected output through that output's trim and FIR only (the matrix is otherwise silent). Use it after you have exported a correction IR and assigned it to the output. Re-measuring should show a flatter response than the corresponding dry capture. It is the direct before/after check on a single speaker's correction.
+
+\subsection{The complete monitored chain (System)}
+The stimulus is injected into the selected plugin input and run through the whole engine with the currently engaged configuration(s), including matrix routing, frame EQ and bass-management \gterm{crossover}{crossover}, the output FIRs and the inter-output \gterm{latencycomp}{latency compensation}. This is the final system you want to be optimised. The master gain is bypassed (unity) during the run, so the capture level is set by the stimulus alone. Because the source is an input, the channel selection chooses inputs. This is the end-to-end validation which, for a bass-managed rig, shows whether mains and subwoofer sum smoothly through the crossover at the listening position.
+
+\section{The Calibration pane, control by control}\label{sec:calpane}
+A measurement is set up by working across the pane, picking the microphone, the mode, the channels, the stimulus and the destination folder, then pressing "Run".
+
+\subsection{Microphone input and calibration}
+The "Microphone input" selector chooses which plugin input channel carries the measurement microphone. Next to it, the "Mic cal" control loads and clears the microphone calibration curve. Because there is normally only one physical microphone, this is a global setting remembered across sessions and projects. Section~\ref{sec:miccal} covers the calibration in detail.
+
+\subsection{Measurement type and channel selection}
+The measurement type buttons choose Dry, \gterm{fir}{FIR} or System (Section~\ref{sec:modes}). The channel toggles then choose what to measure, and their meaning follows the mode. They are physical outputs in Dry and FIR, and plugin inputs in System. Each selected channel is measured in turn within one run.
+
+\subsection{The Sub switch}
+The "Sub" switch turns subwoofer handling on for this measurement run. The "Sub channel" combo next to it then picks which of the measured channels is the subwoofer. Both are disabled in System mode, where the toggled channels are plugin inputs rather than physical outputs. Leaving the switch off (the default) measures every channel as an ordinary loudspeaker.
+
+The "Sub" switch's only effect is to flag the corresponding channel under the \texttt{sub} name instead of its channel number (Section~\ref{sec:measfolder}), and the manifest records which channel it was. That is what later lets Group analysis load a whole campaign and know which of the sets is the sub.
+
+\subsection{Stimulus, duration and level}
+The stimulus is either band-limited white noise (\SIrange{10}{20000}{\hertz}) or a logarithmic sweep, which runs from about \SI{11}{\hertz} up to Nyquist over a whole number of octaves. The sweep is generally a better choice. It also enables the synchronized swept-sine analysis of Section~\ref{sec:sweep}, which separates the harmonic-distortion curves. Its exact band is written into the manifest per run, so the analysis always knows what was emitted, and folders measured with an older version keep analysing with the band they were actually made with. In order to keep the deconvolved \gterm{ir}{impulse response} free of ringing around its peak, the sweep is performed all the way to the Nyquist frequency. Appendix~\ref{ch:sweepband} discusses the measurements behind that choice.
+
+The duration (\SIrange{5}{30}{\second}) is a target rather than an exact value for sweeps, since the sweep rate is quantized (Section~\ref{sec:syncsweep}). Longer is quieter, through more averaging, but slower. The level should be loud enough to sit well above the room noise and quiet enough not to drive the speaker into distortion.
+
+\subsection{The measurement folder}
+The folder chooser sets where a run organises the files of an entire measurement campaign into a single folder that Group analysis (Chapter~\ref{ch:groupanalysis}) can later load in one step. Section~\ref{sec:export} describes what ends up there.
+
+\subsection{Comments}\label{sec:comments}
+Two free-text fields let you record what a set of measurements actually was. Both are written into the manifests, next to the files themselves, where they will still be legible later.
+
+\begin{itemize}[nosep]
+  \item \textbf{Folder comment\ldots} opens a small editor for a general comment describing the whole campaign (the room, the rig, the date, the speaker positions). It is pre-filled from the folder's existing manifest when you point the path at a folder that already has one, so it accumulates all consecutive runs. Edit it between runs and the next run rewrites it.
+  \item \textbf{Run comment} is a one-line note attached to the next run only, logged with that run's entry ("mic at seat, 3rd position", "after moving the left speaker").
+\end{itemize}
+
+\subsection{Running the measurement}
+"Run" measures each selected channel in turn. Each capture records the stimulus plus a short decay tail (\SI{1}{\second}) so the room's late energy is included. The stimulus is faded in over \SI{20}{\milli\second} to avoid a click at the start. It is faded out over \SI{20}{\milli\second} as well for noise, but over only \SI{0.5}{\milli\second} for a sweep. A long fade-out would taper the top of the swept band and smear the deconvolved impulse response, while a very short one still removes the step at the end.
+
+When measuring several channels in one run, the engine holds the monitor path silent while each finished capture is written to disk, so the speakers are not blasted between consecutive measurements.
+
+\subsection{The SPL meter}\label{sec:splmeter}
+The right-hand SPL-meter section reuses the microphone / channel / measurement-type selections. It shows the microphone RMS on a dual dBFS / dB\,SPL bar and can emit a sine and/or white-noise test signal, routed exactly like the selected measurement mode. To calibrate the dB\,SPL scale, play a tone, read a real SPL meter at the listening position, and type that value into the plugin.
+
+\section{Microphone calibration}\label{sec:miccal}
+% TODO(screenshot): the "Mic cal" control on the first row of the Calibration
+% view — the file-name field, the load (...) and clear (x) buttons, next to the
+% Microphone input selector.
+\screenshot{mic-cal-control.png}{The \textbf{Mic cal} control on the Calibration
+view: the loaded file name, the load (\ldots) and clear ($\times$) buttons,
+beside the microphone-input selector. The same calibration is shown (read-only)
+in the Analysis view.}
+
+\subsection{Why calibrate}
+Even a good measurement microphone is not perfectly flat. Each capsule has small deviations from flat, most noticeably a gentle rise or roll-off in the top octave (above \SIrange{8}{10}{\kilo\hertz}) and sometimes a few tenths of a dB elsewhere. The calibration file is the measured deviation of that microphone from flat. If it is not removed, the analysis attributes the microphone's own colouration to the loudspeaker and builds it into the correction. Dividing the calibration out first means the estimated \gterm{tf}{transfer function} reflects the loudspeaker and room alone. Note that the measurement microphone's defects are generally of a much lower order than that of the speakers in the room.
+
+\subsection{The calibration file format}
+There is no formal standard, but a single de-facto plain-text format is shared by REW, miniDSP, Dayton (OmniMic / iMM-6) and the FRD tools, and SuperMoTo reads it directly (\texttt{.txt}, \texttt{.cal} or \texttt{.frd}):
+
+\begin{itemize}[nosep]
+  \item comment lines start with \texttt{*}, \texttt{\#} or \texttt{;} (the miniDSP \texttt{Sens Factor =\ldots} header is one such line);
+  \item every other line is \texttt{frequency\_Hz \quad magnitude\_dB \quad [phase\_deg]}, whitespace- or comma-separated, with the phase column optional.
+\end{itemize}
+
+The magnitude is the microphone's deviation from flat (mean $\approx 0$ in the midband). Where do the numbers come from? Individually-measured mics (e.g.\ the UMIK series) have a file keyed to the unit's serial number, downloaded from the vendor. Cheaper mics may ship only a model-typical file, or none. The \texttt{Sens Factor} line encodes absolute sensitivity for dB\,SPL work and is ignored here.
+
+\subsection{How SuperMoTo applies it}
+The calibration is a global setting, loaded with "Mic cal"~\ldots{} on the Calibration view and it is remembered across sessions and projects. (A measurement folder can also carry its own embedded copy, which then takes precedence for that folder, as Section~\ref{sec:micsource} explains.) The analysis views show the calibration actually in effect read-only (\textit{Mic cal: \ldots}) as a reminder. It is used in two places:
+
+\begin{enumerate}[nosep]
+  \item \textbf{The live spectrum display} (SPL-meter section) plots the corrected microphone spectrum, so what you see already has the microphone's own response taken out.
+  \item \textbf{The analysis} divides the microphone response out of every measured transfer function before the average, the correction and the exported curves are computed.
+\end{enumerate}
+
+Formally, at each frequency bin the measured response is multiplied by the inverse of the microphone curve,
+\begin{equation}
+  H_{\text{corr}}(f) = H_{\text{meas}}(f)\;
+      10^{-c_{\mathrm{dB}}(f)/20}\; e^{-j\,c_{\phi}(f)},
+  \label{eq:miccal}
+\end{equation}
+where $c_{\mathrm{dB}}$ and $c_{\phi}$ are the calibration magnitude and phase, interpolated in log-frequency and held flat (at the endpoint value) outside the file's range. When the file has no phase column, $c_{\phi}\equiv 0$ and only the magnitude is corrected.
+
+It must be noted that the recorded measurement files stay raw. The calibration is applied at analysis time, not baked into the captured wavs, so you can change or replace the calibration (a better file, the other orientation) and re-analyse without re-measuring.
+
+\subsection{Calibration source selector}\label{sec:micsource}
+Both analysis views carry a mic calibration source selector, because the right curve is not always the one currently loaded on the Calibration view:
+
+\begin{itemize}[nosep]
+  \item \textbf{Global mic cal} is the curve loaded on the Calibration view. This is the default and is what you want while the measurements in front of you were made with the microphone you are using now.
+  \item \textbf{Folder mic cal} is the curve embedded in the measurements' own \texttt{measurement.xml} (Section~\ref{sec:manifest}). Offered only when the loaded set actually carries one.
+  \item \textbf{No mic cal} analyses the raw measurements, with no microphone correction at all. Useful to see how much the calibration is doing, or when you suspect the calibration file itself.
+\end{itemize}
+
+\noindent When a loaded set carries an embedded curve, "Folder" is selected automatically. Measurements made a year ago with a different microphone are then analysed with that microphone's calibration, although that can be overridden. Changing it re-analyses the loaded set immediately, since the calibration is divided out at analysis time (eq.~\eqref{eq:miccal}) and not baked into the recordings.
+
+Group analysis finds the manifest in the folder it loaded. The single-speaker Analysis view looks for one in the directory the selected files came from, so files picked by hand out of a proper measurement folder still get its calibration.
+
+\section{What a measurement writes to disk}\label{sec:export}
+Every run leaves two kinds of thing in the measurement folder, the capture files themselves and two manifests describing them. Together they make the folder self-describing. Hand it to Group analysis, to a colleague, or to yourself in six months, and the analysis knows how the recordings were made without you having to remember.
+
+\subsection{The capture files}\label{sec:measfolder}
+Each measured channel produces one stereo wav file. The naming follows the mode, so a System set can never collide with a Dry or \gterm{fir}{FIR} set in the same folder:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Mode} & \textbf{Channels are} & \textbf{File written} \\
+\midrule
+\textbf{Dry}    & outputs & \texttt{ch<output>\_pos<N>.wav}, or
+                            \texttt{sub\_pos<N>.wav} for the channel flagged
+                            as the subwoofer \\
+\textbf{FIR}    & outputs & \texttt{ch<output>\_pos<N>.wav}, or
+                            \texttt{sub\_pos<N>.wav} for the channel flagged
+                            as the subwoofer \\
+\textbf{System} & inputs  & \texttt{in<input>\_pos<N>.wav}; the \textbf{Sub}
+                            switch does not apply, so there is no
+                            \texttt{sub} file \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent The position number \texttt{<N>} is found automatically for each channel by scanning the folder for that channel's existing files and incrementing. Moving the microphone and running the same channel selection again therefore adds the next position without any manual renaming, and channels measured together in one run stay in step across runs.
+
+\subsection{The "sent" channel convention}
+In every mode the captured stereo file stores the raw stimulus (pre-everything) on channel~1 and the microphone on channel~2:
+
+\begin{itemize}[nosep]
+  \item channel 1 = the sent signal (the raw stimulus),
+  \item channel 2 = the recorded microphone signal.
+\end{itemize}
+
+\noindent The \gterm{tf}{transfer function} computed in the analysis part is therefore always microphone~/~raw\,stimulus. The consequence is deliberate and important:
+\begin{itemize}[nosep]
+  \item in "Dry" mode that ratio is the bare speaker + room response;
+  \item in "FIR" and "System" modes it already includes the correction (and, for System, the full chain), so a successful correction shows up directly as a flatter measured transfer function, with nothing to subtract by hand.
+\end{itemize}
+
+\subsection{The two manifests}
+After every run SuperMoTo (re)writes two manifests in the folder, both regenerated from the folder's actual contents each time, so they stay correct even if files are added or removed by hand:
+
+\begin{itemize}[nosep]
+  \item \texttt{measurement.xml} is the machine-readable manifest, detailed below. This is what Group analysis's "Load measurement folder\ldots" button actually reads (Section~\ref{sec:grouploadfolder}), so hand-editing or reformatting the readme can never break folder loading.
+  \item \texttt{readme\_measurement.md} holds the same information as human-readable documentation of the campaign (mode, stimulus, duration, level, mic input, files written per run). It is also the fallback for folders recorded before the XML manifest existed, and the copy you can read without any tooling.
+\end{itemize}
+
+\subsection{What the manifest records}\label{sec:manifest}
+\texttt{measurement.xml} is not merely an index of the files. It carries everything a later analysis needs to interpret them. At the folder level it holds:
+
+\begin{itemize}[nosep]
+  \item the \textbf{channels} measured and which one is the subwoofer, plus the highest position number reached and the time of the last run;
+  \item the \textbf{general comment} (Section~\ref{sec:comments});
+  \item the \textbf{SPL calibration} in effect, as the single offset relating full scale to sound pressure, $\mathrm{dB\,SPL} = \mathrm{dBFS} + \textit{offset}$, which is what later allows the analysis to plot estimated dB\,SPL (Section~\ref{sec:levelref});
+  \item the \textbf{microphone calibration} in effect, stored as its display name plus a verbatim copy of the calibration file itself, so the folder carries its own microphone correction (Section~\ref{sec:micsource}).
+\end{itemize}
+
+\noindent and, per run, a log entry giving the time, the mode, the stimulus (type, duration and level), the microphone input, the files written, the comment for that run, and, for a sweep, the sweep identity $f_1$, $f_2$ and $L$. That last item is what enables the synchronized swept-sine analysis of Section~\ref{sec:sweep}. Without a recorded $L$ the deconvolution cannot reconstruct the stimulus, and the analysis falls back to \gterm{welch}{Welch}. Because the band is recorded per run rather than assumed, folders measured with an older version of SuperMoTo keep analysing correctly with the band they were actually made with.
+
+The two calibration records are carried over from the previous manifest when a run is made without them. A folder is expected to correspond to one physical microphone, so measuring a few extra positions with the calibration file not currently loaded does not erase the folder's record of it.
+
+\section{Recommendations}\label{sec:measrec}
+The reasoning behind the position recommendations is in Appendix~\ref{ch:spatial}, and what follows is the summary worth acting on.
+
+\subsection{Choosing and orienting the microphone}\label{sec:micchoice}
+What the analysis sees is the loudspeaker and room as sampled by the microphone. The microphone is therefore part of the measurement chain, and the kind of microphone, together with how well it is characterised, sets a ceiling on how trustworthy the resulting correction can be.
+
+Ordinary recording microphones (cardioid vocal or instrument mics) are deliberately voiced, with a directional pickup pattern and a shaped, non-flat response designed to flatter sources. That is exactly wrong for measurement. Use a measurement microphone, which is:
+
+\begin{itemize}[nosep]
+  \item \textbf{Omnidirectional}, so it captures the room as the ear does rather than rejecting it from the sides.
+  \item \textbf{Small diaphragm} (typically \SI{6}{\milli\metre}, quarter-inch or half-inch), for a wide, uniform high-frequency response with little directional colouration.
+  \item \textbf{Nominally flat} magnitude response over the audio band, with only small residual deviations, which a calibration file then removes (Section~\ref{sec:miccal}).
+\end{itemize}
+
+Common, affordable choices include the USB miniDSP UMIK-1 / UMIK-2, the Dayton Audio EMM-6 (XLR) and iMM-6, the Behringer ECM8000, and any class~1/class~2 measurement capsule. USB models carry their own ADC and appear as a soundcard input, while XLR models need phantom power and an audio interface. Either works, since SuperMoTo only needs the microphone to arrive on one of its plugin input channels.
+
+Because the microphone is omnidirectional only at low frequencies, its high-frequency response depends on the angle of arrival, so it is characterised for a specific orientation. Vendors such as miniDSP ship two calibration files for this reason:
+
+\begin{itemize}[nosep]
+  \item \textbf{\ang{0} (on-axis)}, with the capsule pointed at the loudspeaker. This is the orientation for the swept-speaker measurements SuperMoTo makes, and the one whose calibration file you should load.
+  \item \textbf{\ang{90} (grazing)}, with the capsule pointed at the ceiling, used for steady-state room / RTA averaging where sound arrives from many directions.
+\end{itemize}
+
+\noindent Use the \ang{0} file and point the microphone at the speaker under test.
+
+\subsection{How many positions, and how far apart}\label{sec:howmany}
+\begin{itemize}[nosep]
+  \item \textbf{Seven to nine positions} for a single listening seat. Five is already enough below \SI{500}{\hertz}. The extra positions only earn their keep higher up, where the return diminishes as $1/\sqrt N$.
+  \item \textbf{Spread them over \SIrange{30}{50}{\centi\metre}}, about the volume a head occupies while working. Much wider and the mid band is averaged towards something true at no single seat, without buying any accuracy in the bass, where the wavelengths are metres. A subwoofer set argues for keeping the cluster tight for a second reason (Appendix~\ref{sec:subcluster}).
+  \item \textbf{Use all three dimensions.} A flat cross in the horizontal plane misses the fastest-changing direction, because the desk and ceiling reflections vary more with height than with lateral position. Two or three points at $\pm$\SIrange{10}{15}{\centi\metre} vertically are worth more than the same number added to the plane.
+  \item \textbf{Keep the geometry constant between speakers.} The group analysis pairs measurements by load order, so speaker~1 position~3 and speaker~2 position~3 should be the same point in space.
+  \item If the system must serve a listening area rather than a seat, positions have to cover that area, and the low end then becomes an explicit compromise rather than a correction. No single filter can serve two seats a metre apart below a few hundred hertz.
+\end{itemize}
+
+\noindent One consequence is worth stating plainly, because it is easy to expect otherwise. A cluster of positions around one seat cannot average out \gterm{roommode}{room modes}. To decorrelate \SI{100}{\hertz} the microphone would have to move \SI{1.7}{\metre}, which is no longer the same listening position. Below a few hundred hertz the average is the response at that seat, modes included, and the correction derived from it is correspondingly seat specific. That is a property of the physics rather than a shortcoming of the method, and Appendix~\ref{ch:spatial} works through why.
+
+\subsection{Microphone calibration}
+\begin{itemize}[nosep]
+  \item Load the \ang{0} calibration file and point the microphone at the speaker for the swept measurements.
+  \item A calibration matters most above a few kHz, where the microphone's own deviations live and where room averaging no longer hides them. In the bass the capsule is essentially flat and room modes dominate regardless.
+  \item Loading no calibration is acceptable for broad bass correction, but then any treble target inherits the microphone's error, so for full-range correction a calibrated microphone is strongly advised.
+  \item The calibration corrects the microphone, not its placement. Mic position and \gterm{spatialavg}{spatial averaging} (Section~\ref{sec:spatialavg}) remain just as important.
+\end{itemize}
+
+\subsection{Choosing the stimulus}
+\begin{itemize}[nosep]
+  \item Prefer the log sweep. It gives true phase in one shot, better signal-to-noise for the same duration, and the harmonic-distortion curves, none of which white noise gives.
+  \item \SI{10}{\second} is a good default duration. Go longer in a noisy room rather than louder, and remember a sweep needs enough length for its harmonic orders to separate (Section~\ref{sec:sweepharm}).
+  \item Set the level loud enough to sit well clear of the room noise and no louder. Check the distortion curves after a first run. If the harmonic orders are close to the fundamental, the speaker is being driven too hard for a clean measurement.
+\end{itemize}

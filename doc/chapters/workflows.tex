@@ -1,0 +1,48 @@
+%==============================================================================
+\chapter{Workflows}\label{ch:workflows}
+%==============================================================================
+
+These are the short recipes. Appendix~\ref{ch:examples} works through three complete multi-configuration setups end to end, a studio with two pairs and a sub, a switchable 5.1, and an Ambisonic rig.
+
+\section{Stereo monitoring with corrected speakers (A)}
+\begin{enumerate}[nosep]
+  \item Route input~1 to output~1 and input~2 to output~2 in the matrix view, or use Config tool $\rightarrow$ Stereo 2.0 $\rightarrow$ Apply to A.
+  \item In the Calibration view, measure outputs 1 and 2 in "Dry" mode, at several mic positions around the listening spot.
+  \item In the Analysis view, load each speaker's set, design the correction, then use "Export correction IR" and assign it to the output. Repeat for each speaker.
+  \item In the Calibration view, re-measure in "\gterm{fir}{FIR}" mode to verify that the corrected response is flat.
+\end{enumerate}
+
+\section{2.1 / bass-managed system with an aligned subwoofer (B)}
+\begin{enumerate}[nosep]
+  \item Config tool $\rightarrow$ Stereo 2.1 (or 5.1 / 7.1) $\rightarrow$ set the \gterm{crossover}{crossover} $\rightarrow$ Apply.
+  \item Measure and correct each main (workflow A).
+  \item Measure the sub alone in "Dry" mode, at the same mic positions as one main.
+  \item In the Analysis view, load the main set, then "Load sub measurements\ldots". Set the crossover, and toggle "Invert sub" if the sub is wired out of \gterm{polarity}{polarity}. The corrected-main phase is then steered onto the sub's through the crossover.
+  \item Read the recommended "Mains delay". Raise the slider until the corrected-main phase flattens through the crossover, then note the delay it asks for. Export and assign.
+  \item Time-align the drivers physically by entering that "Mains delay" value in the matrix's per-output delays. SuperMoTo then automatically delays the sub output to match the mains' \gterm{fir}{FIR} latency, which a gold LED on the sub output shows. Verify in the Calibration view's "System" mode by measuring the input. The summed response should be smooth through the crossover.
+\end{enumerate}
+
+\section{Verifying the complete system end to end (C)}
+In the Calibration view, select "System" mode and the plugin input your source uses. The stimulus runs through the engaged configuration exactly as monitored, including routing, \gterm{crossover}{crossover}, \gterm{fir}{FIRs} and \gterm{latencycomp}{latency compensation}. Analysis of that capture shows the real in-room system response.
+
+\section{Multiple speaker sets and quick A/B (D)}
+Store different rigs or rooms in configurations A-F, for instance A = mains, B = mains+sub and C = nearfields, and switch between them from the top bar. Use "Exclusive" for A/B comparisons and non-exclusive mode to sum. The collapse button (\textbf{$\blacktriangle$}) shrinks the window to a compact output-strip-only view.
+
+\section{Ambisonics monitoring (E)}
+\begin{enumerate}[nosep]
+  \item Raise the matrix size far enough, for instance 24 in/out for order 3, with 16 B-format inputs, 16 speakers and a sub. The plugin bus itself is always a fixed 32 in/32 out (Section~\ref{sec:channellayout}).
+  \item Config tool $\rightarrow$ "Ambisonics", then pick the "Order". Feed your B-format (AmbiX) onto inputs 1-$(\mathrm{order}+1)^2$.
+  \item Enter each loudspeaker's azimuth, elevation and output channel, starting from the default rig. Keep bass management on, set the \gterm{crossover}{crossover}, then apply (Section~\ref{sec:ambisonics}).
+  \item Measure and correct each speaker (workflow A) and phase-align the sub (workflow B). The decode, corrections and \gterm{latencycomp}{latency compensation} then run together as one engine.
+\end{enumerate}
+
+\section{Multi-speaker group alignment (F)}
+\begin{enumerate}[nosep]
+  \item Measure each speaker, and the sub if any, into one measurement folder per rig. Use the "Sub" switch and "Sub channel" combo on the Calibration view for the subwoofer's channel (Section~\ref{sec:measfolder}).
+  \item In Group analysis (Chapter~\ref{ch:groupanalysis}), use "Load measurement folder\ldots" to load that folder in one step (Section~\ref{sec:grouploadfolder}), which also sets "Speakers", the output assignments and the "Sub" switch automatically. Alternatively, set "Speakers" to the number of drivers and use "Load..." on each row to load that speaker's multi-position measurement set by hand, with the same positions across every speaker, plus the shared "Sub" row's set if there is a subwoofer.
+  \item Tune the shared correction-design controls (\gterm{welch}{Welch} window, \gterm{smoothing}{smoothing}, correction level, max boost, \gterm{fir}{FIR} length, Phase, Range, \gterm{crossover}{Crossover}, Invert sub), and use "Preview" to check each speaker's curves.
+  \item Click "Compute alignment" to get the per-row delay that time-aligns the whole group on the most-distant driver, and the per-row suggested level-matching trim relative to the quietest speaker (Section~\ref{sec:grouplevel}).
+  \item Assign each row to the output channel that speaker is on.
+  \item Click "Apply \& export...". It designs and exports each speaker's correction IR, writes its delay and FIR onto that output, and saves a markdown report next to the \gterm{ir}{impulse responses}. The subwoofer only ever gets its time-alignment delay (Section~\ref{sec:groupsub}).
+  \item If the suggested trims are significant, enter them in each output's "Trim" in the matrix view. They are reported, never written automatically.
+\end{enumerate}

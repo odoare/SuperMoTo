@@ -1,0 +1,103 @@
+%==============================================================================
+\chapter{Ambisonics primer}\label{ch:ambiprimer}
+%==============================================================================
+This appendix gives the background behind the Ambisonics decoders the configuration tool generates (Section~\ref{sec:ambisonics}). It covers the spherical-harmonic representation, the orders, the AmbiX (ACN/SN3D) convention, how a decoder is computed, and the max-\(r_E\) weighting.
+
+\section{Encoding the field and decoding to the rig}
+Ambisonics represents a sound field around a central point as a set of spherical-harmonic (SH) components, independently of any loudspeaker layout~\cite{Gerzon1973,Daniel2000}. A unit-amplitude plane wave arriving from direction \(\Omega=(\theta,\varphi)\) (azimuth \(\theta\), elevation \(\varphi\)) carrying signal \(s\) is encoded into channels
+\begin{equation}
+  B_j = Y_j(\Omega)\,s ,
+\end{equation}
+where the \(Y_j\) are the spherical harmonics. A whole field is the superposition over all incident directions. Because the encoding does not mention speakers, one B-format signal can be decoded to any rig. Reproduction truncates the expansion at a finite order \(N\), which sets the angular resolution and the size of the region around the centre where the field is faithfully reconstructed.
+
+\section{Spherical harmonics}
+The real spherical harmonics \(Y_n^m\) have a degree \(n\ge 0\) and an order \(m\in[-n,n]\). They form an orthogonal basis on the sphere, and degree \(n\) carries the angular detail of that order. Writing the unit direction as
+\begin{equation}
+  x=\cos\varphi\cos\theta,\quad y=\cos\varphi\sin\theta,\quad z=\sin\varphi,
+\end{equation}
+the SN3D-normalised real harmonics used by SuperMoTo are, up to third degree,
+\begin{align*}
+  n=0:\;& Y_0 = 1,\\
+  n=1:\;& Y_1 = y,\quad Y_2 = z,\quad Y_3 = x,\\
+  n=2:\;& Y_4=\sqrt{3}\,xy,\; Y_5=\sqrt{3}\,yz,\; Y_6=\tfrac12(3z^2-1),\;
+          Y_7=\sqrt{3}\,xz,\; Y_8=\tfrac{\sqrt3}{2}(x^2-y^2),\\
+  n=3:\;& Y_9=\sqrt{\tfrac58}\,y(3x^2-y^2),\; Y_{10}=\sqrt{15}\,xyz,\;
+          Y_{11}=\sqrt{\tfrac38}\,y(5z^2-1),\; Y_{12}=\tfrac12 z(5z^2-3),\\
+        & Y_{13}=\sqrt{\tfrac38}\,x(5z^2-1),\; Y_{14}=\tfrac{\sqrt{15}}{2}z(x^2-y^2),\;
+          Y_{15}=\sqrt{\tfrac58}\,x(x^2-3y^2).
+\end{align*}
+Each is scaled so its maximum magnitude over the sphere is \(1\) (the SN3D convention, below).
+
+\section{Ambisonic order}
+An order-\(N\) signal keeps every degree \(n\le N\). In 3D (periphonic) that is
+\begin{equation}
+  K = (N+1)^2 \quad\text{channels},
+\end{equation}
+so orders 1/2/3 use 4/9/16 channels and need at least that many loudspeakers to decode. A horizontal-only (pantophonic) signal keeps just \(m=\pm n\), giving \(2N+1\) channels. Higher order narrows the directional "beam" of each harmonic, improving localisation and enlarging the usable listening area, at the cost of more channels and speakers (Table~\ref{tab:ambiorder}).
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccc}
+\toprule
+Order \(N\) & 3D channels \((N+1)^2\) & 2D channels \(2N+1\) & default rig in the tool\\
+\midrule
+1 & 4  & 3 & 8 (cube)\\
+2 & 9  & 5 & 12 (icosahedron)\\
+3 & 16 & 7 & 16 (dome)\\
+\bottomrule
+\end{tabular}
+\caption{Ambisonic order vs.\ channel count and the configuration tool's default
+periphonic rig.}
+\label{tab:ambiorder}
+\end{table}
+
+\section{The AmbiX convention (ACN and SN3D)}
+Two choices must be fixed to exchange B-format, the channel ordering and the normalisation. The modern standard is AmbiX~\cite{NachbarAmbiX2011}:
+\begin{itemize}[nosep]
+  \item \textbf{ACN} (Ambisonic Channel Number) orders the channels by the single index
+        \begin{equation}
+          j = n^2 + n + m ,
+        \end{equation}
+        so \(j=0,1,2,3,\dots\) are \(W,\,Y,\,Z,\,X,\dots\). Note \(Y\) (\(m=-1\)) before \(Z\) (\(m=0\)) before \(X\) (\(m=+1\)).
+  \item \textbf{SN3D} (Schmidt semi-normalisation) scales each harmonic so its peak magnitude is \(1\). It relates to the fully orthonormal N3D form by \(Y^{\mathrm{SN3D}}_n = Y^{\mathrm{N3D}}_n/\sqrt{2n+1}\).
+\end{itemize}
+This supersedes the legacy FuMa (Furse-Malham) ordering \(W,X,Y,Z,\dots\) with its \(1/\sqrt2\) weighting on \(W\), which was limited to third order. SuperMoTo expects AmbiX on the first \(K\) plugin inputs.
+
+\section{Decoding}
+A decoder maps the \(K\) B-format channels to \(L\) loudspeaker feeds. Collect the speaker directions in the \(K\times L\) re-encoding matrix \(\mathbf{C}\) with \(C_{j,s}=Y_j(\Omega_s)\), so that driving the speakers with gains \(\mathbf g\) re-creates the components \(\mathbf{C}\,\mathbf g\). A good decode \(\mathbf D\) (\(\mathbf g = \mathbf D\,\mathbf b\)) makes that match the input \(\mathbf b\), i.e.\ \(\mathbf{C}\mathbf{D}\approx\mathbf I\). The general solution is the mode-matching pseudo-inverse \(\mathbf D=\mathbf C^{+}\). For a near-uniform layout the harmonics stay orthogonal when sampled at the speakers, \(\mathbf{C}\mathbf{C}^{\mathsf T}\!\approx\!\tfrac{L}{K}\mathbf I\), and the pseudo-inverse collapses to the scaled transpose, the sampling (projection) decoder
+\begin{equation}
+  D_{s,j} \;=\; \frac{1}{L}\,Y_j(\Omega_s),
+  \label{eq:basicdecode}
+\end{equation}
+which is what the tool builds. It is exact for ideal layouts and degrades gracefully for mildly irregular ones. Strongly irregular rigs are better served by an explicit pseudo-inverse or AllRAD decoder, which is why the tool also lets you trim each speaker's gain/angle/radius by hand.
+
+\section{The max-\texorpdfstring{\(r_E\)}{rE} weighting}
+At the centre, localisation is governed by two cues, the velocity vector \(\mathbf r_V\) (low frequency, from the summed particle velocity) and the energy vector \(\mathbf r_E\) (above \(\sim\!700\,\)Hz, from the summed energy)~\cite{Daniel2000,ZotterFrank2019}. The basic decoder of \eqref{eq:basicdecode} makes \(|\mathbf r_V|=1\) (correct low-frequency cue) but spreads energy, so \(|\mathbf r_E|<1\). The max-\(r_E\) decoder applies a per-degree gain \(a_n\) to maximise \(|\mathbf r_E|\),
+\begin{equation}
+  D_{s,j} \;=\; \frac{1}{L}\,a_{n(j)}\,Y_j(\Omega_s),
+\end{equation}
+where the optimal weights are samples of the Legendre polynomials,
+\begin{equation}
+  a_n = P_n\!\left(r_E^{\max}\right),
+\end{equation}
+with \(r_E^{\max}\) the largest root of \(P_{N+1}(x)\) (the order-\(N\) energy limit). Normalised to \(a_0=1\), the values used by SuperMoTo are listed in Table~\ref{tab:maxre}. Max-\(r_E\) slightly widens phantom sources but markedly improves directional stability and timbre across the listening area, so it is the default for monitoring.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{cccccc}
+\toprule
+Order \(N\) & \(r_E^{\max}\) & \(a_0\) & \(a_1\) & \(a_2\) & \(a_3\)\\
+\midrule
+1 & 0.5774 & 1 & 0.5774 & --     & --\\
+2 & 0.7746 & 1 & 0.7746 & 0.4000 & --\\
+3 & 0.8611 & 1 & 0.8611 & 0.6123 & 0.3047\\
+\bottomrule
+\end{tabular}
+\caption{max-\(r_E\) per-degree gains (normalised \(a_0=1\)), from the largest
+root of \(P_{N+1}\).}
+\label{tab:maxre}
+\end{table}
+
+In SuperMoTo the resulting matrix is finally scaled so an on-axis plane wave decodes to about unity at the nearest speaker, written as harmonic\,\(\rightarrow\)\,speaker frames, and combined with the radius compensation and bass management of Section~\ref{sec:ambisonics}. For deeper treatments see Zotter \& Frank~\cite{ZotterFrank2019} and Daniel~\cite{Daniel2000}.

@@ -1,0 +1,182 @@
+%==============================================================================
+\chapter{The monitoring matrix}\label{ch:matrix}
+%==============================================================================
+
+% TODO(screenshot): full plugin window in Matrix view: top bar (A..F, Exclusive,
+% Level, Mute/Dim/Mono, collapse), the grid of frames with vu-meters (default
+% 8x8, resizable up to 32x32), the output strip along one edge, the analyzer,
+% and the frame editor panel.
+\screenshot{SuperMoTo_matrix_view.png}{The Matrix view: top bar with configuration
+buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the matrix
+grid of frames (here at its default 8$\times$8, resizable up to 32$\times$32)
+each with its vu-meter; the per-output strip; the global spectrum analyzer;
+and the frame editor panel (bottom-right).}
+
+\section{Concepts}
+The matrix is a grid of up to 32$\times$32. The cell at row "in", column "out" is a frame (crosspoint): mainly a routing cell (how much of input "in" is sent to output "out"), but it also
+carries a small EQ of its own for a config-specific tonal tweak of crossover tuning on just that one route. Everything that describes the physical speaker (trim, its own EQ, delay and the \gterm{fir}{FIR} correction) lives on the output instead, since output settings are global and therefore shared by all configurations (A-F) that route into it.
+
+A fresh instance starts at 2 in / 8 out, set with the Inputs and Outputs selectors in the bottom bar and saved with the session. Two inputs is the stereo mixing case, one stereo source feeding several monitoring destinations, which is what the outputs are for. Raise the input count when the source itself is multichannel:
+
+\begin{itemize}[nosep]
+  \item \textbf{Surround.} 6 inputs for 5.1, 8 for 7.1, so every bed channel
+        reaches its own speaker instead of being folded down.
+  \item \textbf{Immersive / Dolby Atmos.} 10 inputs for a 7.1.2 layout and 12
+        for 7.1.4, counting the height layer. SuperMoTo monitors the rendered
+        bed; it is not a renderer itself.
+  \item \textbf{Ambisonics}, where the count depends on which side of the
+        decode SuperMoTo sits.
+        \begin{itemize}[nosep]
+          \item \textbf{SuperMoTo decodes.} Feed it the B-format signal in the
+                \textbf{AmbiX} convention, that is ACN channel order
+                with SN3D normalisation, and set the input count to
+                $(N+1)^2$ for order $N$: 4 for first order, 9 for second, 16 for
+                third. The Config tool writes the decode matrix itself, either
+                its own max-$r_E$ sampling decoder or an imported IEM AllRAD
+                design (Section~\ref{sec:ambisonics}).
+          \item \textbf{Another decoder decodes.} If an upstream plugin
+                already produces the speaker feeds for your exact rig, set the
+                input count to the number of speakers instead and leave
+                the matrix as plain routing. SuperMoTo then contributes the
+                per-output correction, delay and level, and the A-F switching,
+                without touching the decode.
+        \end{itemize}
+\end{itemize}
+
+The Config tool (Chapter~\ref{ch:config}) sets both counts for you: applying a rig raises them to whatever that layout needs, and never lowers them. Channels past the active size still exist on the plugin's fixed 32-channel bus, they are simply not routed (Section~\ref{sec:channellayout}).
+
+\subsection{What a frame contains}
+\begin{itemize}[nosep]
+  \item \textbf{Active} flag (is this crosspoint routed at all);
+  \item \textbf{Gain} (overall frame level, dB);
+  \item \textbf{Phase invert} (a frequency-independent \gterm{polarity}{polarity} flip, useful for
+        e.g.\ a differential decode coefficient);
+  \item a \textbf{2-band EQ}: same band types and controls as the output's EQ
+        below, applied only to this one route (before it sums into the
+        output); useful for a config-specific voicing tweak without touching
+        the shared output settings;
+  \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox to show the
+        frame's signal on the spectrum analyzer.
+\end{itemize}
+
+\subsection{What an output (loudspeaker) contains}\label{sec:outputchain}
+Each output is the chain applied to the summed signal of all active frames feeding it. Click an output cell (top strip) to edit it:
+\begin{itemize}[nosep]
+  \item \textbf{Trim} (output level, dB);
+  \item a \textbf{2-band EQ}: each band can be lowpass, highpass, bandpass or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in series. This is where the bass-management \gterm{crossover}{crossover} lives (a highpass on a main, a lowpass on the sub);
+  \item a \textbf{delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second}, fractional (sub-sample), for \textbf{time-aligning} the speaker;
+  \item one \textbf{FIR correction} filter (Section~\ref{sec:render}), loaded from a wav \gterm{ir}{impulse response};
+  \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox.
+\end{itemize}
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+   block/.style={draw, rounded corners, fill=smtlight, minimum height=8mm,
+                 align=center, font=\small},
+   >={Stealth[]}, node distance=6mm]
+  \node[block] (in) {input\\$in$};
+  \node[block, right=8mm of in] (gain) {frame\\gain};
+  \node[block, right=6mm of gain] (phase) {phase\\invert};
+  \node[block, right=6mm of phase] (frameeq) {frame\\2-band EQ};
+  \node[draw, circle, right=8mm of frameeq, fill=smtgold!40] (sum) {$\Sigma$};
+  \node[block, right=8mm of sum] (trim) {trim};
+  \node[block, right=5mm of trim] (eq) {2-band\\EQ};
+  \node[block, below=6mm of eq] (delay) {delay};
+  \node[block, left=5mm of delay] (fir) {FIR};
+  \node[block, left=5mm of fir] (out) {output\\$out$};
+  \draw[->] (in) -- (gain);
+  \draw[->] (gain) -- (phase);
+  \draw[->] (phase) -- (frameeq);
+  \draw[->] (frameeq) -- (sum);
+  \draw[->] (sum) -- (trim);
+  \draw[->] (trim) -- (eq);
+  \draw[->] (eq) -- (delay);
+  \draw[->] (delay) -- (fir);
+  \draw[->] (fir) -- (out);
+  \node[font=\footnotesize, above=3mm of sum, align=center]
+    {sum of all active\\frames into $out$};
+\end{tikzpicture}
+\caption{Routing frames (gain + phase + their own 2-band EQ) sum into each
+output, which then applies the per-speaker trim, its own 2-band EQ, delay and
+FIR correction.}
+\label{fig:frame}
+\end{figure}
+
+\subsection{Configurations A-F}
+There are 6 configurations (A..F), each a complete matrix at the active size (up to 32$\times$32), stored per preset. They are engaged from the top-bar buttons:
+\begin{itemize}[nosep]
+  \item \textbf{Exclusive} mode (default): engaging one releases the others, an instant A/B between rigs.
+  \item \textbf{Non-exclusive} mode: active configurations are summed, so you can stack layers.
+\end{itemize}
+The configuration you are editing is chosen with the "Edit: A..F" buttons above the analyzer, independently of which one is engaged for listening.
+
+\section{Interacting with the matrix}
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Gesture} & \textbf{Action} \\
+\midrule
+Click a frame        & Select it (opens it in the frame editor panel). \\
+Double-click a frame & Activate / deactivate the crosspoint. \\
+Vertical drag        & Adjust the frame gain. \\
+Alt+click            & Toggle the frame's analyzer trace. \\
+Right-click          & Context menu for the frame. \\
+\midrule
+Click an output      & Select it (opens it in the output editor: trim, EQ,
+                       delay, FIR). \\
+Output: double-click & Toggle that output's FIR on/off. \\
+Output: vertical drag& Adjust the output trim. \\
+Output: alt+click    & Toggle the output-sum analyzer trace. \\
+Output: right-click  & Load / clear the impulse-response (FIR) wav file. \\
+\bottomrule
+\end{tabularx}
+\caption{Mouse interactions in the matrix and output strip. Every page also
+has an info button \textbf{(i)} summarising its controls and shortcuts.}
+\label{tab:gestures}
+\end{table}
+
+\section{Per-output FIR correction and latency compensation}\label{sec:latencycomp}
+Each output can carry one \gterm{fir}{FIR} filter (loaded from a wav impulse response, convolved with the zero-latency WDL engine) to compensate the attached loudspeaker. Linear-phase correction IRs are rendered with their energy centred (see Chapter~\ref{ch:analysis}). In that case, a FIR of length $L$ adds about $L/2$ samples of delay to that output.
+
+SuperMoTo applies automatic \gterm{latencycomp}{inter-output latency compensation}: among the outputs fed by the engaged configuration, the ones with shorter (or no) FIR are delayed so that all outputs stay time-aligned with the longest output FIR. This is what keeps a subwoofer aligned with a \gterm{linphase}{linear-phase}-corrected main. A gold LED on an output cell indicates its alignment is automatic; hover to read the details.
+
+\paragraph{Self-absorption.} Before adding that compensation delay, an output that already carries its own manual delay first "spends" up to $L/2$ samples of it paying for its own FIR's latency, instead of that latency being added as extra delay somewhere else. Only the unabsorbed remainder, if any, still needs compensating on the other outputs, so a main that already has slack in its Delay control needs little or no compensation added to the sub at all. For example: a main delayed \SI{25}{\milli\second}
+to align with a farther sub, corrected with a 1024-sample linear-phase FIR ($L/2 \approx \SI{11.6}{ms}$ at \SI{44.1}{\kilo\hertz}). Since $25 > 11.6\,\text{ms}$, the main's delay control fully absorbs the FIR's latency (only $25-11.6\approx\SI{13.4}{ms}$ of it is actually applied as a real
+delay) and the sub needs no extra compensation at all, instead of the $\approx\SI{11.6}{ms}$ it would have received otherwise. The relative alignment between main and sub is identical either way: self-absorption only lowers the overall system latency, never changes what you hear. The elay control itself always keeps showing the value you set. Only how much of it becomes an actual delay line changes.
+
+% TODO(screenshot): close-up of the output strip showing a gold LED on the
+% subwoofer output and the hover tooltip with the compensation amount.
+\screenshot{latency-led.png}{Output strip close-up: the gold LED marks an output
+whose alignment is automatic (compensation added, self-absorption, or both);
+the tooltip shows the amounts in samples / milliseconds.}
+
+\section{The global spectrum analyzer}
+The analyzer can display any combination of individual matrix frames of output frames, up to 8 simultaneous traces A clickable "avg/peak" badge switches the per-point aggregation. The analyzer also can be controlled with mouse wheel and ctrl-mouse wheel to change the axes limits and zooming.
+
+\section{Host-automatable parameters}
+The matrix settings themselves are deliberately not exposed as host parameters: $6 \times 32 \times 32$ frames with $\sim$10 fields each would swamp any host. They are saved with the plugin state. Only the master controls are real host parameters:
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Parameter} & \textbf{Type / range} & \textbf{Meaning} \\
+\midrule
+\texttt{Level}     & float, \SI{-60}{} to \SI{+6}{\dB} & Master output level. \\
+\texttt{A}\,\dots\,\texttt{F} & bool (6) & Engage configuration A-F (default: A on). \\
+\texttt{Exclusive} & bool (default on) & Engaging one config releases the others; off = sum. \\
+\texttt{Mute}      & bool & Mute master output. \\
+\texttt{Dim}       & bool & Dim master by \SI{6}{\dB} (factor 0.5). \\
+\texttt{Mono}      & bool & Mono sum. \\
+\bottomrule
+\end{tabularx}
+\caption{The complete set of host-automatable parameters (APVTS).}
+\label{tab:params}
+\end{table}
+
+\section{Compact (collapsed) view}
+The collapse button (\textbf{$\blacktriangle$}) shrinks the window to a compact "output-strip-only" view, or a very compact view with only switches and gain slider, handy as a permanent monitor controller once the routing is set.

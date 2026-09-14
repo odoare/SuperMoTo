@@ -1,0 +1,29 @@
+%==============================================================================
+\chapter{Glossary}\label{ch:glossary}
+%==============================================================================
+
+Cross-references point to where each term is developed in the text. Each entry is also a link target. Wherever a term first appears in a section of the manual, it is set in \textcolor{smtgls}{this colour} and clicking it jumps here. Readers using Acrobat Reader, and other viewers that display annotation tool-tips, also get the one-line summary in a pop-up on hover.
+
+\begin{description}[style=nextline, leftmargin=0pt, font=\normalfont\bfseries]
+  \gitem{allpass}{All-pass / excess phase} A factor with unit magnitude that changes only phase (eq.~\eqref{eq:minap}). It carries the "excess" phase a response has beyond the minimum-phase minimum, such as pure delay, reflections and out-of-phase summation. It cannot be removed by a stable causal filter. SuperMoTo deliberately adds a short all-pass to steer a main onto a subwoofer's phase (Section~\ref{sec:thsubalign}).
+  \gitem{cepstrum}{Cepstrum (real)} The inverse Fourier transform of the log-magnitude spectrum, $c[n]=\mathcal{F}^{-1}\{\log|C|\}$. Keeping its causal part reconstructs the minimum-phase response used for low-latency rendering (Section~\ref{sec:minphase}).
+  \gitem{coherence}{Coherence} The fraction of the measured output linearly explained by the input at each frequency, from $0$ to $1$. It quantifies how much a Welch estimate can be trusted (Section~\ref{sec:thwelch}).
+  \gitem{comb}{Comb filtering} Regularly spaced peaks and notches produced when the direct sound sums with a delayed copy such as a reflection. Wide-band and tied to geometry (Chapter~\ref{ch:analysis}).
+  \gitem{crossover}{Crossover} The frequency region where two drivers (e.g.\ main and subwoofer) hand over. A flat sum there is a phase/timing problem as much as a level one (Section~\ref{sec:timealign}).
+  \gitem{fir}{FIR (finite impulse response) filter} A filter that convolves the signal with a finite list of coefficients (the impulse response). The exported correction is an FIR loaded per output. Its length $N$ sets the frequency resolution $f_s/N$ and, if linear-phase, the latency $N/2$.
+  \gitem{groupdelay}{Group delay} The delay a response imposes near each frequency, $-\,\mathrm{d}(\arg H)/\mathrm{d}\omega$. Used to auto-detect the main/sub offset (Section~\ref{sec:timealign}).
+  \gitem{h1}{$H_1$ estimator} The ratio $S_{xy}/S_{xx}$ of cross-spectrum to input auto-spectrum, averaged over Welch segments. It is the noise-robust transfer function SuperMoTo measures (Section~\ref{sec:thwelch}).
+  \gitem{hilbert}{Hilbert transform} The operator linking log-magnitude and phase of a minimum-phase response (eq.~\eqref{eq:hilbert}). It lets phase be recovered from magnitude (Appendix~\ref{ch:minphasedef}).
+  \gitem{ir}{Impulse response (IR)} A system's output to a unit impulse, the time-domain twin of the transfer function. Exported as a wav for the FIR engine and the measured-response file (Section~\ref{sec:render}).
+  \gitem{latencycomp}{Inter-output latency compensation} Automatic per-output delay so every engaged output stays time-aligned with the longest FIR's bulk latency (Chapter~\ref{ch:matrix}). An output's own manual delay first absorbs its own FIR's latency where it has slack, so only the unabsorbed remainder is added elsewhere. Shown by a gold LED on the output.
+  \gitem{linphase}{Linear-phase} A filter whose phase is exactly linear in frequency, i.e.\ a pure delay across the band. It can impose an arbitrary phase correction but adds $N/2$ samples of latency (Section~\ref{sec:render}).
+  \gitem{minphase}{Minimum-phase} A causal, stable response whose inverse is also causal and stable (all poles and zeros inside the unit circle), the only kind that is fully invertible by a realisable filter. Defined physically and mathematically in Appendix~\ref{ch:minphasedef}.
+  \gitem{polarity}{Polarity (Invert)} A frequency-independent $180^\circ$ sign flip, as opposed to a delay (which is frequency-dependent). "Invert sub" flips a subwoofer wired out of polarity (Section~\ref{sec:timealign}).
+  \gitem{regularization}{Regularization} Bounding the inverse where the measured magnitude is tiny, so deep notches do not demand infinite boost. SuperMoTo uses a soft-knee (\texttt{tanh}) ceiling on the correction gain (Section~\ref{sec:thcorrection}).
+  \gitem{roommode}{Room mode} A standing-wave resonance of the room producing large, strongly position-dependent peaks and dips at low frequency, with audible ringing (Chapter~\ref{ch:analysis}).
+  \gitem{sbir}{SBIR} Speaker-boundary interference response, the cancellation dip in the upper bass set by the speaker-to-wall distance (Chapter~\ref{ch:analysis}).
+  \gitem{smoothing}{Smoothing (fractional-octave)} Averaging the complex response over a proportional bandwidth (e.g.\ $1/6$ octave), finer in the bass and coarser in the treble, so the correction follows trends rather than single-seat interference (Chapter~\ref{ch:analysis}).
+  \gitem{spatialavg}{Spatial averaging} Averaging the (delay-aligned) responses of several microphone positions, so the correction targets what is consistent across the listening area rather than one seat (Section~\ref{sec:thavg}).
+  \gitem{tf}{Transfer function} The complex ratio $H(f)=Y(f)/X(f)$ of output to input spectrum (magnitude and phase together) that describes a linear system (Section~\ref{sec:thwelch}).
+  \gitem{welch}{Welch method} Power and cross-spectra estimated by averaging windowed, overlapping FFT segments. It trades resolution for variance to give a usable in-room transfer function (Section~\ref{sec:thwelch}).
+\end{description}
