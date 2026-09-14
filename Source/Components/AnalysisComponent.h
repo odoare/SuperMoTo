@@ -257,6 +257,7 @@ public:
 
         subInvertToggle.setButtonText ("Invert sub");
         SuperMoToTheme::accentToggleButton (subInvertToggle, SuperMoToTheme::mono);
+        subInvertToggle.setTooltip (smt::tips::shared::subInvert);
         subInvertToggle.onClick = [this]
         {
             analysis.setSubPolarityInverted (subInvertToggle.getToggleState());
@@ -955,6 +956,12 @@ private:
 
                     processor.configModel.setOutput (assignOut, s);
                     processor.engine.updateFirFiles();
+
+                    // Unlike Group analysis, this pane does not know which
+                    // output feeds the sub, so it cannot write the polarity
+                    // the correction was designed around. Say so instead.
+                    if (analysis.hasSub() && subInvertToggle.getToggleState())
+                        msg << ". Invert sub is on: set Phase inv. on the subwoofer output.";
                 }
 
                 status.setText (msg, juce::dontSendNotification);

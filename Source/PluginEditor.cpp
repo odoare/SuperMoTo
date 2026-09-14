@@ -444,11 +444,11 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 " - Alt+click: show / hide its analyzer trace\n"
                 " - Right-click: context menu\n\n"
                 "Output strip (top row):\n"
-                " - Click: select (opens the output editor: trim, EQ, delay, FIR)\n"
+                " - Click: select (opens the output editor: trim, phase, EQ, delay, FIR)\n"
                 " - Double-click: toggle the output FIR\n"
                 " - Vertical drag: output trim\n"
                 " - Alt+click: analyzer trace\n"
-                " - Right-click: load / clear the FIR impulse\n"
+                " - Right-click: context menu (FIR impulse, phase invert, analyzer, trim reset)\n"
                 " - Gold dot: this output's alignment is automatic — either extra delay was "
                 "added to match the longest output FIR, or its own Delay control is self-"
                 "absorbing its own FIR's latency (hover for the amount)\n\n"
@@ -461,7 +461,7 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "(top row); left/right and up/down both wrap around\n"
                 " - On a frame: A active, P phase, N analyzer, 1-2 toggle EQ band, "
                 "+/- gain \xc2\xb1 0.1 dB\n"
-                " - On an output: F FIR, 1-2 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
+                " - On an output: F FIR, P phase, 1-2 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
                 "Analyzer: click the avg/peak badge (bottom-right) to switch aggregation.";
             break;
 

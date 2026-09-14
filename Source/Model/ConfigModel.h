@@ -7,10 +7,10 @@
 
     The plugin holds 6 matrix configurations (A..F). Each configuration is a
     full routing matrix (up to 32x32) where every frame (crosspoint) carries
-    its own gain, phase and a small 2-band EQ. Output settings (trim, its own
-    2-band EQ, time-alignment delay, FIR speaker correction) describe the
-    physical speaker attached to an output and are therefore global, shared by
-    all configurations.
+    its own gain, phase and a small 2-band EQ. Output settings (trim, polarity,
+    its own 2-band EQ, time-alignment delay, FIR speaker correction) describe
+    the physical speaker attached to an output and are therefore global, shared
+    by all configurations.
 
     Frame/output settings are deliberately NOT host-automatable parameters
     (6 x 256 x ~10 fields would swamp any host); they live here and are
@@ -118,15 +118,20 @@ struct FrameSettings
 
 struct OutputAudioSettings;     // defined just below OutputSettings
 
-// One physical speaker output: trim, a 2-band EQ (e.g. the bass-management
-// crossover), a time-alignment delay, an FIR correction, and an analyzer tap.
+// One physical speaker output: trim, polarity, a 2-band EQ (e.g. the
+// bass-management crossover), a time-alignment delay, an FIR correction, and an
+// analyzer tap. The polarity flip exists here as well as on frames because the
+// two answer different questions: a frame's belongs to one route of one
+// configuration (a decoder coefficient, say), the output's to the speaker as
+// wired, whatever feeds it (a subwoofer against the mains).
 struct OutputSettings
 {
-    float        gainDb   = 0.0f;
-    float        delayMs  = 0.0f;  // time-alignment delay
-    bool         firOn    = false;
-    juce::String firPath;          // impulse response wav file
-    bool         spectrum = false; // show this output's sum on the analyzer
+    float        gainDb      = 0.0f;
+    bool         phaseInvert = false;
+    float        delayMs     = 0.0f;  // time-alignment delay
+    bool         firOn       = false;
+    juce::String firPath;             // impulse response wav file
+    bool         spectrum    = false; // show this output's sum on the analyzer
     std::array<FrameBand, (size_t) numOutputBands> bands {};
 
     bool anyBandOn() const
@@ -140,8 +145,8 @@ struct OutputSettings
     bool isDefault() const
     {
         const OutputSettings d;
-        return gainDb == 0.0f && delayMs == 0.0f && ! firOn && firPath.isEmpty()
-            && ! spectrum && bands == d.bands;
+        return gainDb == 0.0f && ! phaseInvert && delayMs == 0.0f && ! firOn
+            && firPath.isEmpty() && ! spectrum && bands == d.bands;
     }
 
     /** The subset the audio engine needs, as plain values. Defined below. */
@@ -155,10 +160,11 @@ struct OutputSettings
 // reads it straight from the model.
 struct OutputAudioSettings
 {
-    float gainDb   = 0.0f;
-    float delayMs  = 0.0f;
-    bool  firOn    = false;
-    bool  spectrum = false;
+    float gainDb      = 0.0f;
+    bool  phaseInvert = false;
+    float delayMs     = 0.0f;
+    bool  firOn       = false;
+    bool  spectrum    = false;
     std::array<FrameBand, (size_t) numOutputBands> bands {};
 
     bool anyBandOn() const
@@ -172,7 +178,7 @@ struct OutputAudioSettings
 
 inline OutputAudioSettings OutputSettings::audio() const noexcept
 {
-    return { gainDb, delayMs, firOn, spectrum, bands };
+    return { gainDb, phaseInvert, delayMs, firOn, spectrum, bands };
 }
 
 //==============================================================================

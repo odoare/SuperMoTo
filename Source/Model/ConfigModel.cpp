@@ -76,6 +76,7 @@ juce::ValueTree ConfigModel::toValueTree() const
         juce::ValueTree vo (idOutput);
         vo.setProperty ("index", o, nullptr);
         vo.setProperty ("gain", s.gainDb, nullptr);
+        vo.setProperty ("phaseInvert", s.phaseInvert, nullptr);
         vo.setProperty ("delayMs", s.delayMs, nullptr);
         vo.setProperty ("firOn", s.firOn, nullptr);
         vo.setProperty ("firPath", s.firPath, nullptr);
@@ -169,12 +170,15 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                 if (o < 0 || o >= numChannels)
                     continue;
 
+                // phaseInvert is absent from sessions and presets saved before
+                // outputs had a polarity switch, which then load with it off.
                 OutputSettings s;
-                s.gainDb   = (float) (double) child.getProperty ("gain", s.gainDb);
-                s.delayMs  = (float) (double) child.getProperty ("delayMs", s.delayMs);
-                s.firOn    = (bool)  child.getProperty ("firOn", s.firOn);
-                s.firPath  = child.getProperty ("firPath", s.firPath).toString();
-                s.spectrum = (bool)  child.getProperty ("spectrum", s.spectrum);
+                s.gainDb      = (float) (double) child.getProperty ("gain", s.gainDb);
+                s.phaseInvert = (bool)  child.getProperty ("phaseInvert", s.phaseInvert);
+                s.delayMs     = (float) (double) child.getProperty ("delayMs", s.delayMs);
+                s.firOn       = (bool)  child.getProperty ("firOn", s.firOn);
+                s.firPath     = child.getProperty ("firPath", s.firPath).toString();
+                s.spectrum    = (bool)  child.getProperty ("spectrum", s.spectrum);
 
                 int bi = 0;
                 for (int k = 0; k < child.getNumChildren() && bi < numOutputBands; ++k)

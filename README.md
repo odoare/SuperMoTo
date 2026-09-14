@@ -21,6 +21,9 @@ controls and shortcuts.
 - **Per-output (per-speaker) processing**, edited by clicking an output cell:
   - **trim**, a **2-band EQ** (lowpass / highpass / bandpass for the
     bass-management crossover, peaking for correction; 2nd or 4th order),
+  - a **phase invert** switch for the speaker as wired, whatever feeds it
+    (e.g. a subwoofer against the mains), independent of the frames' own
+    switches and multiplying with them,
   - a **time-alignment delay** (0..100 ms, fractional),
   - **one FIR correction filter** (WDL convolution, zero latency) loaded from a
     wav file (Load IR… in the editor, or right-click an output cell),
@@ -62,7 +65,8 @@ controls and shortcuts.
 Matrix interactions: click = select frame (editor panel at bottom right),
 double-click = activate, vertical drag = gain, alt+click = analyzer trace,
 right-click = context menu. Output strip: double-click = toggle FIR,
-vertical drag = trim, alt+click = analyzer trace, right-click = load/clear IR.
+vertical drag = trim, alt+click = analyzer trace, right-click = context menu
+(FIR, load/clear IR, phase invert, analyzer, trim reset).
 
 The matrix settings are deliberately not host-automatable parameters
 (6 x 256 frames); they are saved with the plugin state. Host parameters:
@@ -130,7 +134,8 @@ the same positions as the main, anchored on the main's per-position delay so
 the relative timing is preserved. Around the chosen **crossover** the
 correction carries an all-pass that steers the corrected main's phase onto
 the sub's, so they sum coherently. The relative main/sub timing comes from
-the measurements; **Invert** flips the sub polarity if needed. A **Mains
+the measurements; **Invert** designs for a sub wired out of polarity (then
+switch on **Phase inv.** on the sub's output to match). A **Mains
 delay** control (±40 ms, auto-detected from the sub's group delay around the
 crossover) lets you declare a bulk delay applied physically to the mains so
 the all-pass only corrects the residual — keeping the FIR short; the corrected
@@ -181,11 +186,13 @@ involved.
   broadband measurement is just noise (there is no coherent sent/recorded
   content there), so designing — let alone boosting — an inverse filter for
   it would be fitting noise. The sub only ever contributes its
-  time-alignment delay; its own analysis range is automatically capped so
-  its (diagnostic-only) preview curve stays meaningful too.
+  time-alignment delay and its polarity (from **Invert sub**); its own
+  analysis range is automatically capped so its (diagnostic-only) preview
+  curve stays meaningful too.
 - **Apply & export...** designs and exports each assigned speaker's
   correction IR into a chosen folder, writes delay + FIR onto that output
-  (global per output, exactly like Part 3 — not per configuration A..F), and
+  (global per output, exactly like Part 3 — not per configuration A..F),
+  writes the sub's delay and polarity onto its output, and
   writes a `report.md` alongside the impulse responses with the group
   settings, each entry's full measurement file paths, measured/applied delay
   and export status.
@@ -210,7 +217,8 @@ involved.
 2. Measure and correct each main (use case A).
 3. Measure the **sub** alone (Dry) at the same mic positions as one main.
 4. Analysis: load the main set, then **Load sub measurements**; set the
-   crossover (toggle **Invert** if the sub is wired out of polarity) — the
+   crossover (toggle **Invert** if the sub is wired out of polarity, and
+   switch on **Phase inv.** on the sub output to match) — the
    corrected-main phase is steered onto the sub's through the crossover.
 5. Read the recommended **Mains delay** and raise the slider until the
    corrected-main phase flattens through the crossover; note the delay it asks
@@ -248,7 +256,7 @@ involved.
 5. **Apply & export...**: designs and exports each speaker's correction IR,
    writes its delay and FIR onto that output, and saves a markdown report
    (with the full measurement file paths) alongside the impulse responses.
-   The subwoofer only ever gets its time-alignment delay — see
+   The subwoofer gets its time-alignment delay and its polarity — see
    [Part 4](#part-4--group-analysis-multi-speaker-alignment).
 
 ## Installing
@@ -319,12 +327,12 @@ Builds do not install themselves: copy the `.vst3` to the VST3 folder (see
 
 ### Tests
 
-Three offline test executables cover the analysis maths, the microphone
-calibration parser and the synchronized swept-sine. They are excluded from the
-default build, so name them:
+Four offline test executables cover the analysis maths, the microphone
+calibration parser, the synchronized swept-sine and the output polarity (state
+round trip and engine). They are excluded from the default build, so name them:
 
 ```
-cmake --build build -j2 --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests
+cmake --build build -j2 --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests SuperMoToOutputTests
 ctest --test-dir build
 ```
 

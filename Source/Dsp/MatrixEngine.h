@@ -48,8 +48,9 @@ public:
                   int n, const std::array<bool, numConfigs>& configActive,
                   float masterGain);
 
-    /** Applies only the per-output trim + FIR chain to one channel of the
-        buffer — used by the measurement part to verify correction curves. */
+    /** Applies only the per-output chain (trim, polarity, EQ, FIR, but not the
+        delay) to one channel of the buffer. Used by the "FIR" measurement mode
+        and the SPL meter to verify correction curves; "Dry" bypasses it. */
     void processOutputChainOnly (juce::AudioBuffer<float>& buffer, int channel, int n,
                                  bool applyFir);
 
@@ -100,6 +101,12 @@ public:
     std::function<std::unique_ptr<juce::AudioFormatReader> (int out)> embeddedIrProvider;
 
 private:
+    /** Linear output gain with the polarity folded in as its sign. */
+    static float outputGainOf (const OutputAudioSettings& s) noexcept
+    {
+        return juce::Decibels::decibelsToGain (s.gainDb) * (s.phaseInvert ? -1.0f : 1.0f);
+    }
+
     void pullModelIfChanged();
     void computeFedMask();          // which outputs the engaged presets feed
     void recomputeLatencyComp();

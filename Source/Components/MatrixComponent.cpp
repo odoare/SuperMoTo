@@ -123,9 +123,11 @@ void MatrixComponent::paint (juce::Graphics& g)
         g.drawText ("FIR", r.toNearestInt().withTrimmedTop (13).removeFromTop (12),
                     juce::Justification::centred);
 
-        // EQ / delay indicators (bottom-left, above the meter).
+        // Polarity / EQ / delay indicators (bottom-left, above the meter), in
+        // the same order as a frame's.
         juce::String tag;
-        if (s.anyBandOn())     tag << "EQ";
+        if (s.phaseInvert)     tag << juce::String::fromUTF8 ("\xc3\x98");
+        if (s.anyBandOn())     tag << (tag.isEmpty() ? "" : " ") << "EQ";
         if (s.delayMs > 0.0f)  tag << (tag.isEmpty() ? "" : " ") << "D";
         if (tag.isNotEmpty())
         {
@@ -449,6 +451,7 @@ bool MatrixComponent::keyPressed (const juce::KeyPress& key)
         auto s = model.getOutput (selStrip);
         bool handled = true, firChanged = false;
         if      (ch == 'n')  s.spectrum = ! s.spectrum;
+        else if (ch == 'p')  s.phaseInvert = ! s.phaseInvert;
         else if (ch == 'f') { s.firOn = ! s.firOn; firChanged = true; }
         else if (plus)       s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb + 0.1f);
         else if (minus)      s.gainDb = juce::jlimit (-60.0f, 12.0f, s.gainDb - 0.1f);
@@ -554,9 +557,10 @@ void MatrixComponent::showOutputMenu (int out)
     menu.addItem (1, "FIR correction on", engine.getFir (out).hasImpulse(), s.firOn);
     menu.addItem (2, "Load impulse response...");
     menu.addItem (3, "Clear impulse response", s.firPath.isNotEmpty());
-    menu.addItem (4, "Show on analyzer", true, s.spectrum);
+    menu.addItem (4, "Phase invert", true, s.phaseInvert);
+    menu.addItem (5, "Show on analyzer", true, s.spectrum);
     menu.addSeparator();
-    menu.addItem (5, "Reset trim");
+    menu.addItem (6, "Reset trim");
 
     menu.showMenuAsync (juce::PopupMenu::Options(),
         [this, out] (int result)
@@ -569,8 +573,9 @@ void MatrixComponent::showOutputMenu (int out)
                 case 1: so.firOn = ! so.firOn; break;
                 case 2: loadIrForOutput (out); return;
                 case 3: so.firPath.clear(); so.firOn = false; break;
-                case 4: so.spectrum = ! so.spectrum; break;
-                case 5: so.gainDb = 0.0f; break;
+                case 4: so.phaseInvert = ! so.phaseInvert; break;
+                case 5: so.spectrum = ! so.spectrum; break;
+                case 6: so.gainDb = 0.0f; break;
                 default: break;
             }
             model.setOutput (out, so);

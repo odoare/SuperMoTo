@@ -610,6 +610,7 @@ private:
         void setSubMode (bool isSub)
         {
             subMode = isSub;
+            outputBox.setTooltip (isSub ? smt::tips::grp::subOutput : smt::tips::grp::rowOutput);
             for (auto* c : std::initializer_list<juce::Component*> {
                      &trimLabel, &trimSlider, &suggestButton, &suggestReadout })
                 c->setVisible (isSub);

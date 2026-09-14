@@ -102,8 +102,10 @@ void MatrixEngine::pullModelIfChanged()
 
     for (int o = 0; o < numChannels; ++o)
     {
-        outputGains[(size_t) o].setTargetValue (
-            juce::Decibels::decibelsToGain (outputSettings[(size_t) o].gainDb));
+        // The polarity is a sign on the trim target, so a flip ramps through
+        // zero on the same 50 ms smoothing instead of stepping (a click), as a
+        // frame's does in FrameProcessor::applySettings.
+        outputGains[(size_t) o].setTargetValue (outputGainOf (outputSettings[(size_t) o]));
         outputProc[(size_t) o].applySettings (outputSettings[(size_t) o]);
         spectrumBus.outputTap (o).setEnabled (outputSettings[(size_t) o].spectrum
                                               && o < visOuts);
@@ -259,7 +261,8 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
         }
     }
 
-    // Per-output chain: trim, FIR correction, master, metering, spectrum tap.
+    // Per-output chain: trim and polarity, EQ and delay, FIR correction,
+    // latency compensation, spectrum tap, metering, then the master gain.
     for (int o = 0; o < numChannels; ++o)
     {
         if (o >= visOuts)
@@ -324,8 +327,9 @@ void MatrixEngine::processOutputChainOnly (juce::AudioBuffer<float>& buffer, int
 
     pullModelIfChanged();
 
+    // Trim and polarity.
     auto* data = buffer.getWritePointer (channel);
-    const float g = juce::Decibels::decibelsToGain (outputSettings[(size_t) channel].gainDb);
+    const float g = outputGainOf (outputSettings[(size_t) channel]);
     for (int s = 0; s < n; ++s)
         data[s] *= g;
 

@@ -72,6 +72,11 @@ namespace bar
 namespace mtx
 {
     // ── Output editor ────────────────────────────────────────────────────────
+    inline constexpr auto outPhase =
+        "Invert the polarity of this output, whatever feeds it. Use it for the speaker "
+        "as wired (a subwoofer against the mains) and keep the crosspoint switch for "
+        "one route of one configuration. Group analysis writes it on the subwoofer "
+        "output from Invert sub. Key: P.";
     inline constexpr auto outFir =
         "Apply this output's FIR correction. Greyed out until an impulse response is loaded.";
     inline constexpr auto outSpectrum =
@@ -91,7 +96,8 @@ namespace mtx
     inline constexpr auto frameActive =
         "Route this input to this output.";
     inline constexpr auto framePhase =
-        "Invert the polarity of this crosspoint.";
+        "Invert the polarity of this crosspoint: one route, in this configuration only. "
+        "To invert a speaker whatever feeds it, use Phase inv. on its output.";
     inline constexpr auto frameSpectrum =
         "Show this crosspoint on the analyzer.";
     inline constexpr auto frameLevel =
@@ -333,7 +339,9 @@ namespace shared
 
     inline constexpr auto subInvert =
         "Treat the subwoofer as polarity-inverted when designing the phase alignment. Try it "
-        "when the crossover region sums to a dip that the delay alone will not fix.";
+        "when the crossover region sums to a dip that the delay alone will not fix. The "
+        "subwoofer output must then be inverted too: Group analysis writes it there on "
+        "Apply & export, and in the Analysis pane you set Phase inv. on that output yourself.";
 }
 
 //==============================================================================
@@ -409,7 +417,8 @@ namespace grp
 
     inline constexpr auto apply =
         "Design and export one correction FIR per speaker, write the delays and the FIR paths "
-        "onto the assigned outputs, and save a markdown report of the whole run.";
+        "onto the assigned outputs, write the subwoofer's delay and polarity (Invert sub) "
+        "onto its output, and save a markdown report of the whole run.";
 
     inline constexpr auto prefix =
         "Optional name prefix for everything Apply & export writes: "
@@ -434,6 +443,9 @@ namespace grp
     inline constexpr auto rowOutput =
         "Physical output this speaker is wired to. Apply & export writes its delay and FIR "
         "here.";
+    inline constexpr auto subOutput =
+        "Physical output the subwoofer is wired to. Apply & export writes its delay and its "
+        "polarity (Invert sub) here, never a FIR.";
     inline constexpr auto rowDelay =
         "Delay that will be applied to this output, from the measured arrival times: enough "
         "to bring this speaker into line with the most distant one.";
@@ -446,7 +458,7 @@ namespace grp
         "yourself via the output's Trim in the matrix view.";
 
     inline constexpr auto subName =
-        "Delay only (no correction FIR is designed for the "
+        "Delay and polarity only (no correction FIR is designed for the "
         "subwoofer, above its passband a measurement is just noise).";
 
     inline constexpr auto subTrimLevel =

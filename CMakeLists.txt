@@ -179,6 +179,33 @@ target_link_libraries(SuperMoToSweepTests PRIVATE
 set_target_properties(SuperMoToSweepTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME sweep COMMAND SuperMoToSweepTests)
 
+# ── Offline test of the output polarity (model round trip + MatrixEngine) ─────
+juce_add_console_app(SuperMoToOutputTests PRODUCT_NAME "SuperMoToOutputTests")
+target_sources(SuperMoToOutputTests PRIVATE
+    Tests/OutputPolarityTest.cpp
+    Source/Model/ConfigModel.cpp
+    Source/Dsp/MatrixEngine.cpp
+)
+# Unlike the tests above, this one runs the real engine, which needs the whole
+# FxmeTools module: fxme::Biquad reaches OutputProcessor through JuceHeader.h,
+# and fxme::FirFilter needs the WDL sources. fxmetools_attach() adds both, and
+# FxmeCore with them.
+fxmetools_attach(SuperMoToOutputTests)
+target_compile_definitions(SuperMoToOutputTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(SuperMoToOutputTests PRIVATE
+    juce::juce_audio_basics juce::juce_audio_formats juce::juce_audio_processors
+    juce::juce_audio_utils juce::juce_core juce::juce_data_structures juce::juce_dsp
+    juce::juce_events juce::juce_graphics juce::juce_gui_basics
+    juce::juce_recommended_config_flags
+)
+juce_generate_juce_header(SuperMoToOutputTests)
+set_target_properties(SuperMoToOutputTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME output COMMAND SuperMoToOutputTests)
+
 target_link_libraries(SuperMoTo
     PRIVATE
         juce::juce_audio_basics

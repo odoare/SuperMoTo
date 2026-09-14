@@ -18,7 +18,8 @@
     correction FIR: above its real passband a broadband measurement is just
     noise (the sent/recorded cross-spectrum has no coherent content there), so
     fitting/boosting an inverse filter to it would be both pointless and
-    potentially harmful. The sub only ever contributes a time-alignment delay.
+    potentially harmful. The sub only ever contributes a time-alignment delay
+    and its polarity.
 
     Most methods are file-based (not real time) and expected on the message
     thread, EXCEPT exportSpeakerIR(): it's deliberately const and touches only
@@ -517,8 +518,8 @@ public:
     /** Message-thread finalization: given exportOk[i] = whether
         exportSpeakerIR(i, ...) succeeded (exportOk.size() must equal
         getNumSpeakers()), writes delay (+ FIR, for successfully-exported
-        speakers) onto each assigned output, writes the sub's delay-only
-        entry, calls matrixEngine.updateFirFiles() once if anything changed,
+        speakers) onto each assigned output, writes the sub's delay and
+        polarity, calls matrixEngine.updateFirFiles() once if anything changed,
         and writes the markdown report to reportFileFor (directory, filePrefix),
         alongside the wavs exportSpeakerIR already wrote (pass it the same
         prefix). */
@@ -661,7 +662,7 @@ public:
             ++result.numApplied;
         }
 
-        // Sub: delay only, never a FIR (see class doc).
+        // Sub: delay and polarity, never a FIR (see class doc).
         result.report << "### " << sub.label << "\n\n";
         if (! subEnabled)
         {
@@ -703,12 +704,23 @@ public:
             }
             else
             {
+                // The polarity goes with the delay, both ways: the design
+                // assumed the sub at exactly this sign against the Dry
+                // measurement, which the output chain does not touch. A
+                // crosspoint inverted on a route into this output would still
+                // flip it back.
+                const bool inverted = sub.engine->getSubPolarityInverted();
                 auto settings = configModel.getOutput (sub.assignedOutput);
                 settings.delayMs = sub.alignedDelayMs;
+                settings.phaseInvert = inverted;
                 configModel.setOutput (sub.assignedOutput, settings);
                 result.report << "- Assigned to output " << (sub.assignedOutput + 1)
-                               << " \xe2\x80\x94 time-alignment delay only "
-                                  "(no correction FIR is designed for the subwoofer).\n\n";
+                               << " \xe2\x80\x94 time-alignment delay and polarity "
+                                  "(no correction FIR is designed for the subwoofer).\n"
+                               << "- Output polarity: "
+                               << (inverted ? "inverted" : "normal")
+                               << " (Invert sub). A crosspoint polarity switch on a route "
+                                  "into this output inverts it again.\n\n";
                 ++result.numApplied;
             }
         }

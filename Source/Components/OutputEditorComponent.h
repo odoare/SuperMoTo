@@ -2,10 +2,11 @@
   ------------------------------------------------------------------------------
     OutputEditorComponent.h
 
-    Detail editor for the selected output (loudspeaker): trim, a time-alignment
-    delay, the FIR correction (load / clear / enable), the analyzer checkbox and
-    a 2-band EQ (BandEqEditor, shared with FrameEditorComponent's per-crosspoint
-    EQ). Writes directly into the ConfigModel (these are not host parameters).
+    Detail editor for the selected output (loudspeaker): trim, polarity, a
+    time-alignment delay, the FIR correction (load / clear / enable), the
+    analyzer checkbox and a 2-band EQ (BandEqEditor, shared with
+    FrameEditorComponent's per-crosspoint EQ). Writes directly into the
+    ConfigModel (these are not host parameters).
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
@@ -36,6 +37,13 @@ public:
         title.setColour (juce::Label::textColourId, SuperMoToTheme::text);
         title.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
         addAndMakeVisible (title);
+
+        // Same label and colour as the frame editor's polarity toggle.
+        phaseButton.setButtonText ("Phase inv.");
+        SuperMoToTheme::accentToggleButton (phaseButton, SuperMoToTheme::exclusive);
+        phaseButton.setTooltip (smt::tips::mtx::outPhase);
+        phaseButton.onClick = [this] { pushToModel(); };
+        addAndMakeVisible (phaseButton);
 
         firButton.setButtonText ("FIR");
         SuperMoToTheme::accentToggleButton (firButton, SuperMoToTheme::fir);
@@ -112,8 +120,11 @@ public:
         title.setBounds (area.removeFromTop (20));
         area.removeFromTop (2);
 
-        // Row 1: FIR / Analyzer + Load / Clear.
+        // Row 1: Phase inv. / FIR / Analyzer + Load / Clear. 320 px, which is
+        // exactly the narrowest this editor gets (a 340 px column, less the
+        // 10 px margins).
         auto row1 = area.removeFromTop (24);
+        phaseButton.setBounds (row1.removeFromLeft (76));
         firButton.setBounds (row1.removeFromLeft (52));
         spectrumButton.setBounds (row1.removeFromLeft (76));
         loadButton.setBounds (row1.removeFromLeft (66).reduced (2, 1));
@@ -158,6 +169,7 @@ private:
                             : juce::String()),
                        juce::dontSendNotification);
 
+        phaseButton.setToggleState (s.phaseInvert, juce::dontSendNotification);
         firButton.setToggleState (s.firOn, juce::dontSendNotification);
         spectrumButton.setToggleState (s.spectrum, juce::dontSendNotification);
         levelSlider.setValue (s.gainDb, juce::dontSendNotification);
@@ -173,11 +185,12 @@ private:
     smt::OutputSettings collect() const
     {
         smt::OutputSettings s;
-        s.firOn    = firButton.getToggleState();
-        s.spectrum = spectrumButton.getToggleState();
-        s.gainDb   = (float) levelSlider.getValue();
-        s.delayMs  = (float) delaySlider.getValue();
-        s.firPath  = curFirPath;
+        s.phaseInvert = phaseButton.getToggleState();
+        s.firOn       = firButton.getToggleState();
+        s.spectrum    = spectrumButton.getToggleState();
+        s.gainDb      = (float) levelSlider.getValue();
+        s.delayMs     = (float) delaySlider.getValue();
+        s.firPath     = curFirPath;
         bandEditor.collectInto (s.bands.data(), (int) s.bands.size());
         return s;
     }
@@ -229,7 +242,8 @@ private:
 
     void setControlsEnabled (bool e)
     {
-        for (auto* c : { (juce::Component*) &firButton, (juce::Component*) &spectrumButton,
+        for (auto* c : { (juce::Component*) &phaseButton, (juce::Component*) &firButton,
+                         (juce::Component*) &spectrumButton,
                          (juce::Component*) &loadButton, (juce::Component*) &levelSlider,
                          (juce::Component*) &delaySlider })
             c->setEnabled (e);
@@ -244,7 +258,7 @@ private:
     juce::String curFirPath;
 
     juce::Label title;
-    juce::ToggleButton firButton, spectrumButton;
+    juce::ToggleButton phaseButton, firButton, spectrumButton;
     juce::TextButton loadButton, clearButton;
     fxme::FxmeSlider levelSlider, delaySlider;
     juce::Label levelLabel, delayLabel;

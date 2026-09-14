@@ -219,6 +219,112 @@
     proof that Farina's zero-crossing cut cannot work once the sweep reaches
     Nyquist, and the two rejected options with their numbers.*
 
+- [x] For now the phase switch occurs at the frame level. I am considering adding a phase switch also at the output level. Both can be useful. Everything can be done at frame level except when working with ambisonics: in this case, we could want to tune the system (mainly sub to mains equilibrium) using the phase switch in the outputs, and use the frame switches for the ambisonic decoding matrix.
+
+    *Plan (2026-09-14).*
+
+    **What exists.** `FrameSettings::phaseInvert` is folded into the frame's
+    smoothed gain target by `FrameProcessor::applySettings`, so a flip ramps
+    through zero without a click. It is serialised as `phaseInvert` on Frame
+    nodes, tagged `Ø` in the matrix, toggled with `p`, offered in the frame's
+    context menu, and written by the Config tool for negative decode
+    coefficients. The output chain (`OutputSettings`: trim, 2-band EQ, delay,
+    FIR, analyzer tap) has no polarity. Trim is `MatrixEngine::outputGains`,
+    smoothed over 50 ms, while `processOutputChainOnly` (FIR measurement mode
+    and the SPL meter) applies the trim unsmoothed. "Invert sub" in both
+    analysis panes only changes the design and writes nothing to the matrix,
+    so the user currently has to flip the sub by hand.
+
+    Everything here is SuperMoTo-specific, so it all stays in `Source/`.
+
+    **Steps.**
+
+    1. Model (`Model/ConfigModel.{h,cpp}`). Add `bool phaseInvert = false` to
+       `OutputSettings`, to the String-free `OutputAudioSettings` and to
+       `audio()`, and include it in `isDefault()`. Write and read it as a
+       `phaseInvert` property on Output nodes with a default of false, so old
+       sessions and presets load unchanged. The property is additive, so no
+       `stateVersion` bump is needed.
+    2. DSP (`Dsp/MatrixEngine.cpp`). Fold the sign into the `outputGains`
+       target where the trim is set, so a flip ramps through zero on the
+       existing 50 ms smoothing, as frames do. Apply the same sign in
+       `processOutputChainOnly`. As a consequence, "Dry" measurements bypass it
+       (the raw speaker as wired), while "FIR" and "System" include it. Nothing
+       changes on the audio thread's locking or allocation profile.
+    3. Output editor (`Components/OutputEditorComponent.h`). A "Phase invert"
+       toggle styled like `FrameEditorComponent`'s `phaseButton`
+       (`juce::ToggleButton` with `SuperMoToTheme::accentToggleButton`, since
+       these are model settings, not APVTS parameters), placed with the FIR and
+       analyzer toggles, plus an `mtx::outPhase` tooltip.
+    4. Matrix (`Components/MatrixComponent.cpp`). A `Ø` tag on the output cell
+       next to "EQ", `p` toggling it when an output is selected, and a "Phase
+       invert" item in the output's right-click menu.
+    5. Analysis integration. The natural payoff is letting "Invert sub" write
+       the sub's polarity onto its assigned output, in Group analysis at
+       "Apply & export" (with a line in the report) and in the single-speaker
+       pane alongside "Apply bulk delay". Dry measurements see the physical
+       wiring, so fixing it at the output is correct for every configuration
+       that feeds the sub.
+    6. Config tool. It must keep leaving output polarity alone (it writes
+       frames, crossovers and optionally the radius trim and delay). Check at
+       implementation time that every output write goes through a
+       get-modify-set that preserves the new field.
+    7. Docs and tests. Matrix chapter ("What an output contains" and the
+       `fig:frame` chain), the gestures table, the Ambisonics section of the
+       Config tool chapter (output polarity for the sub-to-mains balance, frame
+       polarity for the decoder), the glossary's "Polarity (Invert)" entry, the
+       README feature list and the tooltips. In `SuperMoToTests`, a
+       serialisation round trip (absent, false, true) and an engine check that
+       the output sign flips after the ramp.
+
+    **Decisions to take before implementing.**
+
+    - Step 5: write the sub's polarity automatically, behind a toggle, or not
+      at all. Recommended: write it wherever the matching delay is written, so
+      "applied" means the same thing for both. The docs then need to warn that
+      a frame-level invert on the same sub route would flip it back.
+      DECISION: Write the sub's polarity
+    - Whether `p` on a selected output is the right key, given it already means
+      the frame's polarity.
+      DECISION: 'p' can be kept
+
+    *Implemented 2026-09-14, as planned apart from the points below. Not yet
+    built or run.*
+
+    *The single-speaker Analysis pane writes nothing. It has no notion of the
+    sub's output (its "Apply bulk delay" only ever writes the main's delay), so
+    "wherever the matching delay is written" is Group analysis alone. Instead,
+    "Export correction IR" with an assigned output ends its status message with
+    a reminder to set Phase inv. on the sub output when Invert sub is on, and
+    the pane's Invert sub toggle now carries the shared tooltip, which says the
+    same.*
+
+    *Group analysis writes the polarity in both directions (Invert sub off
+    clears it), because the design is relative to the Dry measurement, which
+    bypasses the output chain. The report's Sub section gains an "Output
+    polarity" line, and the sub row's output combo has its own `grp::subOutput`
+    tooltip, since the speaker rows' one promised a FIR.*
+
+    *UI: "Phase inv." is the first toggle of the output editor's row 1, which
+    fills the editor's minimum 320 px exactly. The output context menu puts
+    "Phase invert" before "Show on analyzer", as the frame menu does. The
+    output strip tag order is Ø, EQ, D. The matrix info text lists the new key
+    and menu, and `mtx::framePhase` now points to the output switch.*
+
+    *The engine test needs the real `MatrixEngine`, hence the whole FxmeTools
+    module and WDL, so it is a new target `SuperMoToOutputTests`
+    (`Tests/OutputPolarityTest.cpp`, registered with CTest as `output`) rather
+    than an addition to `SuperMoToTests`, which links no module. It checks the
+    state round trip (direct, through XML text, and with the property absent),
+    the steady-state sign, the ramp on a flip, and `processOutputChainOnly`.*
+
+    *Docs: matrix chapter (output list, a "Frame or output polarity" paragraph,
+    `fig:frame`, gestures table), measurement modes (Dry excludes it, FIR
+    includes it), analysis and workflows B/F, group analysis (section renamed
+    "The subwoofer gets no correction filter"), a "Subwoofer polarity"
+    paragraph in the Config tool's Ambisonics section, the glossary and the
+    README, including the test list.*
+
 ## To do
 
 - [ ] In the group analysis pane, we should be allowed to select which measurement runs are to be retained for the analysis. We could have a button, which when clicked shows a window with the list of individual measurements comments in column and a checkbox in front of each. The user can (de)select individually and the calculation is retriggered when the user click OK. It should show a cancel button too.
@@ -296,73 +402,3 @@
     - Whether the single-speaker Analysis pane gets the same dialog later. The
       helper in step 2 and the popup in step 4 would make it cheap.
       DECISION: Less useful in the single speaker analysis, as the user can simply select the files to load. Do not implement.
-
-- [ ] For now the phase switch occurs at the frame level. I am considering adding a phase switch also at the output level. Both can be useful. Everything can be done at frame level except when working with ambisonics: in this case, we could want to tune the system (mainly sub to mains equilibrium) using the phase switch in the outputs, and use the frame switches for the ambisonic decoding matrix.
-
-    *Plan (2026-09-14), not implemented yet.*
-
-    **What exists.** `FrameSettings::phaseInvert` is folded into the frame's
-    smoothed gain target by `FrameProcessor::applySettings`, so a flip ramps
-    through zero without a click. It is serialised as `phaseInvert` on Frame
-    nodes, tagged `Ø` in the matrix, toggled with `p`, offered in the frame's
-    context menu, and written by the Config tool for negative decode
-    coefficients. The output chain (`OutputSettings`: trim, 2-band EQ, delay,
-    FIR, analyzer tap) has no polarity. Trim is `MatrixEngine::outputGains`,
-    smoothed over 50 ms, while `processOutputChainOnly` (FIR measurement mode
-    and the SPL meter) applies the trim unsmoothed. "Invert sub" in both
-    analysis panes only changes the design and writes nothing to the matrix,
-    so the user currently has to flip the sub by hand.
-
-    Everything here is SuperMoTo-specific, so it all stays in `Source/`.
-
-    **Steps.**
-
-    1. Model (`Model/ConfigModel.{h,cpp}`). Add `bool phaseInvert = false` to
-       `OutputSettings`, to the String-free `OutputAudioSettings` and to
-       `audio()`, and include it in `isDefault()`. Write and read it as a
-       `phaseInvert` property on Output nodes with a default of false, so old
-       sessions and presets load unchanged. The property is additive, so no
-       `stateVersion` bump is needed.
-    2. DSP (`Dsp/MatrixEngine.cpp`). Fold the sign into the `outputGains`
-       target where the trim is set, so a flip ramps through zero on the
-       existing 50 ms smoothing, as frames do. Apply the same sign in
-       `processOutputChainOnly`. As a consequence, "Dry" measurements bypass it
-       (the raw speaker as wired), while "FIR" and "System" include it. Nothing
-       changes on the audio thread's locking or allocation profile.
-    3. Output editor (`Components/OutputEditorComponent.h`). A "Phase invert"
-       toggle styled like `FrameEditorComponent`'s `phaseButton`
-       (`juce::ToggleButton` with `SuperMoToTheme::accentToggleButton`, since
-       these are model settings, not APVTS parameters), placed with the FIR and
-       analyzer toggles, plus an `mtx::outPhase` tooltip.
-    4. Matrix (`Components/MatrixComponent.cpp`). A `Ø` tag on the output cell
-       next to "EQ", `p` toggling it when an output is selected, and a "Phase
-       invert" item in the output's right-click menu.
-    5. Analysis integration. The natural payoff is letting "Invert sub" write
-       the sub's polarity onto its assigned output, in Group analysis at
-       "Apply & export" (with a line in the report) and in the single-speaker
-       pane alongside "Apply bulk delay". Dry measurements see the physical
-       wiring, so fixing it at the output is correct for every configuration
-       that feeds the sub.
-    6. Config tool. It must keep leaving output polarity alone (it writes
-       frames, crossovers and optionally the radius trim and delay). Check at
-       implementation time that every output write goes through a
-       get-modify-set that preserves the new field.
-    7. Docs and tests. Matrix chapter ("What an output contains" and the
-       `fig:frame` chain), the gestures table, the Ambisonics section of the
-       Config tool chapter (output polarity for the sub-to-mains balance, frame
-       polarity for the decoder), the glossary's "Polarity (Invert)" entry, the
-       README feature list and the tooltips. In `SuperMoToTests`, a
-       serialisation round trip (absent, false, true) and an engine check that
-       the output sign flips after the ramp.
-
-    **Decisions to take before implementing.**
-
-    - Step 5: write the sub's polarity automatically, behind a toggle, or not
-      at all. Recommended: write it wherever the matching delay is written, so
-      "applied" means the same thing for both. The docs then need to warn that
-      a frame-level invert on the same sub route would flip it back.
-      DECISION: Write the sub's polarity
-    - Whether `p` on a selected output is the right key, given it already means
-      the frame's polarity.
-      DECISION: 'p' can be kept
-
