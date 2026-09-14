@@ -36,6 +36,7 @@
 #include "Dsp/MatrixEngine.h"
 #include "Dsp/MeasurementEngine.h"
 #include "Dsp/SplMeterEngine.h"
+#include "Model/Workspace.h"
 
 //==============================================================================
 class SuperMoToAudioProcessor  : public juce::AudioProcessor,
@@ -116,6 +117,12 @@ public:
     // Selected microphone input for the measurement part (0-based), set by
     // the calibration GUI before starting a run.
     std::atomic<int> measurementMicChannel { 0 };
+
+    // The work in progress of each pane (analyses, their settings, a
+    // background batch), which must survive the editor being closed. Declared
+    // after the model and the engine it refers to, so it is destroyed first.
+    // Message thread only; not saved with the session.
+    smt::Workspace workspace { configModel, engine };
 
     // Factory (BinaryData XML) + user preset banks over the APVTS state.
     fxme::PresetManager& getPresetManager() noexcept    { return *presetManager; }

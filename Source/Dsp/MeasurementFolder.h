@@ -105,7 +105,7 @@ MeasurementFolderInfo readMeasurementFolderInfo (const juce::File& folder);
     sorted by position (re-derived from the actual ch<NN>_pos<PPP>.wav /
     sub_pos<PPP>.wav files on disk, not counted from either manifest, so this
     stays correct even if a manifest and the folder ever drift).
-    Used by GroupAnalysisComponent's "Load measurement folder..." button. */
+    Used by Group analysis's "Load measurement folder..." (GroupAnalysisSession). */
 struct MeasurementFolderContents
 {
     struct Channel

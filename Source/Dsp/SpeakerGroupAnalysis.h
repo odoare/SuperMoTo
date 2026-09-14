@@ -26,7 +26,7 @@
     its own entry's engine (read-only) and the filesystem, so callers may run
     one per speaker on a background thread (e.g. fxme::BackgroundTaskRunner)
     as long as nothing else concurrently touches the same entry — see
-    GroupAnalysisComponent for the intended pattern (disable UI, dispatch,
+    GroupAnalysisSession for the intended pattern (disable UI, dispatch,
     call finalizeApply() on the message thread once every job has finished).
 
     Author: Olivier Doaré, github.com/odoare
@@ -574,7 +574,7 @@ public:
         // Every shared setting below reads off sub.engine, which is fine because
         // they are pushed uniformly — EXCEPT the analysis range. The sub's high
         // edge is deliberately capped below the shared Range control (see
-        // GroupAnalysisComponent::subMaxRangeHz and the class doc), so reading
+        // GroupAnalysisSession::subMaxRangeHz and the class doc), so reading
         // the range from the sub would report the sub's narrower band as if it
         // were the group's. The speakers carry the range the correction was
         // actually designed with.

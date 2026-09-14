@@ -458,3 +458,155 @@
 
 ## To do
 
+- [ ] When closed and reopened, the plugin editor looses all its state. If we were working on an analysis or a group analysis for instance, we loose all our current work. The state of the plugin should be kept outside the plugin editor.
+
+    *Plan (2026-09-14), not implemented yet.*
+
+    **What exists.** The processor owns only the audio side: `ConfigModel`,
+    `MatrixEngine`, `MeasurementEngine`, `SplMeterEngine` and the presets.
+    Everything else belongs to the editor's view components and dies with the
+    editor.
+
+    - Analysis: its `AnalysisEngine` (curves, correction, sub pairing), the
+      loaded files, the folder manifest and embedded mic cal, the recommended
+      mains delay, every control (window, TF, smoothing, range, level, boost,
+      phase, FIR length, Assign to, crossover, Invert sub, Mains delay, Apply
+      bulk delay, View, Level, mic cal source) and the plot zoom.
+    - Group analysis: `SpeakerGroupAnalysis` (17 engines, files, assignments,
+      alignment, sub trim), the `fxme::BackgroundTaskRunner`, the loaded folder
+      and its run selection, the prefix, Figures, Preview and every shared
+      control.
+    - Calibration: folder, comments, mode, signal, duration, level, mic input,
+      channel toggles, Sub switch and channel, SPL meter and generator
+      controls. Its constructor pushes those controls' defaults into
+      `processor.splMeter`, so reopening the editor silently stops a test tone
+      that kept playing while it was closed.
+    - Config tool: layout, target, order, speaker count, every row (inputs,
+      outputs, gains, azimuth, elevation, radius), bass management, crossover,
+      the two write toggles.
+    - Matrix view: the edited configuration (re-derived from the engaged one),
+      the selected frame or output, the analyzer's avg/peak mode.
+    - Editor: the window size (always 1280x820 on open). View, compact mode and
+      tooltips do survive, but machine-wide in `AppSettings`, so every instance
+      shares them.
+
+    Closing the editor during a Group analysis batch destroys the runner:
+    `cancelAndWait()` blocks the message thread for up to 5 s on the job in
+    flight and discards the completion. For "Apply & export" that can leave IR
+    files written, no output updated and no report.
+
+    `getStateInformation` writes a wrapper root `SuperMoToState` around
+    `apvts.state`, while presets carry `apvts.state` alone. A second child of
+    the wrapper therefore travels with host sessions and never into presets.
+
+    Everything here is SuperMoTo-specific, so it all stays in `Source/`.
+
+    **Steps.** Ownership moves to the processor; the components become views of
+    it.
+
+    1. Workspace (`Source/Model/Workspace.{h,cpp}`). A per-instance
+       `smt::Workspace` owned by `SuperMoToAudioProcessor`, message thread
+       only. A `juce::ValueTree` with one child per pane (Editor, Matrix,
+       ConfigTool, Calibration, Analysis, GroupAnalysis) holds the control
+       values. Beside it, the live objects no tree can hold: an
+       `AnalysisSession` (engine, loaded files, folder info, folder mic cal)
+       and a `GroupAnalysisSession` (step 4).
+    2. Binding pattern, the same in every pane. The constructor restores each
+       control from its tree child with `dontSendNotification` and then
+       refreshes the view from the live objects, without re-running any load
+       or analysis. Every change handler writes its property. Explicit
+       get/set rather than `Value::referTo`: a tree property's Value notifies
+       asynchronously by default (`getPropertyAsValue`), so the callbacks
+       would land after construction and re-trigger the very loads and
+       recomputes the restore is meant to skip. Editable combos
+       (range, crossover) store their text, not an id.
+    3. Analysis. Move the engine and its companions into `AnalysisSession`;
+       `AnalysisComponent` takes a reference. Loads stay synchronous as today.
+    4. Group analysis, the largest step. Split `GroupAnalysisComponent`
+       (about 1850 lines) into `smt::GroupAnalysisSession` (the group, the
+       runner, the loaded folder, the run selection, alignmentComputed, the
+       batch status and progress) and the view. The operations move with it:
+       folder load, hand loads, re-analysis, run selection, Compute alignment
+       and Apply & export. Two things change shape. `pushSettingsTo` reads
+       controls today, so the shared settings become a plain struct kept in
+       the session (and mirrored into the tree). And the runner callbacks,
+       which capture the component, update the session instead and broadcast
+       a change (`juce::ChangeBroadcaster`), so a live view refreshes its rows,
+       plot, busy state and status, and a reopened one shows a batch still
+       running with its progress. Apply & export then finishes with the editor
+       closed: the figures are already rendered offscreen from the engines
+       (`ReportFigures.h`) and `finalizeApply` only needs the model. The file
+       choosers and the Runs popup stay in the view, since they need a
+       window, but only start session operations.
+    5. Calibration. Keep its controls in the tree. On reopen, restore them
+       before the SPL push, so the push re-sends what is already playing
+       instead of the defaults. A measurement in progress already lives in
+       the processor, and the view's timer picks it up.
+    6. Config tool. Layout, target, order, count, toggles, crossover, and the
+       rows as one child node per row.
+    7. Matrix and editor. Edited configuration, selection, analyzer mode, and
+       the window size per instance (the editor constructor sizes itself from
+       the workspace).
+    8. Session (if chosen in the decisions). `getStateInformation` adds the
+       `Workspace` tree as a sibling of `apvts.state` under the wrapper, and
+       `setStateInformation` restores it. Engines are never serialized: the
+       loaded file paths are, and they are re-analyzed on restore (Group
+       analysis in the background, Analysis when its pane is first shown),
+       with missing files named in the status line. Some hosts call
+       `getStateInformation` off the message thread, so the tree is mirrored
+       into a locked snapshot on every change, the way `ConfigModel` is
+       mirrored into `apvts.state`. Older plugin versions ignore the unknown
+       child; no `stateVersion` bump.
+    9. Tests and docs. A workspace round trip (and an absent child loading
+       defaults) in `SuperMoToOutputTests` or a new target, and a session
+       check of the Group analysis re-analysis on restore if step 8 is done.
+       A short section in the hosts chapter on what survives closing the
+       editor and saving the session, plus the README.
+
+    **Decisions to take before implementing.**
+
+    - Scope. (a) Editor close and reopen only, in memory. (b) Also saved with
+      the host session: control values and loaded file paths, re-analyzed on
+      load, never in presets. Recommended: (b), built as (a) first (steps 1-7)
+      with step 8 on top, so each half can be tested on its own.
+      DECISION: (a)
+    - A Group analysis batch running when the editor closes: let it finish
+      (recommended, it is what makes Apply & export safe) or cancel it.
+      DECISION: let it finish
+    - View and compact mode: per instance (recommended, with the machine-wide
+      value as the default for a new instance) or machine-wide as now.
+      Tooltips stay a machine-wide preference either way.
+      DECISION: per instance
+    - Calibration test tone on reopen: keep what was playing (recommended,
+      it plays on while the editor is closed anyway) or stop it, which is what
+      happens today by accident.
+      DECISION: keep what was playing
+    - Order of work: one pane per commit, Group analysis first since it holds
+      the most work and the only background jobs. Recommended.
+      DECISION: one pane per commit, group first
+
+    *Progress.*
+
+    - [x] *Group analysis (2026-09-14, not yet built). `smt::Workspace`
+      (`Source/Model/Workspace.h`) is owned by the processor and holds
+      `smt::GroupAnalysisSession` (`Source/Model/GroupAnalysisSession.{h,cpp}`):
+      the group, the settings, the loaded folder and run selection, the
+      runner, the batch status and progress, and every operation (folder and
+      hand loads, re-analysis, run selection, Compute alignment, Apply &
+      export). `GroupAnalysisComponent` only opens the choosers and the Runs
+      popup, writes settings, and redraws when the session notifies. A batch
+      started with the editor open finishes with it closed, figures and
+      `finalizeApply` included. Where it departs from the steps above: the
+      settings are a plain struct (`GroupAnalysisSettings`), not a ValueTree,
+      since decision (a) keeps everything in memory and a tree would only be
+      an indirection; a setting moved while a batch runs is applied when the
+      batch ends (it used to wait on a retried timer that died with the
+      view); the runner is created by the first batch, so an instance that
+      never uses Group analysis (or a host's plugin scan) starts no thread
+      pool; the plot's frequency window is kept too.*
+    - [ ] *Analysis (step 3).*
+    - [ ] *Calibration (step 5), keeping what the generator plays.*
+    - [ ] *Config tool (step 6).*
+    - [ ] *Matrix and editor (step 7), with view and compact mode per
+      instance, the machine-wide values as defaults for a new instance.*
+    - [ ] *Docs (step 9): what survives closing the editor.*
