@@ -309,7 +309,8 @@ public:
 
         // Impulse-response view (fxme::WaveformDisplay), swapped in for the
         // frequency plot by the View selector; shows the previewed speaker's
-        // measured average IR and its correction IR at the export FIR length.
+        // measured average IR and its corrected prediction at the export FIR
+        // length.
         addLabel (displayLabel, "View");
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
@@ -328,8 +329,8 @@ public:
         addAndMakeVisible (firInfo);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
-        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
-        irPlot.setChannelNames ({ "measured", "correction" });
+        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::fir });
+        irPlot.setChannelNames ({ "measured", "corrected" });
         addChildComponent (irPlot);     // hidden until the View selector says so
 
         progressBar.setPercentageDisplay (true);
@@ -1354,8 +1355,11 @@ private:
             cols.push_back (c);
         };
 
-        add (eng->renderMeasuredIR (N),   "measured",   SuperMoToTheme::curveAverage);
-        add (eng->renderCorrectionIR (N), "correction", SuperMoToTheme::master);
+        // The correction filter's own impulse is deliberately not plotted: it is a
+        // filter gain (peak ~1) while these traces still carry the measured
+        // mid-band level, so sharing one linear axis flattens them (see the
+        // single-speaker view's updateIrPlot for the full reasoning).
+        add (eng->renderMeasuredIR (N), "measured", SuperMoToTheme::curveAverage);
 
         // Predictions only make sense for a speaker: the sub is never given a
         // correction FIR, and "main + sub" has no meaning on the sub's own row.

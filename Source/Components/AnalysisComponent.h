@@ -310,7 +310,7 @@ public:
 
         // Impulse-response view (fxme::WaveformDisplay), swapped in for the
         // frequency plot by the View selector. Shows the measured average IR
-        // and the designed correction IR at the selected FIR length, t = 0 on
+        // and the corrected prediction at the selected FIR length, t = 0 on
         // the (linear-phase) centre.
         addLabel (displayLabel, "View");
         displayBox.addItem ("Frequency response", 1);
@@ -322,8 +322,8 @@ public:
         addAndMakeVisible (displayBox);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
-        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
-        irPlot.setChannelNames ({ "measured", "correction" });
+        irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::fir });
+        irPlot.setChannelNames ({ "measured", "corrected" });
         addChildComponent (irPlot);     // hidden until the View selector says so
 
         buildFreqGrid();
@@ -805,10 +805,20 @@ private:
             updateIrPlot();
     }
 
-    // Renders the measured average and the designed correction at the current
-    // FIR length into the waveform view. The user's zoom survives design
-    // tweaks; the view resets only when the time axis itself changes (FIR
-    // length or sample rate).
+    // Renders the measured average and the predictions (corrected, and the
+    // main + sub sum) at the current FIR length into the waveform view.
+    //
+    // The correction filter's own impulse is deliberately NOT among them. It is
+    // a filter gain, peak around 1, while the other traces are
+    // microphone/stimulus ratios still carrying the measured mid-band level, so
+    // on one linear axis it dwarfs them by 1/referenceGain — around 40 dB for a
+    // normal measurement, which flattens everything else to a line. Nor is
+    // anything lost: what makes a correction impulse worth reading (pre-ringing,
+    // decay, whether it fits the FIR length) sits 40-60 dB below its peak and
+    // needs a dB axis, so it was never visible here anyway.
+    //
+    // The user's zoom survives design tweaks; the view resets only when the
+    // time axis itself changes (FIR length or sample rate).
     void updateIrPlot()
     {
         if (! analysis.hasData())
@@ -833,7 +843,6 @@ private:
         };
 
         add (analysis.renderMeasuredIR (N),   "measured",   SuperMoToTheme::curveAverage);
-        add (analysis.renderCorrectionIR (N), "correction", SuperMoToTheme::master);
         add (analysis.renderCorrectedIR (N),  "corrected",  SuperMoToTheme::fir);
         // This pane has no level matching, so the sub is summed at the level it
         // was measured at: the prediction if no trim is applied to it.

@@ -88,9 +88,17 @@ inline bool renderResponseFigure (const AnalysisEngine& e, const juce::File& fil
 }
 
 /** Renders one engine's impulse-response figure: the measured IR, plus the
-    correction IR unless withCorrection is false (the subwoofer never gets a
-    correction FIR — see SpeakerGroupAnalysis). */
-inline bool renderIrFigure (const AnalysisEngine& e, int firLength, bool withCorrection,
+    PREDICTED CORRECTED IR unless withPrediction is false (the subwoofer never
+    gets a correction FIR, so it has no prediction — see SpeakerGroupAnalysis).
+
+    The second trace is the corrected prediction rather than the correction
+    filter itself. Both the measured and the corrected IR are
+    microphone/stimulus ratios carrying the measured mid-band level, so they
+    share an axis and the figure reads as the before/after the report is making
+    a case for. The correction filter is a gain of peak ~1, i.e. larger by
+    1/referenceGain (around 40 dB), and plotting it here flattened the measured
+    trace to a line. */
+inline bool renderIrFigure (const AnalysisEngine& e, int firLength, bool withPrediction,
                             const juce::File& file, const FigureOptions& options)
 {
     const double sr = e.getSampleRate();
@@ -101,22 +109,22 @@ inline bool renderIrFigure (const AnalysisEngine& e, int firLength, bool withCor
     if (measured.getNumSamples() <= 0)
         return false;
 
-    const int numCh = withCorrection ? 2 : 1;
+    const int numCh = withPrediction ? 2 : 1;
     juce::AudioBuffer<float> both (numCh, firLength);
     both.clear();
     both.copyFrom (0, 0, measured, 0, 0, juce::jmin (firLength, measured.getNumSamples()));
 
-    if (withCorrection)
+    if (withPrediction)
     {
-        const auto correction = e.renderCorrectionIR (firLength);
-        if (correction.getNumSamples() > 0)
-            both.copyFrom (1, 0, correction, 0, 0, juce::jmin (firLength, correction.getNumSamples()));
+        const auto corrected = e.renderCorrectedIR (firLength);
+        if (corrected.getNumSamples() > 0)
+            both.copyFrom (1, 0, corrected, 0, 0, juce::jmin (firLength, corrected.getNumSamples()));
     }
 
     fxme::WaveformDisplay wave;
     wave.setColours (SuperMoToTheme::waveformColours());
-    wave.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::master });
-    wave.setChannelNames (withCorrection ? juce::StringArray { "measured", "correction" }
+    wave.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::fir });
+    wave.setChannelNames (withPrediction ? juce::StringArray { "measured", "corrected" }
                                          : juce::StringArray { "measured" });
     wave.setTimeOffset ((double) (firLength / 2) / sr);      // t = 0 at the IR centre
     wave.setBuffer (both, sr);
@@ -145,7 +153,7 @@ inline SpeakerGroupAnalysis::ReportFigures renderGroupFigures (
 
     // Paths in the markdown are relative to the report, which sits in
     // `directory` — so just "<prefix>_figs/<name>.png".
-    auto render = [&] (const AnalysisEngine& e, const juce::String& stem, bool withCorrection,
+    auto render = [&] (const AnalysisEngine& e, const juce::String& stem, bool withPrediction,
                        juce::String& responseOut, juce::String& irOut)
     {
         const auto responseFile = figDir.getChildFile (stem + "_response.png");
@@ -153,7 +161,7 @@ inline SpeakerGroupAnalysis::ReportFigures renderGroupFigures (
             responseOut = folderName + "/" + responseFile.getFileName();
 
         const auto irFile = figDir.getChildFile (stem + "_ir.png");
-        if (figures::renderIrFigure (e, firLength, withCorrection, irFile, options))
+        if (figures::renderIrFigure (e, firLength, withPrediction, irFile, options))
             irOut = folderName + "/" + irFile.getFileName();
     };
 
