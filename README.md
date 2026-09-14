@@ -12,8 +12,9 @@ controls and shortcuts.
 
 ## Part 1 — Monitoring matrix
 
-- **Input/output matrix up to 32x32** (default 8 in / 8 out; choose the active
-  size with the Inputs/Outputs selectors). Each frame (crosspoint) is mostly a
+- **Input/output matrix up to 32x32** (default 2 in / 8 out, the stereo
+  mixing case; raise the input count for 5.1, 7.1, immersive beds or
+  Ambisonics, or let the Config tool set it when you apply a layout). Each frame (crosspoint) is mostly a
   routing cell — **gain**, **phase inversion**, its own **vu-meter** and a
   checkbox to show its signal on the analyzer — but also carries its own
   **2-band EQ** for a config-specific tweak on just that one route.
@@ -329,7 +330,7 @@ ctest --test-dir build
 
 Formats: VST3, AU, Standalone (fixed 32 in / 32 out discrete bus — this
 sidesteps inconsistent per-host channel-count negotiation; the active matrix
-size, 8 by default, is independent and set with the Inputs/Outputs
+size, 2 in / 8 out by default, is independent and set with the Inputs/Outputs
 selectors).
 
 ## License
