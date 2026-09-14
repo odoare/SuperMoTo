@@ -221,3 +221,148 @@
 
 ## To do
 
+- [ ] In the group analysis pane, we should be allowed to select which measurement runs are to be retained for the analysis. We could have a button, which when clicked shows a window with the list of individual measurements comments in column and a checkbox in front of each. The user can (de)select individually and the calculation is retriggered when the user click OK. It should show a cancel button too.
+
+    *Plan (2026-09-14), not implemented yet.*
+
+    **What exists.** Each run in `measurement.xml` is a `<Run>` element with
+    `time`, `mode`, `signal`, `durationS`, `levelDb`, an optional `comment` and
+    one `<File name=...>` per capture. `readMeasurementFolderInfo` only keeps
+    `fileRuns` (file name to `MeasurementRunInfo`), and that struct has no time,
+    no comment and no run index. Group analysis loads each channel's files
+    sorted by position, and `AnalysisEngine::loadSubFiles` pairs the sub with a
+    main by load order (`curves[min(i, n-1)]`). Dry and FIR runs write the same
+    `ch<NN>_pos<PPP>.wav` names, so a folder that also holds FIR verification
+    runs currently loads them as extra positions of the uncorrected speaker.
+
+    **Steps.**
+
+    1. Manifest reader (project, `Dsp/MeasurementEngine.{h,cpp}`). Add `index`,
+       `time` and `comment` to `MeasurementRunInfo`, and a
+       `std::vector<MeasurementRun> runs` to `MeasurementFolderInfo` (manifest
+       order, each run with its file names). Folders without the XML manifest
+       get no run list, and the button below stays disabled for them.
+    2. Filtering (project, next to `scanMeasurementFolder`). A pure helper that
+       takes the scanned `MeasurementFolderContents` and a set of excluded run
+       indices and returns the same structure with those runs' files removed
+       from every channel and from the sub. No GUI, easy to cover in
+       `SuperMoToTests`.
+    3. Pairing by position, not load order. Excluding a run that did not
+       measure every channel leaves channels with different position lists,
+       and load-order pairing would then anchor a sub file on the wrong main
+       position, silently. Build, for each speaker, a sub file list aligned to
+       that speaker's own positions (position parsed from the file name, with
+       `parseCaptureName` exposed from `MeasurementEngine.cpp`), dropping
+       positions one side lacks. `AnalysisEngine` stays unchanged. This also
+       fixes the existing case of a position missing from one channel.
+    4. Dialog. A checklist popup is not specific to SuperMoTo, so it belongs in
+       the FxmeTools JUCE module: `fxme::ChecklistPopup` in
+       `lib/FxmeTools/FxmeTools/components/`, rows of text columns with a
+       checkbox, All / None / OK / Cancel, `setColours()` like the other
+       components, and an async callback returning the checked rows (never a
+       synchronous modal loop in a plugin). Launch it the way
+       `CalibrationComponent` launches its folder-comment popup
+       (`juce::CallOutBox::launchAsynchronously`, `SafePointer` in the
+       callback), or through `DialogWindow::LaunchOptions::launchAsync` if a
+       callout is too cramped for a long list. Add a `TextEntryFocusFixer` only
+       if a text field is ever added. Record the new component in
+       `lib/FxmeTools/doc/api-changes.md` and the catalog.
+    5. SuperMoTo side (`GroupAnalysisComponent`). A "Runs..." button next to
+       "Load measurement folder...", enabled only for a loaded folder with a
+       run list and disabled by `setBusy()` while a batch runs, with a `grp`
+       tooltip. Columns: run number, date and time, mode, signal, channels
+       measured, comment. Its label shows the count when something is
+       excluded ("Runs 5/7"). OK is disabled when the selection would leave a
+       loaded channel with no file.
+    6. Recompute on OK. Apply the filtered lists to each `Entry::files` and to
+       the sub, then reuse the `reanalyzeAll()` background path (one job per
+       engine, never two engines in one job, per the 2026-07-07 rule). If
+       "Compute alignment" had been run, re-run it after the batch so the
+       delays and trims do not go stale. Cancel changes nothing.
+    7. Report and docs. `report.md` lists the excluded runs (time and
+       comment). Document the button in the group analysis chapter (loading
+       section) and in workflow F.
+
+    **Decisions to take before implementing.**
+
+    - Should FIR-mode (and System-mode) runs start unchecked on load? They
+      measure the corrected chain, so leaving them in biases a correction
+      design. Recommended: yes, with the count shown on the button.
+      DECISION: yes. Note that in practice, a FIR or system measurement can be done in another folder, and analyzed individually in the single analysis.
+    - Where the selection lives. Recommended: in memory for the loaded folder,
+      reset by the next folder load, and recorded in the report. The manifest
+      is a log of what was measured and should not be rewritten for this.
+      DECISION: in memory for the loaded folder
+    - Whether the single-speaker Analysis pane gets the same dialog later. The
+      helper in step 2 and the popup in step 4 would make it cheap.
+      DECISION: Less useful in the single speaker analysis, as the user can simply select the files to load. Do not implement.
+
+- [ ] For now the phase switch occurs at the frame level. I am considering adding a phase switch also at the output level. Both can be useful. Everything can be done at frame level except when working with ambisonics: in this case, we could want to tune the system (mainly sub to mains equilibrium) using the phase switch in the outputs, and use the frame switches for the ambisonic decoding matrix.
+
+    *Plan (2026-09-14), not implemented yet.*
+
+    **What exists.** `FrameSettings::phaseInvert` is folded into the frame's
+    smoothed gain target by `FrameProcessor::applySettings`, so a flip ramps
+    through zero without a click. It is serialised as `phaseInvert` on Frame
+    nodes, tagged `Ø` in the matrix, toggled with `p`, offered in the frame's
+    context menu, and written by the Config tool for negative decode
+    coefficients. The output chain (`OutputSettings`: trim, 2-band EQ, delay,
+    FIR, analyzer tap) has no polarity. Trim is `MatrixEngine::outputGains`,
+    smoothed over 50 ms, while `processOutputChainOnly` (FIR measurement mode
+    and the SPL meter) applies the trim unsmoothed. "Invert sub" in both
+    analysis panes only changes the design and writes nothing to the matrix,
+    so the user currently has to flip the sub by hand.
+
+    Everything here is SuperMoTo-specific, so it all stays in `Source/`.
+
+    **Steps.**
+
+    1. Model (`Model/ConfigModel.{h,cpp}`). Add `bool phaseInvert = false` to
+       `OutputSettings`, to the String-free `OutputAudioSettings` and to
+       `audio()`, and include it in `isDefault()`. Write and read it as a
+       `phaseInvert` property on Output nodes with a default of false, so old
+       sessions and presets load unchanged. The property is additive, so no
+       `stateVersion` bump is needed.
+    2. DSP (`Dsp/MatrixEngine.cpp`). Fold the sign into the `outputGains`
+       target where the trim is set, so a flip ramps through zero on the
+       existing 50 ms smoothing, as frames do. Apply the same sign in
+       `processOutputChainOnly`. As a consequence, "Dry" measurements bypass it
+       (the raw speaker as wired), while "FIR" and "System" include it. Nothing
+       changes on the audio thread's locking or allocation profile.
+    3. Output editor (`Components/OutputEditorComponent.h`). A "Phase invert"
+       toggle styled like `FrameEditorComponent`'s `phaseButton`
+       (`juce::ToggleButton` with `SuperMoToTheme::accentToggleButton`, since
+       these are model settings, not APVTS parameters), placed with the FIR and
+       analyzer toggles, plus an `mtx::outPhase` tooltip.
+    4. Matrix (`Components/MatrixComponent.cpp`). A `Ø` tag on the output cell
+       next to "EQ", `p` toggling it when an output is selected, and a "Phase
+       invert" item in the output's right-click menu.
+    5. Analysis integration. The natural payoff is letting "Invert sub" write
+       the sub's polarity onto its assigned output, in Group analysis at
+       "Apply & export" (with a line in the report) and in the single-speaker
+       pane alongside "Apply bulk delay". Dry measurements see the physical
+       wiring, so fixing it at the output is correct for every configuration
+       that feeds the sub.
+    6. Config tool. It must keep leaving output polarity alone (it writes
+       frames, crossovers and optionally the radius trim and delay). Check at
+       implementation time that every output write goes through a
+       get-modify-set that preserves the new field.
+    7. Docs and tests. Matrix chapter ("What an output contains" and the
+       `fig:frame` chain), the gestures table, the Ambisonics section of the
+       Config tool chapter (output polarity for the sub-to-mains balance, frame
+       polarity for the decoder), the glossary's "Polarity (Invert)" entry, the
+       README feature list and the tooltips. In `SuperMoToTests`, a
+       serialisation round trip (absent, false, true) and an engine check that
+       the output sign flips after the ramp.
+
+    **Decisions to take before implementing.**
+
+    - Step 5: write the sub's polarity automatically, behind a toggle, or not
+      at all. Recommended: write it wherever the matching delay is written, so
+      "applied" means the same thing for both. The docs then need to warn that
+      a frame-level invert on the same sub route would flip it back.
+      DECISION: Write the sub's polarity
+    - Whether `p` on a selected output is the right key, given it already means
+      the frame's polarity.
+      DECISION: 'p' can be kept
+
