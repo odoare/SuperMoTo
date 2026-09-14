@@ -396,9 +396,19 @@ namespace grp
 
     inline constexpr auto loadFolder =
         "Load an entire measurement set written by the Measurement & "
-        "calibration pane's folder-based capture: reads readme_measurement.md "
-        "to find the channels and the subwoofer, and loads every speaker's "
-        "(and the sub's) position files in one step.";
+        "calibration pane's folder-based capture: reads measurement.xml (or "
+        "readme_measurement.md for older folders) to find the channels and the "
+        "subwoofer, and loads every speaker's (and the sub's) position files in "
+        "one step. FIR runs are left out at first, see Runs.";
+
+    inline constexpr auto runs =
+        "Choose which measurement runs of the loaded folder feed the analysis. "
+        "Each run is one microphone position. Unchecked runs are left out of "
+        "every speaker and the sub, and OK re-analyzes the group, recomputing "
+        "the alignment if it had been computed. FIR runs start unchecked "
+        "because they measure the speaker through its correction. Needs a "
+        "folder with measurement.xml, and is withdrawn once files are loaded "
+        "by hand.";
 
     inline constexpr auto count =
         "How many speakers are in this group. Slots keep their files when the count is "

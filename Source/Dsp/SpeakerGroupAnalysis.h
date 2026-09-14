@@ -40,6 +40,7 @@
 #include <JuceHeader.h>
 #include "AnalysisEngine.h"
 #include "MatrixEngine.h"
+#include "MeasurementFolder.h"
 #include "../Model/ConfigModel.h"
 #include <algorithm>
 #include <cmath>
@@ -160,18 +161,51 @@ public:
     /** Loads the shared subwoofer measurement set: analyzed on its own engine
         (so it gets its own correction, like any other speaker), and also fed
         to every already-loaded speaker's loadSubFiles() for the existing
-        crossover phase-alignment integration. */
-    int loadSubFiles (const juce::Array<juce::File>& files)
+        crossover phase-alignment integration.
+
+        Each speaker is paired with the sub by pairSubFiles(): by measurement
+        run when `info` is the manifest of the folder both sets come from, in
+        load order otherwise (pass a default info for files picked by hand). A
+        speaker whose engine does not already hold its files in the paired
+        order is re-analyzed in that order first, since AnalysisEngine anchors
+        the i-th sub file on its i-th curve. */
+    int loadSubFiles (const juce::Array<juce::File>& files,
+                      const MeasurementFolderInfo& info = {})
     {
         sub.files = files;
         const int ok = sub.engine->loadFiles (files);
 
         for (int i = 0; i < activeCount; ++i)
-            if (speakers[(size_t) i].hasData())
-                speakers[(size_t) i].engine->loadSubFiles (files);
+        {
+            auto& s = speakers[(size_t) i];
+            if (! s.hasData())
+                continue;
+
+            const auto pairing = pairSubFiles (s.files, files, info);
+            if (! holdsInOrder (*s.engine, pairing.speaker))
+                s.engine->loadFiles (pairing.speaker);
+            s.engine->loadSubFiles (pairing.sub);
+        }
 
         return ok;
     }
+
+    /** Whether the engine's curves are exactly these files, in this order
+        (AnalysisEngine names each curve after its file). */
+    static bool holdsInOrder (const AnalysisEngine& engine, const juce::Array<juce::File>& files)
+    {
+        if (engine.getNumCurves() != files.size())
+            return false;
+        for (int i = 0; i < files.size(); ++i)
+            if (engine.getCurveName (i) != files[i].getFileName())
+                return false;
+        return true;
+    }
+
+    /** One line per measurement run left out of the loaded files, listed in
+        the report's group settings. Empty when nothing was left out. */
+    void setExcludedRunsDescription (const juce::StringArray& lines)   { excludedRuns = lines; }
+    const juce::StringArray& getExcludedRunsDescription() const noexcept { return excludedRuns; }
 
     /** Applies fn (AnalysisEngine&, bool isSub) to every engine in the group
         (speakers + sub) — used to push the shared correction-design settings
@@ -574,6 +608,12 @@ public:
                        << " Hz (per SMPTE ST 2095-1)\n";
         if (filePrefix.trim().isNotEmpty())
             result.report << "- File prefix: `" << filePrefix.trim() << "`\n";
+        if (! excludedRuns.isEmpty())
+        {
+            result.report << "- Measurement runs left out of the analysis:\n";
+            for (const auto& line : excludedRuns)
+                result.report << "    - " << line << "\n";
+        }
         result.report << "\n## Speakers\n\n";
 
         auto reportFiles = [&] (const Entry& e)
@@ -746,6 +786,7 @@ private:
     int activeCount = 2;
     bool subEnabled = true;
     float subTrimMs = 0.0f;     // user offset on the sub's applied delay
+    juce::StringArray excludedRuns;     // report lines, see setExcludedRunsDescription
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpeakerGroupAnalysis)
 };

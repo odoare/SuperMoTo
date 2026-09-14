@@ -166,4 +166,18 @@ namespace SuperMoToTheme
         c.panelLine = panelLine;
         return c;
     }
+
+    // Group analysis's measurement-run dialog. The analysis panes' colour,
+    // not the calibration rose, and the level warning for a refused selection.
+    inline fxme::ChecklistPopup::Colours checklistColours()
+    {
+        fxme::ChecklistPopup::Colours c;
+        c.panel     = panel;
+        c.panelLine = panelLine;
+        c.text      = text;
+        c.dimText   = dimText;
+        c.accent    = spectrum.darker (0.3f);
+        c.warning   = dim;
+        return c;
+    }
 }

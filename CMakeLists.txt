@@ -206,6 +206,27 @@ juce_generate_juce_header(SuperMoToOutputTests)
 set_target_properties(SuperMoToOutputTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME output COMMAND SuperMoToOutputTests)
 
+# ── Offline test of the measurement-folder reader and run helpers ────────────
+# MeasurementFolder needs juce_core only, which is why it lives apart from
+# MeasurementEngine.
+juce_add_console_app(SuperMoToFolderTests PRODUCT_NAME "SuperMoToFolderTests")
+target_sources(SuperMoToFolderTests PRIVATE
+    Tests/MeasurementFolderTest.cpp
+    Source/Dsp/MeasurementFolder.cpp
+)
+target_compile_definitions(SuperMoToFolderTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(SuperMoToFolderTests PRIVATE
+    juce::juce_core
+    juce::juce_recommended_config_flags
+)
+juce_generate_juce_header(SuperMoToFolderTests)
+set_target_properties(SuperMoToFolderTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME folder COMMAND SuperMoToFolderTests)
+
 target_link_libraries(SuperMoTo
     PRIVATE
         juce::juce_audio_basics

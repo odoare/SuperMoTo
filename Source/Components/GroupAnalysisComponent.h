@@ -21,6 +21,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <set>
 #include "../PluginProcessor.h"
 #include "../Dsp/SpeakerGroupAnalysis.h"
 #include "../AppSettings.h"
@@ -89,6 +90,7 @@ public:
         {
             flushPendingSettings();     // a trim set moments ago must be in first
             group.computeAlignment();
+            alignmentComputed = true;
             refreshRows();
             updatePlotPreview();
             status.setText ("Alignment and level match computed.", juce::dontSendNotification);
@@ -121,6 +123,14 @@ public:
         loadFolderButton.setTooltip (smt::tips::grp::loadFolder);
         loadFolderButton.onClick = [this] { loadMeasurementFolder(); };
         addAndMakeVisible (loadFolderButton);
+
+        // Which of the loaded folder's measurement runs feed the analysis.
+        runsButton.setButtonText ("Runs...");
+        runsButton.setColour (juce::TextButton::buttonColourId, SuperMoToTheme::spectrum.darker (1.4f));
+        runsButton.setTooltip (smt::tips::grp::runs);
+        runsButton.onClick = [this] { showRunsDialog(); };
+        runsButton.setEnabled (false);      // until a folder with a run log is loaded
+        addAndMakeVisible (runsButton);
 
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
@@ -363,18 +373,20 @@ public:
         // the set, compute the alignment, apply & export.
         auto r0 = area.removeFromTop (24);
         loadFolderButton.setBounds (r0.removeFromLeft (190));
-        r0.removeFromLeft (16);
-        countLabel.setBounds (r0.removeFromLeft (70));
+        r0.removeFromLeft (6);
+        runsButton.setBounds (r0.removeFromLeft (96));
+        r0.removeFromLeft (12);
+        countLabel.setBounds (r0.removeFromLeft (62));
         countBox.setBounds (r0.removeFromLeft (56));
         r0.removeFromLeft (12);
         subEnabledToggle.setBounds (r0.removeFromLeft (56));
-        r0.removeFromLeft (16);
-        computeButton.setBounds (r0.removeFromLeft (150));
+        r0.removeFromLeft (12);
+        computeButton.setBounds (r0.removeFromLeft (140));
         r0.removeFromLeft (8);
-        applyButton.setBounds (r0.removeFromLeft (170));
+        applyButton.setBounds (r0.removeFromLeft (140));
         r0.removeFromLeft (12);
         prefixLabel.setBounds (r0.removeFromLeft (42));
-        prefixEditor.setBounds (r0.removeFromLeft (150).reduced (0, 1));
+        prefixEditor.setBounds (r0.removeFromLeft (130).reduced (0, 1));
         r0.removeFromLeft (12);
         figuresToggle.setBounds (r0.removeFromLeft (86));
         r0.removeFromLeft (16);
@@ -783,34 +795,11 @@ private:
     // so re-run every already-loaded file set through it at the new size, in
     // the background — one job per engine, each touching only its own engine
     // (the sub's job re-loads only the sub itself, not the per-speaker
-    // crossover integration those speakers' own jobs already redo via
-    // loadSubFiles below, so no two jobs ever touch the same engine).
+    // crossover integration those speakers' own jobs already redo; see
+    // buildReloadJobs, so no two jobs ever touch the same engine).
     void reanalyzeAll()
     {
-        const auto subFiles = group.subEntry().files;
-        const bool haveSub = ! subFiles.isEmpty();
-
-        std::vector<fxme::BackgroundTaskRunner::Job> jobs;
-        for (int i = 0; i < group.getNumSpeakers(); ++i)
-        {
-            const auto files = group.speaker (i).files;
-            if (files.isEmpty())
-                continue;
-            group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
-            jobs.push_back ([this, i, files, subFiles, haveSub]
-            {
-                auto& e = *group.speaker (i).engine;
-                e.loadFiles (files);
-                if (haveSub)
-                    e.loadSubFiles (subFiles);
-            });
-        }
-        if (haveSub)
-        {
-            group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
-            jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
-        }
-
+        auto jobs = buildReloadJobs();
         if (jobs.empty())
             return;
 
@@ -938,6 +927,7 @@ private:
                     return;
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
+                forgetFolderRuns();         // this row no longer comes from the folder
                 pushSettingsTo (*group.speaker (i).engine, false);
                 group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
 
@@ -975,14 +965,21 @@ private:
                     return;
                 const auto files = fc.getResults();
                 smt::setLastBrowseDir (files[0]);
+                forgetFolderRuns();         // the sub no longer comes from the folder
                 pushSettingsTo (*group.subEntry().engine, true);
                 group.subEntry().engine->setSweepInfo (sweepInfoFor (files));
 
                 status.setText ("Sub: analyzing...", juce::dontSendNotification);
                 setBusy (true);
 
+                // Pairs each speaker with the sub by run when both sets are
+                // files of the loaded folder. A copy, taken here: the job runs
+                // elsewhere. (A named local rather than an init-capture, for
+                // MSVC; see applyAndExport.)
+                const auto info = runInfoForSub (files);
+
                 runner.runJobs (
-                    { [this, files] { group.loadSubFiles (files); } },
+                    { [this, files, info] { group.loadSubFiles (files, info); } },
                     [this] (float p) { progressValue = (double) p; },
                     [this]
                     {
@@ -1042,19 +1039,32 @@ private:
                     micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
                 updateMicCalInfo();
 
-                const int n = juce::jmin ((int) contents.speakers.size(),
+                // FIR runs measure the speaker through its correction, not the
+                // bare speaker, so they start left out (see defaultExcludedRuns).
+                // The unfiltered scan is kept for the Runs dialog.
+                loadedFolder = contents;
+                loadedFolderDir = dir;
+                excludedRuns = defaultExcludedRuns();
+                // Without a run log (a folder from before measurement.xml)
+                // every file would sit in one row that cannot be unchecked.
+                runsSelectable = ! contents.info.runs.empty() && ! selectableRuns().empty();
+                alignmentComputed = false;
+                const auto used = smt::withoutRuns (contents, excludedRuns);
+                group.setExcludedRunsDescription (describeExcludedRuns());
+                updateRunsButton();
+
+                const int n = juce::jmin ((int) used.speakers.size(),
                                           smt::SpeakerGroupAnalysis::maxSpeakers);
 
                 // Sweep runs get the Farina deconvolution automatically.
                 // Selected BEFORE the pushSettingsTo calls below, which read
                 // the method from this box.
                 const bool sweepOk = n > 0
-                    && sweepInfoFor (contents.speakers[0].files).isValid();
+                    && sweepInfoFor (used.speakers[0].files).isValid();
                 tfBox.setItemEnabled (2, sweepOk);
                 tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
                 updateWindowLabel();
-                const bool haveSub = contents.sub.channelNumber >= 0 && ! contents.sub.files.isEmpty();
-                const auto subFiles = contents.sub.files;
+                const bool haveSub = used.sub.channelNumber >= 0 && ! used.sub.files.isEmpty();
 
                 // Reflect the folder's contents: auto-select the Sub switch when
                 // the folder has one, clear it when it doesn't.
@@ -1070,19 +1080,25 @@ private:
                 // the correct output assignments instead of stale ones.
                 for (int i = 0; i < n; ++i)
                 {
-                    const auto& c = contents.speakers[(size_t) i];
+                    const auto& c = used.speakers[(size_t) i];
                     auto& entry = group.speaker (i);
                     entry.files = c.files;
                     entry.assignedOutput = c.channelNumber - 1;
                     pushSettingsTo (*entry.engine, false);
-                    entry.engine->setSweepInfo (sweepInfoFor (c.files));
                 }
+                // A folder without a sub also clears the previous one, files and
+                // analysis, so the reload below cannot pair the new speakers with
+                // a subwoofer from another folder.
                 if (haveSub)
                 {
-                    group.subEntry().files = subFiles;
-                    group.subEntry().assignedOutput = contents.sub.channelNumber - 1;
+                    group.subEntry().files = used.sub.files;
+                    group.subEntry().assignedOutput = used.sub.channelNumber - 1;
                     pushSettingsTo (*group.subEntry().engine, true);
-                    group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
+                }
+                else
+                {
+                    group.subEntry().files.clear();
+                    group.subEntry().engine->clear();
                 }
 
                 if (n > 0)
@@ -1091,31 +1107,12 @@ private:
                     setNumSpeakers (n);
                 }
 
-                // One job per engine, each touching only its own engine (mirrors
-                // reanalyzeAll(): never call group.loadSubFiles() from a
-                // background job, since it fans out across every speaker's
-                // engine and would race with these per-speaker jobs).
-                std::vector<fxme::BackgroundTaskRunner::Job> jobs;
-                jobs.reserve ((size_t) n + (haveSub ? 1 : 0));
-
-                for (int i = 0; i < n; ++i)
-                {
-                    const auto files = contents.speakers[(size_t) i].files;
-                    jobs.push_back ([this, i, files, subFiles, haveSub]
-                    {
-                        auto& e = *group.speaker (i).engine;
-                        e.loadFiles (files);
-                        if (haveSub)
-                            e.loadSubFiles (subFiles);
-                    });
-                }
-                if (haveSub)
-                    jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
-
+                auto jobs = buildReloadJobs();
                 if (jobs.empty())
                 {
                     status.setText ("No speaker measurement files found in " + dir.getFileName() + ".",
                                     juce::dontSendNotification);
+                    updateRunsButton();
                     return;
                 }
 
@@ -1128,15 +1125,362 @@ private:
                     [this, n, haveSub, haveFolderCal]
                     {
                         setBusy (false);
+                        const int leftOut = (int) selectableRuns().size() - keptRunCount();
                         status.setText (juce::String (n) + " speaker(s)" + (haveSub ? " + sub" : "")
                                             + " loaded from the measurement folder."
-                                            + (haveFolderCal ? " Embedded mic cal applied." : ""),
+                                            + (haveFolderCal ? " Embedded mic cal applied." : "")
+                                            + (leftOut > 0 ? " " + juce::String (leftOut)
+                                                                 + " FIR run(s) left out, see Runs."
+                                                           : juce::String()),
                                         juce::dontSendNotification);
                         refreshRows();
                         updateFirInfo();    // the sample rate is known now
                         updatePlotPreview();
                     });
             });
+    }
+
+    //==========================================================================
+    // Measurement runs of the loaded folder
+
+    /** A run of the loaded folder that contributed files to the scan, or the
+        files no run lists (number 0). Runs that left nothing Group analysis
+        loads (System runs, which record inputs) are not offered at all. */
+    struct SelectableRun
+    {
+        int number = 0;
+        const smt::MeasurementRunInfo* info = nullptr;  // into loadedFolder; null for 0
+        juce::StringArray channels;                      // "1", "2", ..., "sub"
+    };
+
+    std::vector<SelectableRun> selectableRuns() const
+    {
+        std::vector<SelectableRun> result;
+        if (! loadedFolder.ok)
+            return result;
+
+        const int numSpeakers = juce::jmin ((int) loadedFolder.speakers.size(),
+                                            smt::SpeakerGroupAnalysis::maxSpeakers);
+        auto channelsOf = [&] (int number)
+        {
+            juce::StringArray channels;
+            auto has = [&] (const juce::Array<juce::File>& files)
+            {
+                for (const auto& f : files)
+                    if (loadedFolder.info.runNumberOf (f.getFileName()) == number)
+                        return true;
+                return false;
+            };
+            for (int i = 0; i < numSpeakers; ++i)
+                if (has (loadedFolder.speakers[(size_t) i].files))
+                    channels.add (juce::String (loadedFolder.speakers[(size_t) i].channelNumber));
+            if (has (loadedFolder.sub.files))
+                channels.add ("sub");
+            return channels;
+        };
+
+        for (const auto& run : loadedFolder.info.runs)
+            if (auto channels = channelsOf (run.info.number); ! channels.isEmpty())
+                result.push_back ({ run.info.number, &run.info, channels });
+
+        if (auto channels = channelsOf (0); ! channels.isEmpty())
+            result.push_back ({ 0, nullptr, channels });
+
+        return result;
+    }
+
+    /** FIR runs measure the speaker through its correction, which would bias
+        a correction designed from them. System runs would too, but they record
+        inputs, which the folder scan never loads. Both start left out, unless
+        that would leave a channel with no file, in which case nothing is (a
+        folder of verification runs only is still loadable as it is). */
+    std::set<int> defaultExcludedRuns() const
+    {
+        std::set<int> excluded;
+        for (const auto& run : selectableRuns())
+            if (run.info != nullptr && (run.info->mode == "fir" || run.info->mode == "system"))
+                excluded.insert (run.number);
+
+        return refusalFor (loadedFolder, excluded).isEmpty() ? excluded : std::set<int>();
+    }
+
+    /** How many of the offered runs the current selection keeps. */
+    int keptRunCount() const
+    {
+        int kept = 0;
+        for (const auto& run : selectableRuns())
+            kept += excludedRuns.count (run.number) == 0 ? 1 : 0;
+        return kept;
+    }
+
+    /** Why this exclusion cannot be applied, or empty when it can: every
+        loaded speaker, and the sub when the folder has one, must keep at least
+        one file. */
+    juce::String refusalFor (const smt::MeasurementFolderContents& contents,
+                             const std::set<int>& excluded) const
+    {
+        const auto used = smt::withoutRuns (contents, excluded);
+        const int numSpeakers = juce::jmin ((int) used.speakers.size(),
+                                            smt::SpeakerGroupAnalysis::maxSpeakers);
+        for (int i = 0; i < numSpeakers; ++i)
+            if (used.speakers[(size_t) i].files.isEmpty())
+                return "Channel " + juce::String (used.speakers[(size_t) i].channelNumber)
+                     + " would have no measurement left";
+
+        if (! contents.sub.files.isEmpty() && used.sub.files.isEmpty())
+            return "The sub would have no measurement left";
+
+        return {};
+    }
+
+    static juce::String modeLabel (const juce::String& mode)
+    {
+        if (mode == "dry")    return "Dry";
+        if (mode == "fir")    return "FIR";
+        if (mode == "system") return "System";
+        return mode;
+    }
+
+    static juce::String timeLabel (const juce::String& iso)
+    {
+        return iso.isEmpty() ? juce::String()
+                             : juce::Time::fromISO8601 (iso).toString (true, true, false, true);
+    }
+
+    /** The report's lines for the runs currently left out. */
+    juce::StringArray describeExcludedRuns() const
+    {
+        juce::StringArray lines;
+        for (const auto& run : selectableRuns())
+        {
+            if (excludedRuns.count (run.number) == 0)
+                continue;
+            if (run.info == nullptr)
+            {
+                lines.add ("Files not listed in measurement.xml (channels "
+                           + run.channels.joinIntoString (", ") + ")");
+                continue;
+            }
+            juce::String line = "Run " + juce::String (run.number) + ", "
+                              + timeLabel (run.info->time) + ", "
+                              + modeLabel (run.info->mode) + ", "
+                              + run.info->signal + ", channels "
+                              + run.channels.joinIntoString (", ");
+            if (run.info->comment.isNotEmpty())
+                line << ": \"" << run.info->comment << "\"";
+            lines.add (line);
+        }
+        return lines;
+    }
+
+    void updateRunsButton()
+    {
+        const auto runs = selectableRuns();
+        const int kept = keptRunCount();
+
+        runsButton.setButtonText (runsSelectable && kept < (int) runs.size()
+                                      ? "Runs " + juce::String (kept) + "/"
+                                          + juce::String ((int) runs.size()) + "..."
+                                      : juce::String ("Runs..."));
+        runsButton.setEnabled (runsSelectable && ! busy);
+    }
+
+    /** Files loaded by hand no longer come from the folder, and re-applying a
+        run selection would overwrite them, so the dialog is withdrawn until
+        the next folder load. The report keeps listing what was left out of
+        the rows that did come from it. */
+    void forgetFolderRuns()
+    {
+        runsSelectable = false;
+        updateRunsButton();
+    }
+
+    void showRunsDialog()
+    {
+        const auto runs = selectableRuns();
+        if (! runsSelectable || runs.empty())
+            return;
+
+        std::vector<fxme::ChecklistPopup::Row> rows;
+        for (const auto& run : runs)
+        {
+            fxme::ChecklistPopup::Row row;
+            row.checked = excludedRuns.count (run.number) == 0;
+            const bool listed = run.info != nullptr;
+            row.cells.add (listed ? juce::String (run.number) : juce::String ("-"));
+            row.cells.add (listed ? timeLabel (run.info->time) : juce::String());
+            row.cells.add (listed ? modeLabel (run.info->mode) : juce::String());
+            row.cells.add (listed ? run.info->signal : juce::String());
+            row.cells.add (run.channels.joinIntoString (", "));
+            row.cells.add (listed ? run.info->comment
+                                  : juce::String ("(files not listed in measurement.xml)"));
+            rows.push_back (std::move (row));
+        }
+
+        auto popup = std::make_unique<fxme::ChecklistPopup> (
+            "Measurement runs",
+            std::vector<fxme::ChecklistPopup::Column> {
+                { "Run", 40 }, { "Time", 130 }, { "Mode", 60 }, { "Signal", 60 },
+                { "Channels", 110 }, { "Comment", 0 } },
+            std::move (rows));
+        popup->setDescription ("Each run is one microphone position. Unchecked runs are left "
+                               "out of every speaker and the sub, and OK re-analyzes the group. "
+                               "FIR runs start unchecked, since they measure the speaker through "
+                               "its correction.");
+        popup->setColours (SuperMoToTheme::checklistColours());
+
+        // The run numbers, row by row, to turn a checked state back into runs.
+        std::vector<int> numbers;
+        for (const auto& run : runs)
+            numbers.push_back (run.number);
+
+        auto excludedFrom = [numbers] (const std::vector<bool>& checked)
+        {
+            std::set<int> excluded;
+            for (size_t k = 0; k < numbers.size() && k < checked.size(); ++k)
+                if (! checked[k])
+                    excluded.insert (numbers[k]);
+            return excluded;
+        };
+
+        const juce::Component::SafePointer<GroupAnalysisComponent> safe (this);
+        popup->validate = [safe, excludedFrom] (const std::vector<bool>& checked)
+        {
+            return safe != nullptr ? safe->refusalFor (safe->loadedFolder, excludedFrom (checked))
+                                   : juce::String();
+        };
+        popup->onOk = [safe, excludedFrom] (const std::vector<bool>& checked)
+        {
+            if (safe != nullptr)
+                safe->applyRunSelection (excludedFrom (checked));
+        };
+
+        fxme::ChecklistPopup::showAsCallOut (std::move (popup), runsButton);
+    }
+
+    /** Re-loads every folder row with the chosen runs left out, in the
+        background, then re-runs Compute alignment if it had been run, so the
+        delays and trims shown are never those of the previous selection. */
+    void applyRunSelection (const std::set<int>& newExcluded)
+    {
+        if (! runsSelectable || runner.isRunning())
+            return;
+        if (newExcluded == excludedRuns)
+        {
+            status.setText ("Run selection unchanged.", juce::dontSendNotification);
+            return;
+        }
+        if (refusalFor (loadedFolder, newExcluded).isNotEmpty())
+            return;     // the dialog refuses it already; a guard, not a message
+
+        flushPendingSettings();
+        excludedRuns = newExcluded;
+        group.setExcludedRunsDescription (describeExcludedRuns());
+        const auto used = smt::withoutRuns (loadedFolder, excludedRuns);
+
+        const int n = juce::jmin ((int) used.speakers.size(), smt::SpeakerGroupAnalysis::maxSpeakers);
+        for (int i = 0; i < n; ++i)
+            group.speaker (i).files = used.speakers[(size_t) i].files;
+        if (! loadedFolder.sub.files.isEmpty())
+            group.subEntry().files = used.sub.files;
+
+        // The estimator follows what is left: leaving out every sweep run
+        // takes the Farina method away. Otherwise the user's choice stands.
+        const bool sweepOk = n > 0 && sweepInfoFor (used.speakers[0].files).isValid();
+        tfBox.setItemEnabled (2, sweepOk);
+        if (! sweepOk && tfBox.getSelectedId() == 2)
+        {
+            tfBox.setSelectedId (1, juce::dontSendNotification);
+            updateWindowLabel();
+            pushSettingsToAll();
+        }
+
+        auto jobs = buildReloadJobs();
+        updateRunsButton();
+        if (jobs.empty())
+            return;
+
+        status.setText ("Re-analyzing with the selected runs...", juce::dontSendNotification);
+        setBusy (true);
+
+        runner.runJobs (std::move (jobs),
+            [this] (float p) { progressValue = (double) p; },
+            [this]
+            {
+                setBusy (false);
+                if (alignmentComputed)
+                    group.computeAlignment();
+
+                status.setText (juce::String (keptRunCount()) + " of "
+                                    + juce::String ((int) selectableRuns().size())
+                                    + " run(s) kept, group re-analyzed"
+                                    + (alignmentComputed ? " and alignment recomputed." : "."),
+                                juce::dontSendNotification);
+                refreshRows();
+                updatePlotPreview();
+            });
+    }
+
+    /** The manifest to pair speakers with the sub by run, when the sub's files
+        and every active speaker's files come from the loaded folder, and an
+        empty one otherwise (load-order pairing): run numbers are looked up by
+        file name, and names repeat from one folder to the next. */
+    smt::MeasurementFolderInfo runInfoForSub (const juce::Array<juce::File>& subFiles) const
+    {
+        auto inLoadedFolder = [this] (const juce::Array<juce::File>& files)
+        {
+            if (loadedFolderDir == juce::File())
+                return false;
+            for (const auto& f : files)
+                if (f.getParentDirectory() != loadedFolderDir)
+                    return false;
+            return true;
+        };
+
+        if (! inLoadedFolder (subFiles))
+            return {};
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+            if (! inLoadedFolder (group.speaker (i).files))
+                return {};
+        return folderInfo;
+    }
+
+    /** One background job per engine with files, each touching only that
+        engine: a speaker's files in the order pairSubFiles gives, followed by
+        its sub pairing, and the sub on its own. Never group.loadSubFiles(),
+        which fans out across every speaker's engine and would race with the
+        per-speaker jobs. Each engine's sweep identity is set here, on the
+        message thread. */
+    std::vector<fxme::BackgroundTaskRunner::Job> buildReloadJobs()
+    {
+        const auto subFiles = group.subEntry().files;
+        const bool haveSub = ! subFiles.isEmpty();
+        const auto info = haveSub ? runInfoForSub (subFiles) : smt::MeasurementFolderInfo();
+
+        std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+        for (int i = 0; i < group.getNumSpeakers(); ++i)
+        {
+            const auto files = group.speaker (i).files;
+            if (files.isEmpty())
+                continue;
+            group.speaker (i).engine->setSweepInfo (sweepInfoFor (files));
+
+            const auto pairing = smt::pairSubFiles (files, haveSub ? subFiles : juce::Array<juce::File>(),
+                                                    info);
+            jobs.push_back ([this, i, pairing, haveSub]
+            {
+                auto& e = *group.speaker (i).engine;
+                e.loadFiles (pairing.speaker);
+                if (haveSub)
+                    e.loadSubFiles (pairing.sub);
+            });
+        }
+        if (haveSub)
+        {
+            group.subEntry().engine->setSweepInfo (sweepInfoFor (subFiles));
+            jobs.push_back ([this, subFiles] { group.subEntry().engine->loadFiles (subFiles); });
+        }
+        return jobs;
     }
 
     void applyAndExport()
@@ -1459,8 +1803,10 @@ private:
     // or via the shared forEachEngine fan-out) while a background batch is
     // running, so no engine is ever read/written from two threads at once;
     // shows/hides the progress bar accordingly.
-    void setBusy (bool busy)
+    void setBusy (bool isBusy)
     {
+        busy = isBusy;
+        updateRunsButton();
         progressBar.setVisible (busy);
         // The plot is a bare view, not in the enable/disable list below: freeze
         // its zoom/pan so onViewChanged cannot ask for a re-sample mid-batch.
@@ -1500,7 +1846,16 @@ private:
     juce::ComboBox countBox, micCalSourceBox;
     fxme::MicCalibration folderMicCal;      // embedded in the loaded folder
     smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
-    juce::TextButton computeButton, applyButton, loadFolderButton;
+    juce::TextButton computeButton, applyButton, loadFolderButton, runsButton;
+
+    // The loaded measurement folder, as scanned (every run), and which of its
+    // runs are left out of the files the rows hold. See selectableRuns().
+    smt::MeasurementFolderContents loadedFolder;
+    juce::File loadedFolderDir;
+    std::set<int> excludedRuns;
+    bool runsSelectable = false;        // false once a row or the sub is loaded by hand
+    bool alignmentComputed = false;     // Compute alignment run since the folder loaded
+    bool busy = false;                  // mirrors setBusy()
     juce::ToggleButton subEnabledToggle;
     juce::Label prefixLabel;
     juce::TextEditor prefixEditor;      // export file-name prefix

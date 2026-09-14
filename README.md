@@ -167,7 +167,15 @@ involved.
   find the channels and the subwoofer, sets **Speakers**, the output
   assignments and the **Sub** switch automatically, and loads every
   speaker's (and the sub's) position files sorted by position — no manual
-  multi-select, no file-order mistakes.
+  multi-select, no file-order mistakes. Each sub file is paired with the
+  speaker file of the **same run** (one run = one mic position), so a speaker
+  that missed a run still pairs correctly.
+- **Runs...** lists the loaded folder's measurement runs (number, time, mode,
+  signal, channels, comment) with a checkbox each. Unchecked runs are left out
+  of every speaker and the sub, and **OK** re-analyzes the group (and
+  recomputes the alignment if it had been computed); **Cancel** changes
+  nothing. FIR runs start unchecked, since they measure the speaker through
+  its correction. The report lists the runs left out.
 - The correction-design controls are **shared across the whole group** (one
   Welch window, smoothing, correction level, max boost, FIR length, phase
   type, analysis range, crossover and sub-polarity setting for every
@@ -244,7 +252,8 @@ involved.
 ### E. Aligning and correcting several speakers at once
 1. Group analysis: set **Speakers** to the number of drivers in the rig, and
    load each speaker's multi-position measurement set (**Load...** on its
-   row), plus the shared **Sub** row's set if there's a subwoofer.
+   row), plus the shared **Sub** row's set if there's a subwoofer. Or use
+   **Load measurement folder...**, then **Runs...** to leave takes out.
 2. Tune the shared correction-design controls (Welch window, smoothing,
    correction level, max boost, FIR length, Phase, Range, Crossover, Invert
    sub) — one tone for the whole group; use **Preview** to check each
@@ -327,12 +336,13 @@ Builds do not install themselves: copy the `.vst3` to the VST3 folder (see
 
 ### Tests
 
-Four offline test executables cover the analysis maths, the microphone
-calibration parser, the synchronized swept-sine and the output polarity (state
-round trip and engine). They are excluded from the default build, so name them:
+Five offline test executables cover the analysis maths, the microphone
+calibration parser, the synchronized swept-sine, the output polarity (state
+round trip and engine) and the measurement-folder reader (run log, leaving runs
+out, sub pairing). They are excluded from the default build, so name them:
 
 ```
-cmake --build build -j2 --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests SuperMoToOutputTests
+cmake --build build -j2 --target SuperMoToTests SuperMoToMicCalTests SuperMoToSweepTests SuperMoToOutputTests SuperMoToFolderTests
 ctest --test-dir build
 ```
 

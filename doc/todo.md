@@ -325,11 +325,9 @@
     paragraph in the Config tool's Ambisonics section, the glossary and the
     README, including the test list.*
 
-## To do
+- [x] In the group analysis pane, we should be allowed to select which measurement runs are to be retained for the analysis. We could have a button, which when clicked shows a window with the list of individual measurements comments in column and a checkbox in front of each. The user can (de)select individually and the calculation is retriggered when the user click OK. It should show a cancel button too.
 
-- [ ] In the group analysis pane, we should be allowed to select which measurement runs are to be retained for the analysis. We could have a button, which when clicked shows a window with the list of individual measurements comments in column and a checkbox in front of each. The user can (de)select individually and the calculation is retriggered when the user click OK. It should show a cancel button too.
-
-    *Plan (2026-09-14), not implemented yet.*
+    *Plan (2026-09-14).*
 
     **What exists.** Each run in `measurement.xml` is a `<Run>` element with
     `time`, `mode`, `signal`, `durationS`, `levelDb`, an optional `comment` and
@@ -402,3 +400,61 @@
     - Whether the single-speaker Analysis pane gets the same dialog later. The
       helper in step 2 and the popup in step 4 would make it cheap.
       DECISION: Less useful in the single speaker analysis, as the user can simply select the files to load. Do not implement.
+
+    *Implemented 2026-09-14. Not yet built or run. Where it departs from the
+    plan above:*
+
+    *Step 3 pairs by run, not by position. Position numbers turned out to be
+    counted per channel (`MeasurementEngine::start` takes each channel's own
+    max + 1), so a speaker that missed one run is a position behind the sub
+    from then on, and position pairing would have been exactly as wrong as
+    load order. Every channel measured in one run was measured at the same
+    mic position, so `smt::pairSubFiles` pairs files of the same run first,
+    then pairs whatever is left in load order (a sub measured in runs of its
+    own, files no run lists, folders without a manifest: the old behaviour).
+    A speaker keeps all its files, paired ones first; sub files left without a
+    partner are dropped rather than anchored on the last speaker file as
+    before. `AnalysisEngine` is unchanged. The pairing applies to the folder
+    load, to the re-analysis after a window change, to a run selection, and to
+    a sub loaded by hand (`SpeakerGroupAnalysis::loadSubFiles` now takes the
+    manifest and re-loads a speaker only when its order changes). Run
+    information is used only when the files really come from the loaded
+    folder, since run numbers are looked up by file name.*
+
+    *Steps 1 and 2 live in a new `Source/Dsp/MeasurementFolder.{h,cpp}`: the
+    folder reader moved out of `MeasurementEngine.{h,cpp}` unchanged apart
+    from the run log, so it depends on juce_core only and has its own test
+    target, `SuperMoToFolderTests` (`Tests/MeasurementFolderTest.cpp`,
+    CTest `folder`). `MeasurementEngine.h` includes it, so no include changed
+    elsewhere. `MeasurementFolderInfo::runs` is oldest first, with
+    `MeasurementRunInfo::number` chronological from 1; `runNumberOf()` gives a
+    file's run, 0 for files no run lists. `smt::withoutRuns` takes run
+    numbers, 0 included.*
+
+    *Dialog (step 4): `fxme::ChecklistPopup`, header-only in
+    `lib/FxmeTools/FxmeTools/components/`, in the umbrella, recorded in
+    FxmeTools' `doc/api-changes.md` and in the skill's catalog. Launched as a
+    CallOutBox. Only runs that contribute files to the scan get a row (System
+    runs write `in<NN>` files, which the scan never loads, so they never
+    appear), plus one row for files no run lists when there are any. Columns:
+    run, time, mode, signal, channels, comment; a row's tooltip shows it in
+    full.*
+
+    *Pane (step 5): "Runs..." sits right of "Load measurement folder..."; the
+    rest of row 0 was tightened to keep its width. It reads "Runs 5/7..." when
+    runs are left out, is disabled for folders without a run log, and is
+    withdrawn when a row or the sub is loaded by hand, since applying a
+    selection would replace those files.*
+
+    *Step 6 as planned; "Compute alignment" is re-run only if it had been run
+    since the folder was loaded. If the selection leaves no sweep run, the
+    Farina estimator is switched off.*
+
+    *Step 7: the report's group settings list the runs left out. Manual:
+    group analysis chapter (pairing paragraph and a new "Choosing the
+    measurement runs" subsection, `sec:groupruns`) and workflow F. README
+    (Part 4, use case E, the test list) and tooltips (`grp::runs`, and
+    `grp::loadFolder`, which still named the readme as the source).*
+
+## To do
+
