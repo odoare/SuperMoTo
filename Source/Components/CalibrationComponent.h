@@ -242,6 +242,8 @@ public:
             settings.measurementStatus = processor.measurement.getStatusText();
         }
         syncControlsFromSettings();
+        if (settings.spectrumView.has_value())
+            spectrum.setViewState (*settings.spectrumView);
         refreshGeneralComment();
         updateModeUi();
 
@@ -273,6 +275,7 @@ public:
         // it is now rather than trusting the last keystroke has landed.
         settings.folder = pathEditor.getText();
         settings.runComment = runCommentEditor.getText();
+        settings.spectrumView = spectrum.getViewState();     // no change notification of its own
 
         processor.configModel.removeListener (this);
         processor.measurement.removeChangeListener (this);

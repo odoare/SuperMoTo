@@ -70,8 +70,9 @@ inline void setLastBrowseDir (const juce::File& fileOrDir)
 }
 
 //==============================================================================
-// Interface mode: which view/panel is open and how compact the editor is, so
-// it reopens the way it was left.
+// Interface mode: which view/panel is open and how compact the editor is, as
+// the last editor of any instance left them. Each instance keeps its own
+// (smt::EditorSettings); these are where a new instance's first editor starts.
 
 /** Last open view, as the editor's View enum cast to int (default 0 = matrix). */
 inline int getUiView()

@@ -71,6 +71,7 @@ public:
     std::function<void (int out)> onOutputSelected;
 
     void setSelectedFrame (int in, int out)     { selIn = in; selOut = out; repaint(); }
+    void setSelectedOutput (int out)            { selStrip = out; selIn = selOut = -1; repaint(); }
 
     static constexpr int outputStripH = 54;     // height of the output strip
 

@@ -68,6 +68,7 @@ namespace topBar
 //==============================================================================
 SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p),
+      state (p.workspace.editor),
       matrix (p.configModel, p.engine),
       outputMeters (p.configModel, p.engine),
       spectrum (p.engine),
@@ -220,6 +221,10 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     matrix.onFrameSelected = [this] (int in, int out)
     {
         editingOutput = false;
+        state.editingOutput = false;
+        state.selectedIn = in;
+        state.selectedOut = out;
+        state.selectedOutput = -1;
         frameEditor.setFrame (in, out, editConfig);
         const bool show = currentView == View::matrix && ! isCompact();
         frameEditor.setVisible (show);
@@ -228,6 +233,9 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     matrix.onOutputSelected = [this] (int out)
     {
         editingOutput = true;
+        state.editingOutput = true;
+        state.selectedOutput = out;
+        state.selectedIn = state.selectedOut = -1;
         outputEditor.setOutput (out);
         const bool show = currentView == View::matrix && ! isCompact();
         outputEditor.setVisible (show);
@@ -279,6 +287,9 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
         return "Frame " + juce::String (slot + 1);
     };
 
+    if (state.analyzerView.has_value())
+        spectrum.setViewState (*state.analyzerView);
+
     addAndMakeVisible (frameEditor);
     addChildComponent (outputEditor);   // shown when an output is selected
 
@@ -298,27 +309,77 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     for (int c = 0; c < smt::numConfigs; ++c)
         audioProcessor.apvts.addParameterListener (smt::configName (c), this);
 
-    // Start on the engaged config (the last one when several are active).
-    int initial = 0;
-    for (int c = 0; c < smt::numConfigs; ++c)
-        if (audioProcessor.apvts.getRawParameterValue (smt::configName (c))->load() > 0.5f)
-            initial = c;
+    // Reopen as this instance's editor was left. The first editor of an
+    // instance starts from the machine-wide page and compact mode, on the
+    // engaged configuration (the last one when several are active).
+    const int engaged = engagedConfigMask();
+    const auto lastConfigIn = [] (int mask)
+    {
+        int last = 0;
+        for (int c = 0; c < smt::numConfigs; ++c)
+            if ((mask & (1 << c)) != 0)
+                last = c;
+        return last;
+    };
 
-    setEditConfig (initial);
+    if (! state.opened)
+    {
+        state.opened = true;
+        state.view = smt::getUiView();
+        state.compactMode = smt::getUiCompactMode();
+        state.editConfig = lastConfigIn (engaged);
+        state.engagedConfigs = engaged;
+    }
 
-    // Restore the interface mode left last time (which panel, compact or not).
-    setView (static_cast<View> (juce::jlimit (0, 5, smt::getUiView())));
+    // An open editor follows a configuration being engaged, so one engaged
+    // while it was closed wins over the configuration left in the matrix.
+    // setEditConfig clears the frame selection: take it first.
+    const int newlyEngaged = engaged & ~state.engagedConfigs;
+    const int selIn = state.selectedIn, selOut = state.selectedOut;
+    const int selOutput = state.selectedOutput;
+    const bool wasEditingOutput = state.editingOutput;
+
+    setEditConfig (newlyEngaged != 0 ? lastConfigIn (newlyEngaged) : state.editConfig);
+
+    // The selection, as long as the matrix still has it. An output is the
+    // same in every configuration; a frame only in the one it was selected in.
+    const auto& model = audioProcessor.configModel;
+    if (wasEditingOutput)
+    {
+        const int out = selOutput < model.getNumOuts() ? selOutput : -1;
+        matrix.setSelectedOutput (out);
+        matrix.onOutputSelected (out);
+    }
+    else if (newlyEngaged == 0 && selIn >= 0 && selIn < model.getNumIns()
+             && selOut >= 0 && selOut < model.getNumOuts())
+    {
+        matrix.setSelectedFrame (selIn, selOut);
+        matrix.onFrameSelected (selIn, selOut);
+    }
+
+    setView (static_cast<View> (juce::jlimit (0, 5, state.view)));
 
     setResizable (true, true);
     setResizeLimits (1100, 720, 2400, 1600);
-    setSize (1280, 820);
+    expandedWidth  = juce::jlimit (1100, 2400, state.expandedWidth);
+    expandedHeight = juce::jlimit (720, 1600, state.expandedHeight);
+    setSize (expandedWidth, expandedHeight);
 
     setTooltipsEnabled (smt::getUiTooltips());
-    setCompactMode (static_cast<Compact> (juce::jlimit (0, 2, smt::getUiCompactMode())));
+    setCompactMode (static_cast<Compact> (juce::jlimit (0, 2, state.compactMode)));
 }
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
 {
+    // What changes without a notification the editor could follow is taken
+    // as it closes: the window size, the engaged configurations, and the
+    // analyzer's view.
+    const bool full = compactMode == Compact::off && ! getLocalBounds().isEmpty();
+    state.expandedWidth  = full ? getWidth()  : expandedWidth;
+    state.expandedHeight = full ? getHeight() : expandedHeight;
+    state.engagedConfigs = engagedConfigMask();
+    state.analyzerView = spectrum.getViewState();
+
     audioProcessor.configModel.removeListener (this);
     for (int c = 0; c < smt::numConfigs; ++c)
         audioProcessor.apvts.removeParameterListener (smt::configName (c), this);
@@ -341,6 +402,15 @@ void SuperMoToAudioProcessorEditor::modelChanged()
             setSize (sz.x, sz.y);
         }
     }
+}
+
+int SuperMoToAudioProcessorEditor::engagedConfigMask() const
+{
+    int mask = 0;
+    for (int c = 0; c < smt::numConfigs; ++c)
+        if (audioProcessor.apvts.getRawParameterValue (smt::configName (c))->load() > 0.5f)
+            mask |= 1 << c;
+    return mask;
 }
 
 void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parameterID, float newValue)
@@ -368,7 +438,8 @@ void SuperMoToAudioProcessorEditor::parameterChanged (const juce::String& parame
 void SuperMoToAudioProcessorEditor::setView (View v)
 {
     currentView = v;
-    smt::setUiView (static_cast<int> (v));
+    state.view = static_cast<int> (v);
+    smt::setUiView (state.view);        // the default for a new instance
     const bool m = v == View::matrix && ! isCompact();
 
     // The strip layout keeps the matrix visible but shrunk to its output strip;
@@ -636,7 +707,8 @@ void SuperMoToAudioProcessorEditor::setCompactMode (Compact m)
     }
 
     compactMode = m;
-    smt::setUiCompactMode (static_cast<int> (m));
+    state.compactMode = static_cast<int> (m);
+    smt::setUiCompactMode (state.compactMode);      // the default for a new instance
 
     // The arrow points at what the next click does: shrink further, or — from
     // the smallest layout — go back to the full editor.
@@ -688,6 +760,8 @@ void SuperMoToAudioProcessorEditor::setEditConfig (int c)
     matrix.setEditConfig (editConfig);
     frameEditor.setFrame (-1, -1, editConfig);
     matrix.setSelectedFrame (-1, -1);
+    state.editConfig = editConfig;
+    state.selectedIn = state.selectedOut = -1;
     for (int i = 0; i < editConfigButtons.size(); ++i)
         editConfigButtons[i]->setToggleState (i == editConfig, juce::dontSendNotification);
 }

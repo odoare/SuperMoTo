@@ -23,6 +23,7 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <optional>
 #include "ConfigModel.h"
 
 namespace smt
@@ -58,6 +59,7 @@ struct CalibrationSettings
     bool noiseOn = false;
     float noiseAmpDb = -12.0f;
     float splReferenceDb = 85.0f;                   // the last reading typed from a real SPL meter
+    std::optional<fxme::SpectrumDisplay::ViewState> spectrumView;   // zoom, detector, averaging
 
     // Status line.
     juce::String status;                            // as last shown

@@ -88,7 +88,14 @@ private:
     // Keeps the matrix-size combos in sync with the model (state restore).
     void modelChanged() override;
 
+    /** The engaged configurations, bit c for configuration c. */
+    int engagedConfigMask() const;
+
     SuperMoToAudioProcessor& audioProcessor;
+
+    // This instance's editor and matrix-view state, kept in the processor's
+    // workspace so the next editor reopens as this one was left.
+    smt::EditorSettings& state;
 
     fxme::FxmeLookAndFeel fxmeLookAndFeel;
 
@@ -158,7 +165,7 @@ private:
     int editConfig = 0;
 
     Compact compactMode = Compact::off;
-    int expandedWidth = 1280, expandedHeight = 820;
+    int expandedWidth = 1280, expandedHeight = 820;     // restored from `state` by the ctor
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SuperMoToAudioProcessorEditor)
 };

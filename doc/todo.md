@@ -639,6 +639,24 @@
       changes, as before, and are rebuilt as they were left when the editor
       reopens. Double-click still returns a row control to the rig's default.
       `ConfigToolComponent` now takes the settings next to the model.*
-    - [ ] *Matrix and editor (step 7), with view and compact mode per
-      instance, the machine-wide values as defaults for a new instance.*
+    - [x] *Matrix and editor (2026-09-15, not yet built).
+      `smt::EditorSettings` (`Source/Model/EditorSettings.h`) in the
+      workspace holds the page, the compact mode, the full layout's window
+      size, the configuration shown in the matrix, the selected frame or
+      output (and which detail editor is up), and the analyzer's view. Page
+      and compact mode are still written machine-wide as they change, and
+      only a new instance's first editor reads them from there; tooltips stay
+      machine-wide. The edited configuration is kept, except that a
+      configuration engaged while the editor was closed (automation, a
+      preset) is shown instead, since an open editor follows engagement; the
+      frame selection is then dropped, as switching configuration does. A
+      selection the matrix no longer has (smaller size) is dropped. The window
+      size, the engaged set and the analyzer view are taken in the editor's
+      destructor, since nothing notifies their changes. The analyzer view
+      needed an FxmeTools addition: `fxme::SpectrumDisplay::ViewState` with
+      `getViewState()` / `setViewState()` (detector, window size, averaging,
+      dB and frequency windows, traces hidden from the legend), recorded in
+      FxmeTools' `doc/api-changes.md`. The Calibration pane's spectrum uses it
+      too (`CalibrationSettings::spectrumView`), which that pane's step had
+      missed.*
     - [ ] *Docs (step 9): what survives closing the editor.*

@@ -21,6 +21,7 @@
 
 #include <JuceHeader.h>
 #include "ConfigModel.h"
+#include "EditorSettings.h"
 #include "CalibrationSettings.h"
 #include "ConfigToolSettings.h"
 #include "AnalysisSession.h"
@@ -36,6 +37,10 @@ public:
         : groupAnalysis (configModel, matrixEngine)
     {
     }
+
+    /** The editor itself (page, compact mode, window size) and the matrix
+        view (configuration shown, selection, analyzer view). */
+    EditorSettings editor;
 
     /** The Config tool: the rig it describes, its speaker rows, and how it
         is written. */
