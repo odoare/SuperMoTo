@@ -21,6 +21,8 @@
 
 #include <JuceHeader.h>
 #include "ConfigModel.h"
+#include "CalibrationSettings.h"
+#include "AnalysisSession.h"
 #include "GroupAnalysisSession.h"
 
 namespace smt
@@ -33,6 +35,14 @@ public:
         : groupAnalysis (configModel, matrixEngine)
     {
     }
+
+    /** The Measurement & calibration pane's controls. What they drive (a
+        measurement in progress, the generator) lives in the processor. */
+    CalibrationSettings calibration;
+
+    /** The Analysis pane: its engine, the loaded main and sub files, and the
+        settings. */
+    AnalysisSession analysis;
 
     /** The Group analysis pane: speaker group, settings, loaded folder, and
         the background batch, which runs on with the editor closed. */

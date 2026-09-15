@@ -9,6 +9,11 @@
     correction is exported as an impulse response wav which the monitoring
     part loads as an output FIR (optionally assigned directly here).
 
+    The component is a view. The engine, the loaded files and the settings
+    live in smt::AnalysisSession, owned by the processor's workspace, so
+    closing the editor loses none of it. Controls write the session's
+    settings; reopening restores them without analyzing anything again.
+
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
     SPDX-License-Identifier: LGPL-3.0-or-later
@@ -28,7 +33,8 @@
 class AnalysisComponent : public juce::Component
 {
 public:
-    explicit AnalysisComponent (SuperMoToAudioProcessor& p) : processor (p)
+    explicit AnalysisComponent (SuperMoToAudioProcessor& p)
+        : processor (p), session (p.workspace.analysis), analysis (session.engine)
     {
         title.setText ("Analysis & correction design", juce::dontSendNotification);
         title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
@@ -53,10 +59,13 @@ public:
         micCalSourceBox.setItemEnabled (2, false);   // until loaded files provide one
         micCalSourceBox.setTooltip (smt::tips::ana::micCalSource);
         SuperMoToTheme::accentComboBox (micCalSourceBox, SuperMoToTheme::spectrum);
-        micCalSourceBox.onChange = [this] { pushMicCalibration(); updatePlotData(); };
+        micCalSourceBox.onChange = [this]
+        {
+            session.settings.micCalSource = micCalSourceBox.getSelectedId();
+            pushMicCalibration();
+            updatePlotData();
+        };
         addAndMakeVisible (micCalSourceBox);
-
-        updateMicCalInfo();
 
         loadButton.setButtonText ("Load measurements...");
         loadButton.setTooltip (smt::tips::ana::load);
@@ -71,9 +80,9 @@ public:
         SuperMoToTheme::accentComboBox (windowBox, SuperMoToTheme::spectrum);
         windowBox.onChange = [this]
         {
-            analysis.setWindowSize (windowBox.getSelectedId());
-            if (! loadedFiles.isEmpty())
-                analyze();
+            session.setWindowSize (windowBox.getSelectedId());
+            if (session.hasFiles())
+                showAnalysis();
         };
         addAndMakeVisible (windowBox);
 
@@ -81,7 +90,7 @@ public:
         // and the high end, log-interpolated across frequency by the engine.
         // Finer in the bass (resolve modes), broader in the treble (trends only).
         addLabel (smoothLabel, "Smooth LF/HF");
-        auto setupSmoothBox = [this] (juce::ComboBox& box, const juce::String& tip)
+        auto setupSmoothBox = [this] (juce::ComboBox& box, int& setting, const juce::String& tip)
         {
             box.addItem ("Off", 1);
             box.addItem ("1/24 oct", 2);
@@ -93,11 +102,11 @@ public:
             box.setSelectedId (4, juce::dontSendNotification);
             box.setTooltip (tip);
             SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
-            box.onChange = [this] { pushSmoothing(); };
+            box.onChange = [this, &box, &setting] { setting = box.getSelectedId(); settingChanged(); };
             addAndMakeVisible (box);
         };
-        setupSmoothBox (smoothLowBox,  smt::tips::shared::smoothLow);
-        setupSmoothBox (smoothHighBox, smt::tips::shared::smoothHigh);
+        setupSmoothBox (smoothLowBox,  session.settings.smoothLowId,  smt::tips::shared::smoothLow);
+        setupSmoothBox (smoothHighBox, session.settings.smoothHighId, smt::tips::shared::smoothHigh);
 
         // Transfer-function estimation method; "Sweep" auto-selects when the
         // loaded files' manifest carries the sweep identity.
@@ -111,8 +120,9 @@ public:
         tfBox.onChange = [this]
         {
             updateWindowLabel();
-            if (! loadedFiles.isEmpty())
-                analyze();
+            session.setSweepMethod (tfBox.getSelectedId() == 2);
+            if (session.hasFiles())
+                showAnalysis();
         };
         addAndMakeVisible (tfBox);
 
@@ -125,8 +135,8 @@ public:
         levelSlider.setTooltip (smt::tips::shared::correctionLevel);
         levelSlider.onValueChange = [this]
         {
-            analysis.setCorrectionLevel ((float) levelSlider.getValue());
-            updatePlotData();
+            session.settings.correctionLevel = (float) levelSlider.getValue();
+            settingChanged();
         };
         addAndMakeVisible (levelSlider);
 
@@ -140,8 +150,8 @@ public:
         boostSlider.setTooltip (smt::tips::shared::maxBoost);
         boostSlider.onValueChange = [this]
         {
-            analysis.setMaxBoostDb ((float) boostSlider.getValue());
-            updatePlotData();
+            session.settings.maxBoostDb = (float) boostSlider.getValue();
+            settingChanged();
         };
         addAndMakeVisible (boostSlider);
 
@@ -149,7 +159,7 @@ public:
         // unity and the exported measured IR is rolled off. Editable, with a
         // few standard values preset.
         addLabel (rangeLabel, "Range");
-        auto setupFreqBox = [this] (juce::ComboBox& box,
+        auto setupFreqBox = [this] (juce::ComboBox& box, juce::String& setting,
                                     std::initializer_list<int> presets, int def)
         {
             for (int f : presets)
@@ -157,11 +167,13 @@ public:
             box.setEditableText (true);
             box.setSelectedId (def, juce::dontSendNotification);
             SuperMoToTheme::accentComboBox (box, SuperMoToTheme::spectrum);
-            box.onChange = [this] { pushRange(); };
+            box.onChange = [this, &box, &setting] { setting = box.getText(); settingChanged(); };
             addAndMakeVisible (box);
         };
-        setupFreqBox (lowFreqBox,  { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
-        setupFreqBox (highFreqBox, { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
+        setupFreqBox (lowFreqBox,  session.settings.lowFreqText,
+                      { 20, 30, 40, 50, 60, 80, 100, 150, 200, 300 }, 20);
+        setupFreqBox (highFreqBox, session.settings.highFreqText,
+                      { 5000, 8000, 10000, 12000, 15000, 16000, 18000, 20000 }, 20000);
         lowFreqBox.setTooltip (smt::tips::shared::rangeLow);
         highFreqBox.setTooltip (smt::tips::shared::rangeHigh);
         addLabel (rangeToLabel, juce::String::fromUTF8 ("\xe2\x80\x93"));    // en dash
@@ -179,6 +191,7 @@ public:
         SuperMoToTheme::accentComboBox (levelRefBox, SuperMoToTheme::spectrum);
         levelRefBox.onChange = [this]
         {
+            session.settings.levelRefId = levelRefBox.getSelectedId();
             updatePlotData();
             plot.fitVerticalToData();   // the sensible window jumps between modes
         };
@@ -191,7 +204,12 @@ public:
             firBox.addItem (juce::String (size), size);
         firBox.setSelectedId (4096, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (firBox, SuperMoToTheme::fir);
-        firBox.onChange = [this] { updateFirInfo(); refreshIrIfVisible(); };
+        firBox.onChange = [this]
+        {
+            session.settings.firLength = firBox.getSelectedId();
+            updateFirInfo();
+            refreshIrIfVisible();
+        };
         addAndMakeVisible (firBox);
 
         // Linear/mixed-phase corrects magnitude AND phase but adds firLength/2
@@ -205,9 +223,8 @@ public:
         SuperMoToTheme::accentComboBox (phaseBox, SuperMoToTheme::fir);
         phaseBox.onChange = [this]
         {
-            analysis.setPhaseType (phaseBox.getSelectedId() == 2
-                                       ? smt::AnalysisEngine::PhaseType::minimum
-                                       : smt::AnalysisEngine::PhaseType::linear);
+            session.settings.minimumPhase = phaseBox.getSelectedId() == 2;
+            session.applySettings();
             updateFirInfo();
         };
         addAndMakeVisible (phaseBox);
@@ -222,6 +239,7 @@ public:
             assignBox.addItem ("Output " + juce::String (o + 1), o + 2);
         assignBox.setSelectedId (1, juce::dontSendNotification);
         SuperMoToTheme::accentComboBox (assignBox, SuperMoToTheme::fir);
+        assignBox.onChange = [this] { session.settings.assignOutputId = assignBox.getSelectedId(); };
         addAndMakeVisible (assignBox);
 
         exportMeasuredButton.setButtonText ("Export IR...");
@@ -250,8 +268,8 @@ public:
         SuperMoToTheme::accentComboBox (crossoverBox, SuperMoToTheme::mono);
         crossoverBox.onChange = [this]
         {
-            analysis.setCrossoverHz (crossoverBox.getText().getFloatValue());
-            updatePlotData();
+            session.settings.crossoverText = crossoverBox.getText();
+            settingChanged();
         };
         addAndMakeVisible (crossoverBox);
 
@@ -260,8 +278,8 @@ public:
         subInvertToggle.setTooltip (smt::tips::shared::subInvert);
         subInvertToggle.onClick = [this]
         {
-            analysis.setSubPolarityInverted (subInvertToggle.getToggleState());
-            updatePlotData();
+            session.settings.subInverted = subInvertToggle.getToggleState();
+            settingChanged();
         };
         addAndMakeVisible (subInvertToggle);
 
@@ -284,8 +302,8 @@ public:
         alignSlider.setTooltip (smt::tips::ana::mainsDelay);
         alignSlider.onValueChange = [this]
         {
-            analysis.setTimeAlignMs ((float) alignSlider.getValue());
-            updatePlotData();
+            session.settings.mainsDelayMs = (float) alignSlider.getValue();
+            settingChanged();
             updateAlignInfo();
         };
         addAndMakeVisible (alignSlider);
@@ -301,13 +319,29 @@ public:
         applyDelayToggle.setButtonText ("Apply bulk delay");
         SuperMoToTheme::accentToggleButton (applyDelayToggle, SuperMoToTheme::mono);
         applyDelayToggle.setTooltip (smt::tips::ana::applyDelay);
+        applyDelayToggle.onClick = [this]
+        {
+            session.settings.applyBulkDelay = applyDelayToggle.getToggleState();
+        };
         addAndMakeVisible (applyDelayToggle);
 
         status.setColour (juce::Label::textColourId, SuperMoToTheme::spectrum);
         addAndMakeVisible (status);
 
         addAndMakeVisible (plot);
-        plot.onViewChanged = [this] { buildFreqGrid(); updatePlotData(); };
+        // The frequency window the plot was left at, restored before the
+        // callback below is wired so the restore itself triggers nothing.
+        if (session.settings.viewHighHz > session.settings.viewLowHz
+            && session.settings.viewLowHz > 0.0f)
+            plot.setFreqWindow (session.settings.viewLowHz, session.settings.viewHighHz);
+
+        plot.onViewChanged = [this]
+        {
+            session.settings.viewLowHz = plot.getViewLowHz();
+            session.settings.viewHighHz = plot.getViewHighHz();
+            buildFreqGrid();
+            updatePlotData();
+        };
 
         // Impulse-response view (fxme::WaveformDisplay), swapped in for the
         // frequency plot by the View selector. Shows the measured average IR
@@ -319,7 +353,11 @@ public:
         displayBox.setSelectedId (1, juce::dontSendNotification);
         displayBox.setTooltip (smt::tips::ana::display);
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
-        displayBox.onChange = [this] { updateDisplayMode(); };
+        displayBox.onChange = [this]
+        {
+            session.settings.showIr = displayBox.getSelectedId() == 2;
+            updateDisplayMode();
+        };
         addAndMakeVisible (displayBox);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
@@ -327,9 +365,18 @@ public:
         irPlot.setChannelNames ({ "measured", "corrected" });
         addChildComponent (irPlot);     // hidden until the View selector says so
 
+        // Everything the controls show comes from the session, which may hold
+        // a whole analysis from before the editor was last closed. Nothing is
+        // analyzed again here.
+        syncControlsFromSettings();
         buildFreqGrid();
+        status.setText (session.status, juce::dontSendNotification);
+        updateMicCalInfo();
         updateFirInfo();
+        updateLevelRefChoices();
         updateAlignInfo();
+        updateDisplayMode();
+        updatePlotData();
     }
 
 
@@ -355,7 +402,7 @@ public:
         }
 
         const float v = (float) alignSlider.getValue();
-        juce::String msg = "~" + juce::String (recommendedAlignMs, 0)
+        juce::String msg = "~" + juce::String (session.recommendedAlignMs, 0)
             + " ms main/sub offset detected.  ";
 
         if (std::abs (v) < 0.05f)
@@ -500,6 +547,51 @@ private:
         freqs = TransferFunctionPlot::freqGridFor (plot.getViewLowHz(), plot.getViewHighHz());
     }
 
+    /** A control wrote a setting that does not invalidate the analysis:
+        push it and redraw. */
+    void settingChanged()
+    {
+        session.applySettings();
+        updatePlotData();
+    }
+
+    void setStatus (const juce::String& text)
+    {
+        session.status = text;
+        status.setText (text, juce::dontSendNotification);
+    }
+
+    /** Sets every control from the session's settings, without notifications. */
+    void syncControlsFromSettings()
+    {
+        const auto& st = session.settings;
+
+        micCalSourceBox.setItemEnabled (2, session.hasFolderMicCal());
+        micCalSourceBox.setSelectedId (st.micCalSource, juce::dontSendNotification);
+        windowBox.setSelectedId (st.windowSize, juce::dontSendNotification);
+        tfBox.setItemEnabled (2, session.isSweepAvailable());
+        tfBox.setSelectedId (st.sweepMethod ? 2 : 1, juce::dontSendNotification);
+        updateWindowLabel();
+        smoothLowBox.setSelectedId (st.smoothLowId, juce::dontSendNotification);
+        smoothHighBox.setSelectedId (st.smoothHighId, juce::dontSendNotification);
+        lowFreqBox.setText (st.lowFreqText, juce::dontSendNotification);
+        highFreqBox.setText (st.highFreqText, juce::dontSendNotification);
+
+        levelSlider.setValue (st.correctionLevel, juce::dontSendNotification);
+        boostSlider.setValue (st.maxBoostDb, juce::dontSendNotification);
+        phaseBox.setSelectedId (st.minimumPhase ? 2 : 1, juce::dontSendNotification);
+        firBox.setSelectedId (st.firLength, juce::dontSendNotification);
+        assignBox.setSelectedId (st.assignOutputId, juce::dontSendNotification);
+
+        crossoverBox.setText (st.crossoverText, juce::dontSendNotification);
+        subInvertToggle.setToggleState (st.subInverted, juce::dontSendNotification);
+        alignSlider.setValue (st.mainsDelayMs, juce::dontSendNotification);
+        applyDelayToggle.setToggleState (st.applyBulkDelay, juce::dontSendNotification);
+
+        levelRefBox.setSelectedId (st.levelRefId, juce::dontSendNotification);
+        displayBox.setSelectedId (st.showIr ? 2 : 1, juce::dontSendNotification);
+    }
+
     void loadFiles()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
@@ -513,32 +605,13 @@ private:
             {
                 if (fc.getResults().isEmpty())
                     return;
-                loadedFiles = fc.getResults();
-                smt::setLastBrowseDir (loadedFiles[0]);
+                smt::setLastBrowseDir (fc.getResults()[0]);
 
-                // A measurement folder carries its metadata (mic cal, SPL cal,
-                // per-file run parameters) in measurement.xml next to the wavs;
-                // adopt an embedded mic cal automatically (still overridable
-                // via the source selector).
-                folderInfo = smt::readMeasurementFolderInfo (loadedFiles[0].getParentDirectory());
-                folderMicCal.clear();
-                const bool haveFolderCal = folderInfo.hasMicCal()
-                    && folderMicCal.loadFromText (folderInfo.micCalText, folderInfo.micCalName);
-                micCalSourceBox.setItemEnabled (2, haveFolderCal);
-                if (haveFolderCal)
-                    micCalSourceBox.setSelectedId (2, juce::dontSendNotification);
-                else if (micCalSourceBox.getSelectedId() == 2)
-                    micCalSourceBox.setSelectedId (1, juce::dontSendNotification);
-
-                // Sweep runs (with the sweep identity in the manifest) get
-                // the Farina deconvolution automatically; anything else
-                // falls back to Welch.
-                const bool sweepOk = currentSweepInfo().isValid();
-                tfBox.setItemEnabled (2, sweepOk);
-                tfBox.setSelectedId (sweepOk ? 2 : 1, juce::dontSendNotification);
-                updateWindowLabel();
-
-                analyze();
+                // The session reads the manifest next to the files and adopts
+                // its mic cal and sweep identity, which the controls then show.
+                session.loadFiles (fc.getResults());
+                syncControlsFromSettings();
+                showAnalysis();
             });
     }
 
@@ -546,7 +619,7 @@ private:
     {
         if (! analysis.hasData())
         {
-            status.setText ("Load the main measurements first.", juce::dontSendNotification);
+            setStatus ("Load the main measurements first.");
             return;
         }
 
@@ -562,87 +635,36 @@ private:
                 if (fc.getResults().isEmpty())
                     return;
                 smt::setLastBrowseDir (fc.getResults()[0]);
-                const int ok = analysis.loadSubFiles (fc.getResults());
-                status.setText (ok > 0
-                    ? juce::String (ok) + " sub measurement(s) aligned for phase integration."
-                    : "No sub file could be analyzed (need stereo wavs at the main's rate/length).",
-                    juce::dontSendNotification);
-
-                // Auto-detect the main/sub time offset (recommendation only;
-                // the user drives the slider to apply it).
-                if (ok > 0)
-                    recommendedAlignMs = analysis.estimateMainSubOffsetMs();
+                session.loadSubFiles (fc.getResults());
+                status.setText (session.status, juce::dontSendNotification);
                 updateAlignInfo();
                 updatePlotData();
             });
     }
 
-    // The loaded files' sweep identity from the folder manifest (invalid when
-    // the run was not a sweep or no manifest was found).
-    smt::AnalysisEngine::SweepInfo currentSweepInfo() const
+    /** Redraws everything that follows an analysis the session just ran. */
+    void showAnalysis()
     {
-        smt::AnalysisEngine::SweepInfo s;
-        if (loadedFiles.isEmpty())
-            return s;
-        const auto it = folderInfo.fileRuns.find (loadedFiles[0].getFileName());
-        if (it != folderInfo.fileRuns.end() && it->second.signal == "sweep")
-        {
-            s.f1 = it->second.sweepF1;
-            s.f2 = it->second.sweepF2;
-            s.L  = it->second.sweepL;
-        }
-        return s;
-    }
-
-    void analyze()
-    {
-        status.setText ("Analyzing " + juce::String (loadedFiles.size()) + " file(s)...",
-                        juce::dontSendNotification);
-
-        analysis.setCorrectionLevel ((float) levelSlider.getValue());
-        pushMicCalibration();               // apply the current mic cal to the data
-        analysis.setSweepInfo (currentSweepInfo());
-        analysis.setTfMethod (tfBox.getSelectedId() == 2
-                                  ? smt::AnalysisEngine::TfMethod::sweep
-                                  : smt::AnalysisEngine::TfMethod::welch);
-        const int ok = analysis.loadFiles (loadedFiles);
-
-        status.setText (ok > 0
-            ? juce::String (ok) + " measurement(s) analyzed at "
-                + juce::String (analysis.getSampleRate() / 1000.0, 1) + " kHz."
-            : "No file could be analyzed (need stereo wavs longer than the window).",
-            juce::dontSendNotification);
-
+        status.setText (session.status, juce::dontSendNotification);
+        updateMicCalInfo();
         updateFirInfo();
         updateLevelRefChoices();
+        updateAlignInfo();
         updatePlotData();
-    }
-
-    // The calibration selected by micCalSourceBox: global, the folder-embedded
-    // curve, or an always-invalid one for "none" (the engine treats it as off).
-    const fxme::MicCalibration& activeMicCal() const
-    {
-        static const fxme::MicCalibration none;
-        switch (micCalSourceBox.getSelectedId())
-        {
-            case 2:  return folderMicCal;
-            case 3:  return none;
-            default: return smt::sharedMicCalibration();
-        }
     }
 
     // Push the selected mic calibration into the engine and refresh the
     // read-only reminder. The engine divides it out of the measured data.
     void pushMicCalibration()
     {
-        analysis.setMicCalibration (activeMicCal());
+        session.applySettings();
         updateMicCalInfo();
     }
 
     void updateMicCalInfo()
     {
-        const auto& cal = activeMicCal();
-        const bool fromFolder = micCalSourceBox.getSelectedId() == 2;
+        const auto& cal = session.activeMicCal();
+        const bool fromFolder = session.settings.micCalSource == 2;
         micCalInfo.setText (cal.isValid()
                                 ? "Mic cal: " + cal.getName()
                                     + (fromFolder ? " (folder)" : juce::String())
@@ -689,44 +711,6 @@ private:
             juce::dontSendNotification);
     }
 
-    void pushRange()
-    {
-        analysis.setAnalysisRange (lowFreqBox.getText().getFloatValue(),
-                                   highFreqBox.getText().getFloatValue());
-        updatePlotData();
-    }
-
-    void pushSmoothing()
-    {
-        // Index 0..6 -> Off, 1/24, 1/12, 1/6, 1/3, 1/2, 1 oct.
-        static const float fractions[] = { 0.0f, 1.0f / 24.0f, 1.0f / 12.0f,
-                                           1.0f / 6.0f, 1.0f / 3.0f, 1.0f / 2.0f, 1.0f };
-        analysis.setSmoothing (fractions[juce::jlimit (0, 6, smoothLowBox.getSelectedId()  - 1)],
-                               fractions[juce::jlimit (0, 6, smoothHighBox.getSelectedId() - 1)]);
-        updatePlotData();
-    }
-
-    // SPL display context: the dBFS -> dB SPL offset (the folder's recorded
-    // calibration, else the machine-wide one) and the loaded run's stimulus
-    // level from the manifest. False when either is unknown.
-    bool getSplContext (float& offsetDb, float& levelDb) const
-    {
-        if (folderInfo.splCalibrated)
-            offsetDb = folderInfo.splOffsetDb;
-        else if (smt::isSplCalibrated())
-            offsetDb = smt::getSplOffsetDb();
-        else
-            return false;
-
-        if (loadedFiles.isEmpty())
-            return false;
-        const auto it = folderInfo.fileRuns.find (loadedFiles[0].getFileName());
-        if (it == folderInfo.fileRuns.end())
-            return false;
-        levelDb = it->second.levelDb;
-        return true;
-    }
-
     // Display offset for the measured curves per the Level selector. dB SPL:
     // absolute |H| + stimulus level (sine RMS, hence -3 dB) + dBFS->SPL offset
     // = the SPL each frequency actually played at during the sweep.
@@ -738,7 +722,7 @@ private:
         if (mode == 3)
         {
             float off = 0.0f, lvl = 0.0f;
-            if (getSplContext (off, lvl))
+            if (session.getSplContext (off, lvl))
                 return analysis.getReferenceDb() + lvl - 3.0f + off;
         }
         return 0.0f;
@@ -759,10 +743,13 @@ private:
     void updateLevelRefChoices()
     {
         float off = 0.0f, lvl = 0.0f;
-        const bool splOk = analysis.hasData() && getSplContext (off, lvl);
+        const bool splOk = analysis.hasData() && session.getSplContext (off, lvl);
         levelRefBox.setItemEnabled (3, splOk);
         if (! splOk && levelRefBox.getSelectedId() == 3)
+        {
             levelRefBox.setSelectedId (1, juce::dontSendNotification);
+            session.settings.levelRefId = 1;
+        }
     }
 
     void updatePlotData()
@@ -877,7 +864,7 @@ private:
     {
         if (! analysis.hasData())
         {
-            status.setText ("Load measurements first.", juce::dontSendNotification);
+            setStatus ("Load measurements first.");
             return;
         }
 
@@ -897,10 +884,9 @@ private:
                     file = file.withFileExtension ("wav");
                 smt::setLastBrowseDir (file);
 
-                status.setText (analysis.exportMeasuredIR (file, firBox.getSelectedId())
-                                    ? "Exported " + file.getFileName()
-                                    : "Export failed.",
-                                juce::dontSendNotification);
+                setStatus (analysis.exportMeasuredIR (file, firBox.getSelectedId())
+                               ? "Exported " + file.getFileName()
+                               : "Export failed.");
             });
     }
 
@@ -908,7 +894,7 @@ private:
     {
         if (! analysis.hasData())
         {
-            status.setText ("Load measurements first.", juce::dontSendNotification);
+            setStatus ("Load measurements first.");
             return;
         }
 
@@ -930,7 +916,7 @@ private:
 
                 if (! analysis.exportCorrectionIR (file, firBox.getSelectedId()))
                 {
-                    status.setText ("Export failed.", juce::dontSendNotification);
+                    setStatus ("Export failed.");
                     return;
                 }
 
@@ -964,19 +950,19 @@ private:
                         msg << ". Invert sub is on: set Phase inv. on the subwoofer output.";
                 }
 
-                status.setText (msg, juce::dontSendNotification);
+                setStatus (msg);
             });
     }
 
     SuperMoToAudioProcessor& processor;
-    smt::AnalysisEngine analysis;
+    smt::AnalysisSession& session;
+    smt::AnalysisEngine& analysis;          // session.engine
 
     juce::Label title, windowLabel, smoothLabel, levelLabel, firLabel, assignLabel, boostLabel, status;
     juce::Label micCalInfo;
     juce::Label firInfo, rangeLabel, rangeToLabel, crossoverLabel, phaseLabel, levelRefLabel;
     juce::Label alignLabel, alignInfo;
     fxme::FxmeSlider boostSlider, alignSlider;
-    float recommendedAlignMs = 0.0f;
     juce::TextButton loadButton, exportButton, exportMeasuredButton, loadSubButton;
 
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
@@ -985,10 +971,6 @@ private:
     juce::ToggleButton subInvertToggle, applyDelayToggle;
     fxme::FxmeSlider levelSlider;
 
-    fxme::MicCalibration folderMicCal;      // embedded next to the loaded files
-    smt::MeasurementFolderInfo folderInfo;  // manifest metadata (SPL cal, runs)
-
-    juce::Array<juce::File> loadedFiles;
     std::vector<float> freqs;
 
     TransferFunctionPlot plot;

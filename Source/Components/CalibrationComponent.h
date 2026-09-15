@@ -18,6 +18,10 @@
     test signal. The dB SPL scale is calibrated by playing a tone, reading a
     real SPL meter and entering its value.
 
+    The controls' values live in the processor's workspace
+    (smt::CalibrationSettings), so closing the editor loses none of them, and a
+    reopened view re-sends to the SPL engine what it is already playing.
+
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
     SPDX-License-Identifier: LGPL-3.0-or-later
@@ -40,7 +44,8 @@ class CalibrationComponent : public juce::Component,
                              private smt::ConfigModel::Listener
 {
 public:
-    explicit CalibrationComponent (SuperMoToAudioProcessor& p) : processor (p)
+    explicit CalibrationComponent (SuperMoToAudioProcessor& p)
+        : processor (p), settings (p.workspace.calibration)
     {
         processor.measurement.addChangeListener (this);
         processor.configModel.addListener (this);
@@ -105,7 +110,11 @@ public:
             b.setColour (juce::TextButton::textColourOffId,  SuperMoToTheme::dimText);
             b.setColour (juce::TextButton::textColourOnId,   SuperMoToTheme::measure.brighter (0.7f));
             b.setTooltip (smt::tips::cal::measureType);
-            b.onClick = [this] { updateModeUi(); };
+            b.onClick = [this]
+            {
+                settings.mode = currentMode();
+                updateModeUi();
+            };
             addAndMakeVisible (b);
         };
         setupModeButton (modeDryButton,    "Dry",    juce::Button::ConnectedOnRight);
@@ -119,6 +128,7 @@ public:
         signalBox.setSelectedId (2, juce::dontSendNotification);
         signalBox.setTooltip (smt::tips::cal::signal);
         SuperMoToTheme::accentComboBox (signalBox, SuperMoToTheme::measure);
+        signalBox.onChange = [this] { settings.signalId = signalBox.getSelectedId(); };
         addAndMakeVisible (signalBox);
 
         // Duration / level bars: FxmeSlider gives right-click value entry (and
@@ -130,6 +140,7 @@ public:
         duration.setDoubleClickReturnValue (true, 10.0);
         SuperMoToTheme::accentSlider (duration, SuperMoToTheme::measure);
         duration.setTooltip (smt::tips::cal::duration);
+        duration.onValueChange = [this] { settings.durationS = (float) duration.getValue(); };
         addAndMakeVisible (duration);
 
         addLabel (levelLabel, "Level");
@@ -139,13 +150,18 @@ public:
         level.setDoubleClickReturnValue (true, -12.0);
         SuperMoToTheme::accentSlider (level, SuperMoToTheme::measure);
         level.setTooltip (smt::tips::cal::level);
+        level.onValueChange = [this] { settings.levelDb = (float) level.getValue(); };
         addAndMakeVisible (level);
 
         subEnabledToggle.setButtonText ("Sub");
         subEnabledToggle.setToggleState (false, juce::dontSendNotification);
         SuperMoToTheme::accentToggleButton (subEnabledToggle, SuperMoToTheme::measure);
         subEnabledToggle.setTooltip (smt::tips::cal::subEnabled);
-        subEnabledToggle.onClick = [this] { updateSubUi(); };
+        subEnabledToggle.onClick = [this]
+        {
+            settings.subEnabled = subEnabledToggle.getToggleState();
+            updateSubUi();
+        };
         addAndMakeVisible (subEnabledToggle);
 
         addLabel (subChannelLabel, "Sub channel");
@@ -155,12 +171,13 @@ public:
         subChannelBox.setSelectedId (1, juce::dontSendNotification);
         subChannelBox.setTooltip (smt::tips::cal::subChannel);
         SuperMoToTheme::accentComboBox (subChannelBox, SuperMoToTheme::measure);
+        subChannelBox.onChange = [this] { settings.subChannelId = subChannelBox.getSelectedId(); };
         addAndMakeVisible (subChannelBox);
 
         addLabel (pathLabel, "Measurement folder");
         pathEditor.setColour (juce::TextEditor::backgroundColourId, SuperMoToTheme::plotBackground.withAlpha (0.4f));
         pathEditor.setTooltip (smt::tips::cal::path);
-        pathEditor.setText (smt::getLastBrowseDir().getFullPathName());
+        pathEditor.onTextChange = [this] { settings.folder = pathEditor.getText(); };
         // A hand-typed folder may hold a manifest with a general comment:
         // pick it up once the path entry is left.
         pathEditor.onReturnKey = [this] { refreshGeneralComment(); };
@@ -184,9 +201,8 @@ public:
         runCommentEditor.setColour (juce::TextEditor::backgroundColourId,
                                     SuperMoToTheme::plotBackground.withAlpha (0.4f));
         runCommentEditor.setTooltip (smt::tips::cal::runComment);
+        runCommentEditor.onTextChange = [this] { settings.runComment = runCommentEditor.getText(); };
         addAndMakeVisible (runCommentEditor);
-
-        refreshGeneralComment();
 
         runButton.setTooltip (smt::tips::cal::run);
         runButton.setButtonText ("Run");
@@ -201,12 +217,46 @@ public:
         addAndMakeVisible (status);
 
         // Mic / channels / mode are shared with the SPL meter: push on change.
-        micBox.onChange = [this] { pushSplSettings(); };
-        for (auto* b : outputToggles)
-            b->onClick = [this] { pushSplSettings(); };
+        micBox.onChange = [this]
+        {
+            settings.micInputId = micBox.getSelectedId();
+            pushSplSettings();
+        };
+        for (int o = 0; o < outputToggles.size(); ++o)
+            outputToggles[o]->onClick = [this, o]
+            {
+                settings.channels[(size_t) o] = outputToggles[o]->getToggleState();
+                pushSplSettings();
+            };
 
         buildSplMeterControls();
+
+        // Every control above holds its default. Show the workspace's values
+        // before anything reaches the SPL engine, so that a generator left
+        // playing while the editor was closed is re-sent as it is, not
+        // silenced by the defaults.
+        if (! settings.opened)
+        {
+            settings.opened = true;
+            settings.folder = smt::getLastBrowseDir().getFullPathName();
+            settings.measurementStatus = processor.measurement.getStatusText();
+        }
+        syncControlsFromSettings();
+        refreshGeneralComment();
         updateModeUi();
+
+        // The status line as it was left, unless the measurement moved on
+        // while the editor was closed (a run finished, or the host stopped it).
+        if (processor.measurement.isRunning()
+            || processor.measurement.getStatusText() != settings.measurementStatus)
+        {
+            refresh();
+        }
+        else
+        {
+            showRunState();
+            status.setText (settings.status, juce::dontSendNotification);
+        }
 
         // Show mic-corrected level: subtract the mic's deviation from each point.
         spectrum.magnitudeOffsetDb = [] (float f)
@@ -219,6 +269,11 @@ public:
 
     ~CalibrationComponent() override
     {
+        // A TextEditor's onTextChange is posted, not called: take the text as
+        // it is now rather than trusting the last keystroke has landed.
+        settings.folder = pathEditor.getText();
+        settings.runComment = runCommentEditor.getText();
+
         processor.configModel.removeListener (this);
         processor.measurement.removeChangeListener (this);
     }
@@ -408,12 +463,54 @@ private:
         {
             for (auto* b : outputToggles)
                 b->setToggleState (false, juce::dontSendNotification);
+            settings.channels.fill (false);
             lastModeWasFull = full;
         }
 
         pushSplSettings();
         resized();
         repaint();
+    }
+
+    // Shows the workspace's values in the controls, without notifications:
+    // nothing is pushed or re-read from here.
+    void syncControlsFromSettings()
+    {
+        micBox.setSelectedId (settings.micInputId, juce::dontSendNotification);
+
+        modeDryButton.setToggleState    (settings.mode == smt::MeasureMode::dryOutput,  juce::dontSendNotification);
+        modeFirButton.setToggleState    (settings.mode == smt::MeasureMode::outputFir,  juce::dontSendNotification);
+        modeSystemButton.setToggleState (settings.mode == smt::MeasureMode::fullSystem, juce::dontSendNotification);
+        lastModeWasFull = settings.mode == smt::MeasureMode::fullSystem;
+
+        // The matrix may have shrunk while the editor was closed: channels it
+        // no longer has are unticked, as modelChanged() does.
+        const int numCh = measureChannelCount();
+        for (int o = 0; o < outputToggles.size(); ++o)
+        {
+            if (o >= numCh)
+                settings.channels[(size_t) o] = false;
+            outputToggles[o]->setToggleState (settings.channels[(size_t) o], juce::dontSendNotification);
+        }
+
+        subEnabledToggle.setToggleState (settings.subEnabled, juce::dontSendNotification);
+        subChannelBox.setSelectedId (settings.subChannelId, juce::dontSendNotification);
+
+        signalBox.setSelectedId (settings.signalId, juce::dontSendNotification);
+        duration.setValue (settings.durationS, juce::dontSendNotification);
+        level.setValue (settings.levelDb, juce::dontSendNotification);
+
+        pathEditor.setText (settings.folder, false);
+        runCommentEditor.setText (settings.runComment, false);
+
+        meterOnButton.setToggleState (settings.meterOn, juce::dontSendNotification);
+        windowBox.setSelectedId (settings.rmsWindowId, juce::dontSendNotification);
+        sineButton.setToggleState (settings.sineOn, juce::dontSendNotification);
+        sineAmp.setValue (settings.sineAmpDb, juce::dontSendNotification);
+        sineFreq.setValue (settings.sineFreqHz, juce::dontSendNotification);
+        noiseButton.setToggleState (settings.noiseOn, juce::dontSendNotification);
+        noiseAmp.setValue (settings.noiseAmpDb, juce::dontSendNotification);
+        splRef.setValue (settings.splReferenceDb, juce::dontSendNotification);
     }
 
     void addLabel (juce::Label& l, const juce::String& text)
@@ -447,7 +544,11 @@ private:
         meterOnButton.setButtonText ("Meter on");
         SuperMoToTheme::accentToggleButton (meterOnButton, SuperMoToTheme::measure);
         meterOnButton.setTooltip (smt::tips::cal::meterOn);
-        meterOnButton.onClick = [this] { pushSplSettings(); };
+        meterOnButton.onClick = [this]
+        {
+            settings.meterOn = meterOnButton.getToggleState();
+            pushSplSettings();
+        };
         addAndMakeVisible (meterOnButton);
 
         addLabel (windowLabel, "RMS window");
@@ -458,33 +559,57 @@ private:
         windowBox.setSelectedId (3, juce::dontSendNotification);
         windowBox.setTooltip (smt::tips::cal::splWindow);
         SuperMoToTheme::accentComboBox (windowBox, SuperMoToTheme::measure);
-        windowBox.onChange = [this] { pushSplSettings(); };
+        windowBox.onChange = [this]
+        {
+            settings.rmsWindowId = windowBox.getSelectedId();
+            pushSplSettings();
+        };
         addAndMakeVisible (windowBox);
 
         sineButton.setButtonText ("Sine");
         SuperMoToTheme::accentToggleButton (sineButton, SuperMoToTheme::measure);
         sineButton.setTooltip (smt::tips::cal::splSine);
-        sineButton.onClick = [this] { pushSplSettings(); };
+        sineButton.onClick = [this]
+        {
+            settings.sineOn = sineButton.getToggleState();
+            pushSplSettings();
+        };
         addAndMakeVisible (sineButton);
 
         addLabel (sineAmpLabel, "Amplitude");
         addNumberEntry (sineAmp, -60.0, 0.0, 0.5, -12.0, " dB");
         sineAmp.setTooltip (smt::tips::cal::splSineAmp);
-        sineAmp.onValueChange = [this] { pushSplSettings(); };
+        sineAmp.onValueChange = [this]
+        {
+            settings.sineAmpDb = (float) sineAmp.getValue();
+            pushSplSettings();
+        };
 
         addLabel (sineFreqLabel, "Frequency");
         addNumberEntry (sineFreq, 20.0, 20000.0, 1.0, 1000.0, " Hz");
         sineFreq.setTooltip (smt::tips::cal::splSineFreq);
-        sineFreq.onValueChange = [this] { pushSplSettings(); };
+        sineFreq.onValueChange = [this]
+        {
+            settings.sineFreqHz = (float) sineFreq.getValue();
+            pushSplSettings();
+        };
 
         noiseButton.setButtonText ("White noise");
         SuperMoToTheme::accentToggleButton (noiseButton, SuperMoToTheme::measure);
-        noiseButton.onClick = [this] { pushSplSettings(); };
+        noiseButton.onClick = [this]
+        {
+            settings.noiseOn = noiseButton.getToggleState();
+            pushSplSettings();
+        };
         addAndMakeVisible (noiseButton);
 
         addLabel (noiseAmpLabel, "Amplitude");
         addNumberEntry (noiseAmp, -60.0, 0.0, 0.5, -12.0, " dB");
-        noiseAmp.onValueChange = [this] { pushSplSettings(); };
+        noiseAmp.onValueChange = [this]
+        {
+            settings.noiseAmpDb = (float) noiseAmp.getValue();
+            pushSplSettings();
+        };
 
         addLabel (splRefLabel, "Measured dB SPL");
         addNumberEntry (splRef, 0.0, 140.0, 0.1, 85.0, " dB");
@@ -493,6 +618,7 @@ private:
         // editor and is written into the measurement manifests.
         splRef.onValueChange = [this]
         {
+            settings.splReferenceDb = (float) splRef.getValue();
             const float dbFs = processor.splMeter.getRmsDbFs();
             splOffset = (float) splRef.getValue() - dbFs;
             splCalibrated = dbFs > -119.0f;
@@ -520,7 +646,8 @@ private:
         spectrum.sampleRateProvider = [this] { return processor.getSampleRate(); };
         addAndMakeVisible (spectrum);
 
-        pushSplSettings();
+        // No push here: the constructor pushes once the workspace's values
+        // are shown.
     }
 
     void updateSplInfo()
@@ -583,9 +710,8 @@ private:
                 smt::setLastBrowseDir (f);
                 const bool ok = smt::setMicCalibrationFile (f);
                 updateMicCalLabel();
-                status.setText (ok ? "Loaded mic calibration: " + f.getFileName()
-                                   : "Could not read the calibration file.",
-                                juce::dontSendNotification);
+                setStatus (ok ? "Loaded mic calibration: " + f.getFileName()
+                              : "Could not read the calibration file.");
             });
     }
 
@@ -593,19 +719,20 @@ private:
     {
         smt::setMicCalibrationFile ({});
         updateMicCalLabel();
-        status.setText ("Mic calibration cleared.", juce::dontSendNotification);
+        setStatus ("Mic calibration cleared.");
     }
 
     // Reloads the general comment from the current folder's manifest — only
     // when the folder actually changed, so an unsaved comment typed for the
-    // current folder survives focus churn on the path entry.
+    // current folder survives focus churn on the path entry (and reopening
+    // the editor).
     void refreshGeneralComment()
     {
         const juce::File folder (pathEditor.getText().trim());
-        if (folder == lastCommentFolder)
+        if (folder == settings.commentFolder)
             return;
-        lastCommentFolder = folder;
-        generalComment = smt::readMeasurementGeneralComment (folder);
+        settings.commentFolder = folder;
+        settings.generalComment = smt::readMeasurementGeneralComment (folder);
     }
 
     // Popup with a multiline entry for the folder comment; edits land in
@@ -636,11 +763,11 @@ private:
             fxme::TextEntryFocusFixer fixer { *this };  // the popup is its own window
         };
 
-        auto popup = std::make_unique<CommentPopup> (generalComment,
+        auto popup = std::make_unique<CommentPopup> (settings.generalComment,
             [safe = juce::Component::SafePointer<CalibrationComponent> (this)] (const juce::String& t)
             {
                 if (safe != nullptr)
-                    safe->generalComment = t;
+                    safe->settings.generalComment = t;
             });
 
         auto* parent = getTopLevelComponent();
@@ -692,7 +819,7 @@ private:
         s.levelDb = (float) level.getValue();
         s.folder = pathEditor.getText().trim();
         refreshGeneralComment();    // a hand-typed path may not have lost focus yet
-        s.generalComment = generalComment;
+        s.generalComment = settings.generalComment;
         s.runComment = runCommentEditor.getText().trim();
 
         // Calibration in effect, recorded in the manifests.
@@ -710,9 +837,9 @@ private:
         processor.measurementMicChannel.store (s.micInput);
 
         if (! m.start (s))
-            status.setText (juce::String ("Cannot start: select at least one ")
-                            + (s.mode == smt::MeasureMode::fullSystem ? "input" : "output")
-                            + " and a valid folder.", juce::dontSendNotification);
+            setStatus (juce::String ("Cannot start: select at least one ")
+                       + (s.mode == smt::MeasureMode::fullSystem ? "input" : "output")
+                       + " and a valid folder.");
         else if (juce::File::isAbsolutePath (s.folder))
             // Remember where the measurements are written so the Analysis view's
             // "Load measurements" starts in the same folder.
@@ -729,7 +856,10 @@ private:
         // Matrix size changed: re-layout the toggles and untick the hidden ones
         // (count depends on the mode: outputs, or inputs in fullSystem).
         for (int o = measureChannelCount(); o < outputToggles.size(); ++o)
+        {
             outputToggles[o]->setToggleState (false, juce::dontSendNotification);
+            settings.channels[(size_t) o] = false;
+        }
         pushSplSettings();
         resized();
         repaint();
@@ -743,15 +873,28 @@ private:
         meter.setLevelDb (processor.splMeter.getRmsDbFs());
     }
 
+    // The measurement engine changed: show its state and its status line.
     void refresh()
     {
-        const bool running = processor.measurement.isRunning();
-        runButton.setButtonText (running ? "Stop" : "Run");
+        showRunState();
+        settings.measurementStatus = processor.measurement.getStatusText();
+        setStatus (settings.measurementStatus);
+    }
+
+    void showRunState()
+    {
+        runButton.setButtonText (processor.measurement.isRunning() ? "Stop" : "Run");
         progressValue = (double) processor.measurement.getProgress();
-        status.setText (processor.measurement.getStatusText(), juce::dontSendNotification);
+    }
+
+    void setStatus (const juce::String& text)
+    {
+        settings.status = text;
+        status.setText (text, juce::dontSendNotification);
     }
 
     SuperMoToAudioProcessor& processor;
+    smt::CalibrationSettings& settings;
 
     juce::Label title, micLabel, outputsLabel, signalLabel, measureLabel, durationLabel,
                 levelLabel, pathLabel, status, micCalLabel, micCalValue, subChannelLabel;
@@ -769,8 +912,6 @@ private:
     juce::TextButton commentButton;
     juce::Label runCommentLabel;
     juce::TextEditor runCommentEditor;
-    juce::String generalComment;
-    juce::File lastCommentFolder;       // folder generalComment was loaded for
 
     // ── SPL meter section ─────────────────────────────────────────────────────
     juce::Label splTitle, windowLabel, sineAmpLabel, sineFreqLabel, noiseAmpLabel,

@@ -604,8 +604,30 @@
       view); the runner is created by the first batch, so an instance that
       never uses Group analysis (or a host's plugin scan) starts no thread
       pool; the plot's frequency window is kept too.*
-    - [ ] *Analysis (step 3).*
-    - [ ] *Calibration (step 5), keeping what the generator plays.*
+    - [x] *Analysis (2026-09-15, not yet built). `smt::AnalysisSession`
+      (`Source/Model/AnalysisSession.{h,cpp}`) in the workspace holds the
+      engine, the loaded main and sub files, the folder manifest and its mic
+      cal, the recommended offset, the status line and `AnalysisSettings`
+      (every control, including Assign to, Mains delay, Apply bulk delay and
+      the plot's frequency window). Everything stays synchronous, so no
+      listener. The exports stay in the view, reading its synced controls.
+      One fix on the way: changing the window size or the TF method used to
+      drop a loaded sub set (loading the main set clears the pairing); the
+      session now re-pairs it after re-analyzing.*
+    - [x] *Calibration (2026-09-15, not yet built). `smt::CalibrationSettings`
+      (`Source/Model/CalibrationSettings.h`) in the workspace holds every
+      control of the pane (mic input, mode, channel toggles, Sub and its
+      channel, signal, duration, level, folder, folder and run comments, and
+      the SPL meter and generator controls including the last SPL reading),
+      plus the status line. A plain struct is enough: the measurement and the
+      generator already live in the processor, and both calibrations are
+      machine-wide. The view shows these values before its first push to
+      `SplMeterEngine`, so a tone left playing keeps playing, and the status
+      line shows the measurement engine's instead of the one left if a run
+      finished (or the host stopped it) while the editor was closed. The
+      folder field keeps what was typed; only the first view of an instance
+      fills it with the last browsed folder, as before. Channels the matrix
+      lost while the editor was closed are unticked on reopen.*
     - [ ] *Config tool (step 6).*
     - [ ] *Matrix and editor (step 7), with view and compact mode per
       instance, the machine-wide values as defaults for a new instance.*
