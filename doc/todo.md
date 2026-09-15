@@ -628,7 +628,17 @@
       folder field keeps what was typed; only the first view of an instance
       fills it with the last browsed folder, as before. Channels the matrix
       lost while the editor was closed are unticked on reopen.*
-    - [ ] *Config tool (step 6).*
+    - [x] *Config tool (2026-09-15, not yet built). `smt::ConfigToolSettings`
+      (`Source/Model/ConfigToolSettings.h`) in the workspace holds the rig
+      (layout, Ambisonics order and speaker count), one `Speaker` per row
+      (input, output, gain or trim, azimuth, elevation, radius), the target
+      configuration, bass management, crossover, the two radius toggles and
+      the status line. A row's name, and whether it is the sub, still come
+      from the layout, so only the editable values are kept. The rows start
+      over from the rig's defaults when the layout, the order or the count
+      changes, as before, and are rebuilt as they were left when the editor
+      reopens. Double-click still returns a row control to the rig's default.
+      `ConfigToolComponent` now takes the settings next to the model.*
     - [ ] *Matrix and editor (step 7), with view and compact mode per
       instance, the machine-wide values as defaults for a new instance.*
     - [ ] *Docs (step 9): what survives closing the editor.*

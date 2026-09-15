@@ -22,6 +22,7 @@
 #include <JuceHeader.h>
 #include "ConfigModel.h"
 #include "CalibrationSettings.h"
+#include "ConfigToolSettings.h"
 #include "AnalysisSession.h"
 #include "GroupAnalysisSession.h"
 
@@ -35,6 +36,10 @@ public:
         : groupAnalysis (configModel, matrixEngine)
     {
     }
+
+    /** The Config tool: the rig it describes, its speaker rows, and how it
+        is written. */
+    ConfigToolSettings configTool;
 
     /** The Measurement & calibration pane's controls. What they drive (a
         measurement in progress, the generator) lives in the processor. */

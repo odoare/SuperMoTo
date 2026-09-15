@@ -73,7 +73,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
       spectrum (p.engine),
       frameEditor (p.configModel),
       outputEditor (p.configModel, p.engine),
-      configTool (p.configModel),
+      configTool (p.configModel, p.workspace.configTool),
       calibration (p),
       analysis (p),
       groupAnalysis (p),

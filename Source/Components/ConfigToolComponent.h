@@ -21,6 +21,10 @@
     Further per-frame tuning (and FIR correction curves per output) is then done
     in the matrix view.
 
+    The controls' values, the speaker rows included, live in the processor's
+    workspace (smt::ConfigToolSettings), so closing the editor loses none of
+    them.
+
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU LGPL Version 3.0
     SPDX-License-Identifier: LGPL-3.0-or-later
@@ -33,6 +37,7 @@
 #include <algorithm>
 #include <cmath>
 #include "../Model/ConfigModel.h"
+#include "../Model/ConfigToolSettings.h"
 #include "../Dsp/AmbisonicsDecode.h"
 #include <FxmeTools/dsp/IemDecoder.h>
 #include "../AppSettings.h"
@@ -42,7 +47,8 @@
 class ConfigToolComponent : public juce::Component
 {
 public:
-    explicit ConfigToolComponent (smt::ConfigModel& m) : model (m)
+    ConfigToolComponent (smt::ConfigModel& m, smt::ConfigToolSettings& s)
+        : model (m), settings (s)
     {
         title.setText ("Speaker configuration tool", juce::dontSendNotification);
         title.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
@@ -53,7 +59,12 @@ public:
                                  "Ambisonics" }, 1);
         SuperMoToTheme::accentComboBox (layoutBox, SuperMoToTheme::master);
         layoutBox.setTooltip (smt::tips::cfg::layout);
-        layoutBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
+        layoutBox.onChange = [this]
+        {
+            settings.layoutId = layoutBox.getSelectedId();
+            syncAmbiControls (true);
+            resetRows();
+        };
         addAndMakeVisible (layoutBox);
         addLabel (layoutLabel, "Layout");
 
@@ -62,7 +73,12 @@ public:
         SuperMoToTheme::accentComboBox (orderBox, SuperMoToTheme::master);
         orderBox.setSelectedId (1, juce::dontSendNotification);
         orderBox.setTooltip (smt::tips::cfg::order);
-        orderBox.onChange = [this] { syncAmbiControls(); rebuildRows(); };
+        orderBox.onChange = [this]
+        {
+            settings.orderId = orderBox.getSelectedId();
+            syncAmbiControls (true);
+            resetRows();
+        };
         addChildComponent (orderBox);
         addLabel (orderLabel, "Order");
         orderLabel.setVisible (false);
@@ -71,6 +87,7 @@ public:
         SuperMoToTheme::accentComboBox (targetBox, SuperMoToTheme::master);
         targetBox.setSelectedId (1, juce::dontSendNotification);
         targetBox.setTooltip (smt::tips::cfg::target);
+        targetBox.onChange = [this] { settings.targetId = targetBox.getSelectedId(); };
         addAndMakeVisible (targetBox);
         addLabel (targetLabel, "Write to config");
 
@@ -78,6 +95,7 @@ public:
         SuperMoToTheme::accentToggleButton (bassManagement, SuperMoToTheme::fir);
         bassManagement.setToggleState (true, juce::dontSendNotification);
         bassManagement.setTooltip (smt::tips::cfg::bassManagement);
+        bassManagement.onClick = [this] { settings.bassManagement = bassManagement.getToggleState(); };
         addAndMakeVisible (bassManagement);
 
         crossover.setSliderStyle (juce::Slider::LinearHorizontal);
@@ -88,6 +106,7 @@ public:
         crossover.setTextValueSuffix (" Hz");
         SuperMoToTheme::accentSlider (crossover, SuperMoToTheme::fir);
         crossover.setTooltip (smt::tips::cfg::crossover);
+        crossover.onValueChange = [this] { settings.crossoverHz = (float) crossover.getValue(); };
         addAndMakeVisible (crossover);
         addLabel (crossoverLabel, "Crossover");
 
@@ -106,7 +125,11 @@ public:
         numSpkSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         numSpkSlider.setRange (4.0, (double) smt::numChannels, 1.0);
         numSpkSlider.setTooltip (smt::tips::cfg::numSpk);
-        numSpkSlider.onValueChange = [this] { rebuildRows(); };
+        numSpkSlider.onValueChange = [this]
+        {
+            settings.numSpeakers = currentSpeakerCount();
+            resetRows();
+        };
         SuperMoToTheme::accentSlider (numSpkSlider, SuperMoToTheme::master);
         addChildComponent (numSpkSlider);
         addLabel (numSpkLabel, "Speakers");
@@ -121,12 +144,14 @@ public:
         writeGainToggle.setToggleState (true, juce::dontSendNotification);
         writeGainToggle.setTooltip (smt::tips::cfg::writeGain);
         SuperMoToTheme::accentToggleButton (writeGainToggle, SuperMoToTheme::dim);
+        writeGainToggle.onClick = [this] { settings.writeRadiusGain = writeGainToggle.getToggleState(); };
         addChildComponent (writeGainToggle);
 
         writeDelayToggle.setButtonText ("Write radius delay");
         writeDelayToggle.setToggleState (true, juce::dontSendNotification);
         writeDelayToggle.setTooltip (smt::tips::cfg::writeDelay);
         SuperMoToTheme::accentToggleButton (writeDelayToggle, SuperMoToTheme::dim);
+        writeDelayToggle.onClick = [this] { settings.writeRadiusDelay = writeDelayToggle.getToggleState(); };
         addChildComponent (writeDelayToggle);
 
         // Import an IEM AllRADecoder .json as the decode matrix (Ambisonics only).
@@ -136,7 +161,14 @@ public:
         loadIemButton.onClick = [this] { loadIemDecoder(); };
         addChildComponent (loadIemButton);
 
-        layoutBox.setSelectedId (2);    // default to 2.1 — builds the rows
+        // Show the workspace's values: the rows as they were left, or the
+        // default rig's rows (2.1) for the first view.
+        syncControlsFromSettings();
+        if (settings.speakers.size() != currentDefs().size())
+            resetRows();
+        else
+            rebuildRows();
+        status.setText (settings.status, juce::dontSendNotification);
     }
 
     void paint (juce::Graphics& g) override
@@ -288,10 +320,33 @@ private:
     int defaultSpeakerCount (int order) const { return order == 1 ? 8 : order == 2 ? 12 : 16; }
     int currentSpeakerCount() const           { return juce::jmax (1, (int) numSpkSlider.getValue()); }
 
+    // Shows the workspace's values in the controls, without notifications.
+    // The rows are built separately.
+    void syncControlsFromSettings()
+    {
+        layoutBox.setSelectedId (settings.layoutId, juce::dontSendNotification);
+        orderBox.setSelectedId (settings.orderId, juce::dontSendNotification);
+        syncAmbiControls (false);
+        numSpkSlider.setValue ((double) settings.numSpeakers, juce::dontSendNotification);
+
+        targetBox.setSelectedId (settings.targetId, juce::dontSendNotification);
+        bassManagement.setToggleState (settings.bassManagement, juce::dontSendNotification);
+        crossover.setValue ((double) settings.crossoverHz, juce::dontSendNotification);
+        writeGainToggle.setToggleState (settings.writeRadiusGain, juce::dontSendNotification);
+        writeDelayToggle.setToggleState (settings.writeRadiusDelay, juce::dontSendNotification);
+    }
+
+    void setStatus (const juce::String& text)
+    {
+        settings.status = text;
+        status.setText (text, juce::dontSendNotification);
+    }
+
     // Shows/updates the ambisonics-only controls when the layout changes. The
-    // speaker count is clamped to at least the number of harmonics and reset to
-    // the order's canonical default.
-    void syncAmbiControls()
+    // speaker count is clamped to at least the number of harmonics and, with
+    // `resetCount` (the layout or the order changed), reset to the order's
+    // canonical default.
+    void syncAmbiControls (bool resetCount)
     {
         const bool ambi = isAmbisonics();
         orderBox.setVisible (ambi);
@@ -307,8 +362,12 @@ private:
             const int order = ambiOrder();
             numSpkSlider.setRange ((double) fxme::ambi::channelsForOrder (order),
                                    (double) smt::numChannels, 1.0);
-            numSpkSlider.setValue ((double) defaultSpeakerCount (order), juce::dontSendNotification);
             numSpkSlider.setDoubleClickReturnValue (true, (double) defaultSpeakerCount (order));
+            if (resetCount)
+            {
+                numSpkSlider.setValue ((double) defaultSpeakerCount (order), juce::dontSendNotification);
+                settings.numSpeakers = currentSpeakerCount();
+            }
         }
         resized();
     }
@@ -418,15 +477,47 @@ private:
         return defs;
     }
 
+    // The rig the layout, order and count describe.
+    std::vector<SpeakerDef> currentDefs() const
+    {
+        return isAmbisonics() ? ambiDefs (ambiOrder(), currentSpeakerCount()) : layoutDefs();
+    }
+
+    // The layout, the order or the speaker count changed: the rows start over
+    // from that rig's defaults.
+    void resetRows()
+    {
+        settings.speakers.clear();
+        for (const auto& def : currentDefs())
+        {
+            smt::ConfigToolSettings::Speaker s;
+            s.inputId = def.isSub && def.in < 0 ? smt::numChannels + 1 : def.in + 1;
+            s.outputId = def.out + 1;
+            s.gainDb = def.gain;
+            s.azimuthDeg = def.az;
+            s.elevationDeg = def.el;
+            s.radiusM = def.radius;
+            settings.speakers.push_back (s);
+        }
+        rebuildRows();
+    }
+
+    // Builds a row of controls for each of settings.speakers, named after the
+    // current rig; each control writes its value back. Double-click still
+    // returns a control to the rig's default.
     void rebuildRows()
     {
         rows.clear();
         const bool ambi = isAmbisonics();
-        const auto defs = ambi ? ambiDefs (ambiOrder(), currentSpeakerCount()) : layoutDefs();
+        const auto defs = currentDefs();
+        jassert (defs.size() == settings.speakers.size());
 
-        for (const auto& def : defs)
+        for (size_t i = 0; i < defs.size() && i < settings.speakers.size(); ++i)
         {
+            const auto& def = defs[i];
+            const auto& spk = settings.speakers[i];
             auto row = std::make_unique<Row>();
+            const auto* r = row.get();
             row->isSub = def.isSub;
 
             row->name.setText (def.name, juce::dontSendNotification);
@@ -436,45 +527,51 @@ private:
 
             for (int c = 1; c <= smt::numChannels; ++c)
                 row->output.addItem (juce::String (c), c);
-            row->output.setSelectedId (def.out + 1, juce::dontSendNotification);
+            row->output.setSelectedId (spk.outputId, juce::dontSendNotification);
             row->output.setTooltip (smt::tips::cfg::rowOutput);
+            row->output.onChange = [this, i, r] { settings.speakers[i].outputId = r->output.getSelectedId(); };
             SuperMoToTheme::accentComboBox (row->output, SuperMoToTheme::master);
             addAndMakeVisible (row->output);
 
             row->gain.setSliderStyle (juce::Slider::LinearHorizontal);
             row->gain.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
             row->gain.setRange (-60.0, 12.0, 0.1);
-            row->gain.setValue (def.gain, juce::dontSendNotification);
+            row->gain.setValue (spk.gainDb, juce::dontSendNotification);
             row->gain.setDoubleClickReturnValue (true, 0.0);
             row->gain.setTooltip (smt::tips::cfg::rowGain);
+            row->gain.onValueChange = [this, i, r] { settings.speakers[i].gainDb = (float) r->gain.getValue(); };
             SuperMoToTheme::accentSlider (row->gain, SuperMoToTheme::master);
             addAndMakeVisible (row->gain);
 
             if (ambi)
             {
-                auto initAngle = [this] (juce::Slider& s, double lo, double hi, double val)
+                auto initAngle = [this] (juce::Slider& s, double lo, double hi,
+                                         double value, double defaultValue)
                 {
                     s.setSliderStyle (juce::Slider::LinearHorizontal);
                     s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
                     s.setRange (lo, hi, 0.5);
-                    s.setValue (val, juce::dontSendNotification);
-                    s.setDoubleClickReturnValue (true, val);
+                    s.setValue (value, juce::dontSendNotification);
+                    s.setDoubleClickReturnValue (true, defaultValue);
                     s.setTextValueSuffix (juce::String::fromUTF8 ("\xc2\xb0"));
                     SuperMoToTheme::accentSlider (s, SuperMoToTheme::master);
                     addAndMakeVisible (s);
                 };
-                initAngle (row->az, -180.0, 180.0, def.az);
-                initAngle (row->el,  -90.0,  90.0, def.el);
+                initAngle (row->az, -180.0, 180.0, spk.azimuthDeg, def.az);
+                initAngle (row->el,  -90.0,  90.0, spk.elevationDeg, def.el);
                 row->az.setTooltip (smt::tips::cfg::rowAz);
                 row->el.setTooltip (smt::tips::cfg::rowEl);
+                row->az.onValueChange = [this, i, r] { settings.speakers[i].azimuthDeg = (float) r->az.getValue(); };
+                row->el.onValueChange = [this, i, r] { settings.speakers[i].elevationDeg = (float) r->el.getValue(); };
 
                 row->radius.setSliderStyle (juce::Slider::LinearHorizontal);
                 row->radius.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
                 row->radius.setRange (0.3, 15.0, 0.05);
-                row->radius.setValue (def.radius, juce::dontSendNotification);
+                row->radius.setValue (spk.radiusM, juce::dontSendNotification);
                 row->radius.setDoubleClickReturnValue (true, def.radius);
                 row->radius.setTextValueSuffix (" m");
                 row->radius.setTooltip (smt::tips::cfg::rowRadius);
+                row->radius.onValueChange = [this, i, r] { settings.speakers[i].radiusM = (float) r->radius.getValue(); };
                 SuperMoToTheme::accentSlider (row->radius, SuperMoToTheme::master);
                 addAndMakeVisible (row->radius);
             }
@@ -486,9 +583,8 @@ private:
                 // The subwoofer can take the sum of all mains instead of an input.
                 if (def.isSub)
                     row->input.addItem ("Sum of mains", smt::numChannels + 1);
-                row->input.setSelectedId (def.isSub && def.in < 0 ? smt::numChannels + 1
-                                                                  : def.in + 1,
-                                          juce::dontSendNotification);
+                row->input.setSelectedId (spk.inputId, juce::dontSendNotification);
+                row->input.onChange = [this, i, r] { settings.speakers[i].inputId = r->input.getSelectedId(); };
                 SuperMoToTheme::accentComboBox (row->input, SuperMoToTheme::master);
                 addAndMakeVisible (row->input);
             }
@@ -612,9 +708,8 @@ private:
         model.setMatrixSize (juce::jmax (model.getNumIns(), neededIns),
                              juce::jmax (model.getNumOuts(), neededOuts));
 
-        status.setText ("Written to configuration " + smt::configName (target)
-                        + juce::String::fromUTF8 (" \xe2\x80\x94 fine-tune it in the matrix view."),
-                        juce::dontSendNotification);
+        setStatus ("Written to configuration " + smt::configName (target)
+                   + juce::String::fromUTF8 (" \xe2\x80\x94 fine-tune it in the matrix view."));
     }
 
     void applyAmbisonics()
@@ -707,13 +802,12 @@ private:
                              juce::jmax (model.getNumOuts(), neededOuts));
 
         const juce::String emdash = juce::String::fromUTF8 ("\xe2\x80\x94");
-        status.setText ("Ambisonics order " + juce::String (order) + ", "
-                        + juce::String ((int) dirs.size()) + " speakers ("
-                        + juce::String (H) + " B-format inputs) " + emdash + " config "
-                        + smt::configName (target)
-                        + ", " + radiusCompText (writeGain, writeDelay)
-                        + (bm ? ", sub = W lowpass." : ", no bass management."),
-                        juce::dontSendNotification);
+        setStatus ("Ambisonics order " + juce::String (order) + ", "
+                   + juce::String ((int) dirs.size()) + " speakers ("
+                   + juce::String (H) + " B-format inputs) " + emdash + " config "
+                   + smt::configName (target)
+                   + ", " + radiusCompText (writeGain, writeDelay)
+                   + (bm ? ", sub = W lowpass." : ", no bass management."));
     }
 
     // Describes which radius compensations were written (for the status line).
@@ -742,7 +836,7 @@ private:
                 const auto dec = fxme::IemDecoder::fromFile (f);
                 if (! dec.isValid())
                 {
-                    status.setText ("IEM import failed: " + dec.error, juce::dontSendNotification);
+                    setStatus ("IEM import failed: " + dec.error);
                     return;
                 }
                 applyIemDecoder (dec);
@@ -815,16 +909,16 @@ private:
                              juce::jmax (model.getNumOuts(), neededOuts));
 
         const juce::String emdash = juce::String::fromUTF8 ("\xe2\x80\x94");
-        status.setText ("IEM decoder " + dec.name + " " + emdash + " order "
-                        + juce::String (dec.order) + ", "
-                        + juce::String ((int) dec.speakers.size()) + " speakers "
-                        + emdash + " config " + smt::configName (target) + ", "
-                        + radiusCompText (writeGain, writeDelay)
-                        + (bm ? ", sub = W lowpass." : ", no bass management."),
-                        juce::dontSendNotification);
+        setStatus ("IEM decoder " + dec.name + " " + emdash + " order "
+                   + juce::String (dec.order) + ", "
+                   + juce::String ((int) dec.speakers.size()) + " speakers "
+                   + emdash + " config " + smt::configName (target) + ", "
+                   + radiusCompText (writeGain, writeDelay)
+                   + (bm ? ", sub = W lowpass." : ", no bass management."));
     }
 
     smt::ConfigModel& model;
+    smt::ConfigToolSettings& settings;
 
     juce::Label title, layoutLabel, targetLabel, crossoverLabel, numSpkLabel, orderLabel, status;
     juce::ComboBox layoutBox, targetBox, orderBox;
