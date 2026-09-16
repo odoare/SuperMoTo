@@ -1,13 +1,5 @@
 %==============================================================================
-%  SuperMoTo — JOSS-style software paper
-%
-%  Build: pdflatex paper.tex  (run twice for references)
-%  Target journal: Journal of Open Source Software (JOSS)
-%
-%  Style follows the manual in chapters/: one line per paragraph, UI labels in
-%  straight quotes, few colons and semicolons, parentheses rather than dashes.
-%
-%  (c) 2026 Olivier Doaré — LGPL-3.0-or-later
+%  SuperMoTo paper
 %==============================================================================
 \documentclass[10pt,a4paper]{article}
 
@@ -37,30 +29,69 @@
 \maketitle
 
 %----------------------------------------------------------------------
-\section*{Summary}
+\section*{Abstract}
 %----------------------------------------------------------------------
 
 SuperMoTo is an open-source audio plugin (VST3, AU and Standalone) that puts a studio's monitoring signal chain into one plugin instance. From that instance it routes up to 32 inputs to 32 outputs through a configurable gain-and-EQ matrix, applies per-loudspeaker FIR correction filters derived from in-room acoustic measurements, time-aligns the loudspeakers of a rig and phase-aligns a subwoofer to the corrected main speakers, and generates periphonic Ambisonics decoders up to third order for immersive listening rooms. Acoustic measurement tools and a transfer-function analysis and correction design engine are built in, so the whole calibration workflow happens inside the plugin, one loudspeaker at a time or for a whole rig in a single pass. It is implemented in C++ using the JUCE framework and is licensed under the LGPL~3.0.
 
 %----------------------------------------------------------------------
-\section*{Statement of need}
+\section{Introduction}\label{sec:intro}
 %----------------------------------------------------------------------
 
 Decisions about balance, timbre and spatial imagery are all made at the listening position, so a systematic error in what the engineer hears accumulates through the whole mix. In a real room, what the engineer hears is never the loudspeaker alone but the combined response of the loudspeaker, the room, and any bass-management or routing in the signal path. Three independent classes of error contribute to this. Room modes below the Schroeder frequency produce large, position-dependent peaks and dips with audible ringing, speaker-boundary interference and early reflections add comb-filtering through the midrange, and the loudspeaker's own magnitude and phase response is rarely flat \cite{Toole}. Electronic correction cannot cure all of these (room cancellation notches and late reflections are not minimum-phase and cannot be inverted by any causal filter~\cite{NeelyAllen}), but the broad, reproducible, minimum-phase portion of the combined loudspeaker-room response can be usefully attenuated with a well-designed FIR filter, which reduces coloration and improves translation to other playback systems.
 
 No single open-source tool covers this workflow end to end. The widely-used Room EQ Wizard (REW) provides acoustic measurement and filter design as a standalone desktop application but not as a DAW plugin, requiring the resulting correction impulse responses to be loaded into a separate convolution plugin and routing to be managed outside the tool. Commercial room correction products such as Sonarworks SoundID Reference and IK Multimedia ARC focus exclusively on correction and do not integrate routing, bass management, or immersive audio decoding. High-channel routing tools and Ambisonics decoders exist as separate plugins, the IEM Plug-in Suite being the reference open-source example, but are not combined with a calibration workflow. SuperMoTo covers the whole workflow in one plugin instance, namely the monitoring matrix, the measurement engine, the correction design, the FIR convolution and the Ambisonics decoder generation. It also reads the decoding matrices exported by IEM's AllRADecoder, so an all-round decoder designed there can be driven by measured, individually corrected loudspeakers here. The combination matters most in VR and immersive audio production, where a loudspeaker array has to be routed, time-aligned, individually corrected and driven by a decoded Ambisonics signal at the same time.
 
+Aligning a subwoofer's phase to the mains is itself established practice rather than a new idea, and Section~\ref{sec:subalign} places the construction used here against the parametric all-pass designs it descends from. The contributions of this paper are the following.
+
+\begin{itemize}
+  \item A monitoring chain that carries routing, per-loudspeaker EQ, time alignment, FIR correction and Ambisonics decoding in one plugin instance, with a latency budget that keeps a rig aligned exactly as the user set it for the least added latency (Section~\ref{sec:latency}).
+  \item A closed-form subwoofer phase alignment, read directly off the measured phase and carried by the correction filter that is already there, in place of a parametric all-pass fitted by an optimiser (Section~\ref{sec:subalign}).
+  \item A power-weighted crossover-band group-delay estimator for the main-to-subwoofer offset, and the identity that makes one such offset per loudspeaker correct across a whole rig sharing a single subwoofer (Sections~\ref{sec:subalign} and~\ref{sec:group}).
+  \item An open-source implementation in which the measurement, the analysis, the filter design and the playback chain are the same instance, so a rig can be calibrated without leaving it (Section~\ref{sec:impl}).
+\end{itemize}
+
 %----------------------------------------------------------------------
-\section*{Functionality}
+\section{The monitoring chain}\label{sec:chain}
 %----------------------------------------------------------------------
 
-\subsection*{Monitoring matrix}
+The routing matrix connects up to 32 inputs to 32 outputs through a grid of crosspoint \emph{frames}. Six independent configurations (A--F) are stored per preset and can be engaged in exclusive mode (instant A/B switching between monitoring rigs) or summed. Everything the plugin does to the audio happens in one pass over the block, in the order the signal physically travels. With $X_i$ the inputs and $\omega = 2\pi f$, the signal reaching output $o$ is
+\begin{equation}
+  Y_o(\omega) \;=\; g\;
+    \underbrace{e^{-j\omega k_o/f_s}}_{\text{latency comp.}}\;
+    \underbrace{\tau_o\,E_o(\omega)\,e^{-j\omega \delta_o/f_s}\,C_o(\omega)}_{\text{loudspeaker }o}\;
+    \sum_{c\,\in\,\mathcal{A}}\;\sum_{i}\;
+    \underbrace{\gamma_{cio}\,B_{cio}(\omega)}_{\text{crosspoint}}\;X_i(\omega),
+  \label{eq:chain}
+\end{equation}
+where $\mathcal{A}$ is the set of engaged configurations, $k_o$ and $\delta_o$ are delays in samples at the sampling rate $f_s$, and $g$ is the master gain (level, mute and dim on one smoother).
 
-The routing matrix connects up to 32 inputs to 32 outputs through a grid of crosspoint \emph{frames}, each carrying an independent gain, polarity setting and a 2-band EQ (lowpass, highpass, bandpass or peaking) for a configuration-specific tweak on that one route. Six independent configurations (A--F) are stored per preset and can be engaged in exclusive mode (instant A/B switching between monitoring rigs) or summed. Each output then carries its own trim, polarity, a further 2-band EQ, a fractional sub-sample delay for physical speaker time-alignment, and an optional FIR correction filter applied by a zero-latency partitioned convolution engine \cite{Gardner1995}. Everything that describes a physical loudspeaker therefore lives on the output and is shared by every configuration that drives it, while the routing and its per-route tweaks belong to one configuration. When filters of different lengths are loaded on different outputs, automatic inter-output latency compensation delays the shorter outputs so all speakers remain time-aligned at the listening position.
+A crosspoint contributes a gain and polarity $\gamma_{cio}$, ramped linearly over \SI{50}{\milli\second} so that switching a route, or a whole configuration, cannot click, followed by its own two-band EQ $B_{cio}$, which is where a configuration-specific tweak on that one route belongs. The per-output terms are the trim and polarity $\tau_o$, a second two-band EQ $E_o$, a fractional delay of $\delta_o$ samples (up to \SI{100}{\milli\second}) for physical speaker time-alignment, and the FIR correction $C_o$, applied by a zero-latency partitioned convolution engine \cite{Gardner1995}. Each EQ band is a peaking biquad, or a lowpass, highpass or bandpass of second or fourth order, a fourth-order section being two biquads carrying the Butterworth $Q$ pair scaled by the band's own $Q$ setting. The delay reads a ring buffer at two adjacent taps and interpolates linearly between them, which gives the sub-sample resolution that speaker distances measured to the centimetre call for.
+
+Everything that describes a physical loudspeaker therefore multiplies once, after the sum, and is shared by every configuration that drives it, while the routing and its per-route tweaks belong to one configuration. When filters of different lengths are loaded on different outputs, automatic inter-output latency compensation keeps every speaker time-aligned at the listening position for the least added latency (Section~\ref{sec:latency}).
 
 A configuration tool generates standard stereo and surround layouts (2.0 through 7.1) with bass management and writes a complete matrix configuration ready for refinement. The subwoofer is fed either from a dedicated input (an LFE channel) or from the sum of the main channels, and bass management is written as a highpass on each main output and a lowpass on the subwoofer's.
 
-\subsection*{Ambisonics decoding}
+%----------------------------------------------------------------------
+\section{Latency and time alignment}\label{sec:latency}
+%----------------------------------------------------------------------
+
+The partitioned convolution engine adds no block latency whatever the filter length, but a linear-phase correction is centred on its own impulse, so output $o$ carries a bulk latency $\ell_o$ equal to the position of the peak of its loaded impulse response (about half the filter length, and near zero for a minimum-phase filter). Filters of different lengths on different outputs would therefore pull a rig apart.
+
+The obvious remedy, delaying every output by $\ell_{\max}-\ell_o$, ignores that an output already meant to be late can pay for its own filter. Writing $d_o$ for the delay the user set on output $o$ in samples and $(\cdot)_+$ for the positive part, the delay line actually runs only the remainder $\delta_o = (d_o-\ell_o)_+$, the uniform compensation is
+\begin{equation}
+  k \;=\; \max_{o\ \mathrm{fed}}\;\bigl(\ell_o - d_o\bigr)_+ ,
+\end{equation}
+and each fed output takes the share $k_o = d_o + k - \max(d_o,\ell_o)$ of it, so that
+\begin{equation}
+  \delta_o + \ell_o + k_o \;=\; d_o + k
+  \qquad \text{on every fed output.}
+\end{equation}
+The rig is aligned exactly as the user dialled it, offset by a single common term $k$, which is the smallest value satisfying $d_o + k \ge \ell_o$ everywhere and is zero whenever each output's own alignment delay already covers its own filter, the usual case for a rig that has been time-aligned. An output that no engaged configuration feeds is left out of the maximum, so an unused loudspeaker's long filter cannot impose latency on the rig.
+
+%----------------------------------------------------------------------
+\section{Ambisonics decoding}\label{sec:ambi}
+%----------------------------------------------------------------------
 
 The configuration tool also generates periphonic (3D) Ambisonics sampling decoders for orders 1 through 3, following the AmbiX convention (ACN channel order, SN3D normalisation) \cite{NachbarAmbiX2011}. For each loudspeaker at azimuth $\theta$, elevation $\varphi$ and radius $r$, the decode gain is
 \begin{equation}
@@ -70,15 +101,19 @@ where $a_n$ are the max-$r_E$ per-degree weights derived from the largest root o
 
 Irregular and hemispherical rigs are better served by an all-round decoder than by a plain sampling decoder, so the tool can instead import the \texttt{.json} configuration exported by the IEM AllRADecoder and use its matrix, converting it to the plugin's SN3D/ACN feed and applying the same radius compensation.
 
-\subsection*{Acoustic measurement}
+%----------------------------------------------------------------------
+\section{Acoustic measurement}\label{sec:measurement}
+%----------------------------------------------------------------------
 
-The measurement view drives the plugin outputs with a band-limited stimulus (\SIrange{5}{30}{\second} duration) and records the microphone response on one of the plugin's input channels. The sweep stimulus is a \emph{synchronized} exponential sweep in the sense of \cite{Novak2015}, its sweep rate being quantised so that the stimulus phase at each harmonic arrival time is an exact multiple of $2\pi$, which is what allows the distortion orders to be separated with their true phase at analysis time (below). White noise is offered as the alternative stimulus.
+The measurement view drives the plugin outputs with a band-limited stimulus (\SIrange{5}{30}{\second} duration) and records the microphone response on one of the plugin's input channels. The sweep stimulus is a \emph{synchronized} exponential sweep in the sense of \cite{Novak2015}, its sweep rate being quantised so that the stimulus phase at each harmonic arrival time is an exact multiple of $2\pi$, which is what allows the distortion orders to be separated with their true phase at analysis time (Section~\ref{sec:correction}). White noise is offered as the alternative stimulus.
 
 Each captured stereo file stores the raw stimulus on channel 1 and the microphone on channel 2, so the transfer function estimate at analysis time is always the ratio of the captured microphone signal to the sent stimulus. Three modes are provided, "Dry" (bare loudspeaker and room, correction bypassed), "FIR" (single output with its correction in circuit, for before and after verification), and "System" (complete engine including routing and all FIR filters, for end-to-end validation).
 
-A run measures every selected channel in turn with the microphone in one place and writes its files into a measurement folder that numbers positions per channel automatically and tags an optional subwoofer channel. The folder carries a generated XML manifest recording, for every run, its time, its stimulus parameters, a free-text comment, the microphone calibration in effect (name and a verbatim copy of the file) and the dB SPL calibration if one has been made by reading a real sound level meter. The folder is therefore self-describing, and the group-alignment mode below loads one in a single step. Microphone frequency-response calibration files in the REW/miniDSP plain-text format are supported and are applied at analysis time rather than baked into the recordings, so the calibration can be updated, or replaced by the copy embedded in a folder measured years earlier, without re-measuring.
+A run measures every selected channel in turn with the microphone in one place and writes its files into a measurement folder that numbers positions per channel automatically and tags an optional subwoofer channel. The folder carries a generated XML manifest recording, for every run, its time, its stimulus parameters, a free-text comment, the microphone calibration in effect (name and a verbatim copy of the file) and the dB SPL calibration if one has been made by reading a real sound level meter. The folder is therefore self-describing, and the group-alignment mode of Section~\ref{sec:group} loads one in a single step. Microphone frequency-response calibration files in the REW/miniDSP plain-text format are supported and are applied at analysis time rather than baked into the recordings, so the calibration can be updated, or replaced by the copy embedded in a folder measured years earlier, without re-measuring.
 
-\subsection*{Transfer-function estimation and correction design}
+%----------------------------------------------------------------------
+\section{Transfer-function estimation and correction design}\label{sec:correction}
+%----------------------------------------------------------------------
 
 For each set of measurements (one speaker, multiple microphone positions), the plugin offers two estimators for the loudspeaker-room transfer function. The first is the Welch $H_1$ estimator \cite{Welch1967}
 \begin{equation}
@@ -90,28 +125,90 @@ Before averaging across positions, the bulk propagation delay of each measuremen
 
 The correction filter is the regularised complex inverse of the frequency-dependent-smoothed average. A variable fractional-octave smoothing is applied, where the octave fraction interpolates log-linearly from an independent low-frequency setting to a high-frequency setting, allowing the correction to track room modes finely at low frequencies while responding only to broad trends above a few kilohertz \cite{Hatziantoniou2000}. Boosts are limited by a smooth $\tanh$ soft-knee ceiling to avoid ringing and headroom loss at room cancellation notches \cite{Kirkeby1999}, and the correction fades back to unity outside a user-set analysis range, where neither the loudspeaker nor the measurement carries usable information.
 
-For subwoofer-equipped systems, a second set of measurements (the sub at the same microphone positions) is loaded and delay-anchored on the corresponding main measurements to preserve the relative main-subwoofer arrival-time difference. A main and a subwoofer only sum flat through the crossover region when they are in phase there \cite{Linkwitz1976}, so an all-pass factor derived from the subwoofer's phase steers the correction filter's phase onto the subwoofer's across that region. A user-controlled bulk delay, applied to the main outputs in the matrix, removes most of the offset before it reaches the all-pass, which keeps the FIR short.
+For subwoofer-equipped systems, a second set of measurements (the sub at the same microphone positions) is loaded, and the phase of the main's correction is steered onto the subwoofer's across the crossover region by an all-pass factor, so that the two sum coherently there. That design is developed in Section~\ref{sec:subalign}.
 
 The final correction spectrum is exported as a mono 32-bit float impulse-response wav file in either \emph{linear-phase} (energy centred at $N/2$, enabling full phase and subwoofer alignment at the cost of $N/2$ samples of latency) or \emph{minimum-phase} (real-cepstrum method, magnitude-only correction with essentially zero bulk latency, suited to tracking sessions) form \cite{OppenheimSchafer}.
 
-\subsection*{Multi-speaker group alignment}
+%----------------------------------------------------------------------
+\section{Subwoofer phase alignment}\label{sec:subalign}
+%----------------------------------------------------------------------
+
+A main loudspeaker and a subwoofer only sum to a flat response through the crossover when they are in phase there \cite{Linkwitz1976}, and correcting each one's magnitude on its own does nothing about that. Their offset is not only geometric. A fourth-order Linkwitz-Riley lowpass contributes a group delay of $2\sqrt{2}/\omega_x$ at DC and at its corner, \SI{5.6}{\milli\second} at $f_x=\SI{80}{\hertz}$, and the low-frequency acoustic centre of a loudspeaker moves with frequency as well \cite{Vanderkooy2006}. Several milliseconds of the offset are therefore built into the system, and no repositioning of the box removes them.
+
+Steering a main's phase onto the subwoofer's through the crossover has been proposed by a few authors or constructors. Audyssey's phase equalisation cascades second-order all-pass sections onto the satellite channel and computes their pole angles and radii recursively, so as to minimise $\varphi_{\mathrm{sub}}-\varphi_{\mathrm{sat}}-\varphi_{\mathrm{AP}}$ over a weighted band around the crossover \cite{Bharitkar2010, BharitkarBook}, and Dirac Live Bass Control applies a pre-specified number of all-pass biquads to the high- and low-frequency branches so that the subwoofer and the channel are in phase around the crossover at a chosen position in the room \cite{DiracBass}. The crossover region remains an active subject \cite{Kim2025}. In each of these the all-pass is a parametric filter of chosen order whose coefficients are found by an optimiser against a phase-error criterion. What follows shares that objective and differs in construction. The alignment is read straight off the measured phase in closed form, on the same frequency grid the correction is designed on, so there is no filter order to choose, no objective function and no convergence to check, and it is carried by the FIR that already applies the magnitude correction, so it costs nothing at run time.
+
+Aligning the two first requires their relative timing to survive the analysis, which by default it does not. The bulk propagation delay of each measurement is estimated from its impulse-response peak and removed before the positions are averaged, since otherwise the position-dependent phase ramps cancel in the average. Each subwoofer capture is instead delay-anchored on the main capture taken at the same position, shifted by the main's delay rather than by its own, so the averaged subwoofer response $\bar S$ keeps its true phase relative to the main's average.
+
+The alignment itself is a single factor applied to the correction spectrum. From the subwoofer's unit-magnitude phasor $\hat s = \hat S/|\hat S|$, where $\hat S(f) = \pm\,\bar S(f)\,e^{\,j2\pi f T}$ carries the subwoofer polarity and an assumed bulk delay $T$ discussed below, the correction $C$ designed for the main is multiplied by
+\begin{equation}
+  A(f) \;=\; \frac{\bigl(1-w_x(f)\bigr) + w_x(f)\,\hat s(f)}
+                  {\bigl|\bigl(1-w_x(f)\bigr) + w_x(f)\,\hat s(f)\bigr|},
+  \label{eq:allpass}
+\end{equation}
+where the alignment weight is a raised cosine in log frequency,
+\begin{equation}
+  w_x(f) \;=\; \tfrac{1}{2} + \tfrac{1}{2}\cos\bigl(\pi\, x(f)\bigr),
+  \qquad
+  x(f) \;=\; \min\!\left(1,\ \max\!\left(0,\ \frac{1}{N_{\mathrm{oct}}}\log_2\frac{f}{f_x}\right)\right),
+  \label{eq:alignweight}
+\end{equation}
+so $w_x=1$ at and below the crossover $f_x$ and $w_x=0$ at and above $2^{N_{\mathrm{oct}}} f_x$, with a release width $N_{\mathrm{oct}}$ of one octave by default. Above the release the main dominates and keeps the phase its own correction gives it.
+
+Three properties of \eqref{eq:allpass} are what make it usable. Taking the phasor discards the subwoofer's magnitude, so none of the subwoofer's own response leaks into the main's correction. The renormalisation makes $|A|=1$ at every bin, so the alignment is strictly a phase operation and leaves the designed magnitude correction untouched, which is what allows the same design to serve with and without a subwoofer. And the blend is taken on the phasors rather than on an unwrapped phase angle, so the interpolation travels the short arc between $1$ and $\hat s$ and the rotation $A$ applies is bounded by $\pi$ at every frequency, by construction and with no phase-unwrapping step, which would need an anchor in a band where the subwoofer is often below the noise. Scaling an unwrapped angle, anchored at the crossover, turns out to be equivalent once the bulk delay below has been removed, and worse when it has not.
+
+The delay $T$ is what keeps the all-pass small. Advancing the subwoofer phasor by $T$ before its phase is taken leaves the all-pass carrying only the residual, while the bulk of the offset is applied as an ordinary delay on the main's output, where it costs nothing. $T$ is a relative quantity, not the delay applied to the main. If the outputs receive bulk delays $a_m$ and $a_s$, the phase difference left between the two acoustic paths through the crossover region is $2\pi f\,[\,T-(a_m-a_s)\,]$, which vanishes at every frequency only if
+\begin{equation}
+  T \;=\; a_m - a_s .
+  \label{eq:aligncond}
+\end{equation}
+The group-alignment mode designs each speaker's correction with exactly its own $a_i - a_s$, so \eqref{eq:aligncond} holds for every speaker of the rig and for any trim applied to the subwoofer against the group.
+
+$T$ is estimated from the measurements themselves, and the estimator has to be chosen with care, because the two available measures of lateness are not measuring the same quantity. An arrival time read from an impulse-response peak is accurate to about the inverse of the measured bandwidth \cite{Knapp1976}, some \SI{50}{\micro\second} for a full-range loudspeaker but \SI{10}{\milli\second} for a subwoofer that passes nothing above \SI{100}{\hertz}, so it is weakest exactly where it is wanted. The plugin instead fits the slope of the anchored subwoofer's unwrapped phase over $[\,f_x/2,\,2f_x\,]$ by least squares weighted by the measured power $|\bar S|^2$, which returns the effective group delay of the subwoofer in the crossover region, geometry and filtering together, and that is what decides whether the two sources add or cancel. Weighting each point of that fit by $|\bar S|^2$ lets the part of the band where the subwoofer actually has output decide the slope, which is what makes the estimate stable. The fit band reaches an octave above the crossover, where the subwoofer can be 40 to 50\,dB down, so an unweighted fit gives that noise the same say as the passband. On one five-position measurement it walked from \SI{27.6}{\milli\second} to \SI{11.3}{\milli\second} as the crossover setting moved over \SIrange{60}{150}{\hertz}, while the weighted fit stayed within \SIrange{26}{35}{\milli\second} and agreed with the \SI{30.6}{\milli\second} arrival time measured on the same set. The disagreement between the two estimates is then diagnostic in itself, near zero meaning the offset is pure geometry and moving the box will fix it, several milliseconds meaning it is the crossover's own delay and moving the box will not.
+
+Because $A$ carries phase, the correction is a mixed-phase filter and is not causal on its own, which is why the exported impulse response is centred at $N/2$ and why it brings the bulk latency the compensation of Section~\ref{sec:latency} then absorbs. A minimum-phase export rebuilds the filter from $|C|$ alone and $A$ has unit magnitude, so the subwoofer alignment disappears from it entirely. The loudspeakers still arrive together in that mode, since the delays are written to the outputs regardless, but there is no phase steering through the crossover.
+
+%----------------------------------------------------------------------
+\section{Multi-speaker group alignment}\label{sec:group}
+%----------------------------------------------------------------------
 
 For rigs of more than a couple of loudspeakers, a group-analysis mode holds one transfer-function estimate per speaker (up to 16, plus one shared subwoofer when the rig has one) side by side, sharing a single set of correction-design settings across all of them. A whole measurement folder is loaded in one step, the manifest supplying which channels were measured, which one is the subwoofer and which output each speaker sits on. Because every channel of a run was measured with the microphone in one place, each subwoofer capture is paired with the speaker capture of the same run, which keeps the pairing correct even when a speaker missed a run. Individual runs can be excluded from the analysis, and runs measured through an existing correction are excluded by default, since a correction has to be designed from the uncorrected loudspeaker.
 
-Each speaker's bulk propagation delay, estimated as above, is compared across the group and every driver is delayed to match the most distant one, so the whole rig arrives coherently at the reference position. The resulting delay is fed back into each speaker's own subwoofer phase-alignment term before its correction filter is finalised. A level-matching trim per speaker is also derived, as the mean power of its corrected response over the \SIrange{500}{2000}{\hertz} band that SMPTE ST 2095-1 specifies for channel level calibration \cite{SMPTE2095}, relative to the quietest speaker of the group. It is reported rather than applied, so that a deliberate level offset is never overwritten.
+Each speaker's bulk propagation delay, estimated as in Section~\ref{sec:correction}, is compared across the group and every driver is delayed to match the most distant one, so the whole rig arrives coherently at the reference position. The resulting delay is fed back into each speaker's own subwoofer phase-alignment term before its correction filter is finalised. A level-matching trim per speaker is also derived, as the mean power of its corrected response over the \SIrange{500}{2000}{\hertz} band that SMPTE ST 2095-1 specifies for channel level calibration \cite{SMPTE2095}, relative to the quietest speaker of the group. It is reported rather than applied, so that a deliberate level offset is never overwritten.
 
 The subwoofer itself is never given a correction filter. Above its passband a broadband measurement carries no coherent sent and recorded content, so an inverse filter fitted there would be fitted to noise rather than to a real transfer function. It contributes only its computed alignment delay and its polarity.
 
 Applying the result exports every speaker's correction impulse response, writes the delays, the filters and the subwoofer's polarity onto the corresponding outputs, and saves a markdown report listing the settings, the files used, the measured and applied delays, the suggested trims and, optionally, the plotted responses. Loading, re-analysing and exporting a whole group run on a background thread pool with progress feedback, so the editor stays responsive with long, multi-position measurement sets across many speakers, and a batch already running survives the editor being closed.
 
 %----------------------------------------------------------------------
-\section*{Implementation}
+% TODO: Validation section goes here, after the new measurement campaign.
+% \section{Validation}\label{sec:validation}
+% Offline prediction on the existing five-position set is in
+% doc/experiments/ (leave-one-out table + summation figure); the measured
+% System-mode comparison replaces/extends it once the new runs are done.
 %----------------------------------------------------------------------
 
-SuperMoTo is written in C++ and built with CMake against the JUCE framework. Its reusable parts (the correction and measurement DSP, the plotting components, the preset system) live in a separate library, FxmeTools, shared with the author's other plugins, and the parts that need no JUCE at all are compiled and unit-tested on their own. Per-output FIR convolution uses the WDL non-uniformly partitioned convolution engine, which gives zero added latency for an impulse response of any length \cite{Gardner1995}. Continuous-integration builds for Linux, macOS (Apple Silicon universal binary) and Windows are provided by a GitHub Actions workflow triggered by version tags. The plugin is available in VST3, AU, and Standalone formats with a fixed 32-in/32-out discrete channel bus, which sidesteps the inconsistent per-host discrete-channel-count negotiation of JUCE's AU and VST3 wrappers, the active matrix size being an independent, user-selectable setting up to that count. A user manual covering the workflow, the controls and the signal processing behind them is written in LaTeX alongside the source.
+%----------------------------------------------------------------------
+\section{Implementation and availability}\label{sec:impl}
+%----------------------------------------------------------------------
 
 %----------------------------------------------------------------------
-\section*{Acknowledgements}
+
+SuperMoTo is written in C++ and built with CMake against the JUCE framework. Its reusable parts (the correction and measurement DSP, the plotting components, the preset system) live in a separate library, FxmeTools, shared with the author's other plugins, and the parts that need no JUCE at all are compiled and unit-tested on their own. Per-output FIR convolution uses the WDL non-uniformly partitioned convolution engine \cite{Gardner1995}.
+
+The engine holds no parameters of its own. It pulls them from the shared model whenever the model's version counter changes, under a try-lock that defers the pull to the next block if the editor happens to be writing, so a GUI edit or a state restore can never stall the audio callback, and every update path is written to allocate nothing on the audio thread. Impulse-response files are read, resampled and installed on the message thread under a lock that the audio thread only ever takes with a try-lock, so a load in flight costs a few unconvolved blocks rather than a blocked callback. Meters and the spectrum analyser are fed by lock-free taps placed on each crosspoint and each output.
+
+Continuous-integration builds for Linux, macOS (Apple Silicon universal binary) and Windows are provided by a GitHub Actions workflow triggered by version tags. The plugin is available in VST3, AU, and Standalone formats with a fixed 32-in/32-out discrete channel bus, which sidesteps the inconsistent per-host discrete-channel-count negotiation of JUCE's AU and VST3 wrappers, the active matrix size being an independent, user-selectable setting up to that count. A user manual covering the workflow, the controls and the signal processing behind them is written in LaTeX alongside the source.
+
+%----------------------------------------------------------------------
+\section{Conclusion}\label{sec:conclusion}
+%----------------------------------------------------------------------
+
+SuperMoTo puts the parts of a monitoring chain that are usually separate tools into one plugin instance, so that the routing, the per-loudspeaker correction, the time alignment and the Ambisonics decoding of a listening room are described in one place and calibrated without leaving it. The subwoofer alignment is the part that gains most from that arrangement. Because the measurement, the spatial average and the filter design live in the same instance, the alignment can be read straight off the measured phase in closed form and folded into the correction filter, where a tool working from outside the signal chain would have to fit a separate parametric all-pass to it.
+
+What the approach cannot do is bounded by what any causal filter can do in a room. Cancellation notches and late reflections are not minimum-phase and are not inverted here, the correction is designed for the area the microphone positions span rather than for one seat, and the subwoofer alignment holds over that same area. Quantifying its effect on the summation through the crossover, and the sensitivity of the group-delay estimator that drives it, is the subject of ongoing measurement work.
+
+%----------------------------------------------------------------------
+\section{Acknowledgements}
 %----------------------------------------------------------------------
 
 ...
@@ -158,6 +255,32 @@ S.~H. Linkwitz, ``Active crossover networks for noncoincident drivers,''
 SMPTE ST 2095-1:2015, \textit{Calibration Reference Wideband Digital Pink
 Noise Signal}. White Plains, NY: Society of Motion Picture and Television
 Engineers, 2015.
+
+\bibitem{Bharitkar2010}
+S.~Bharitkar and C.~Kyriakakis, ``Phase equalization for multi-channel
+loudspeaker-room responses,'' U.S. Patent 7\,720\,237~B2, 2010
+(priority 7~Sept.\ 2004).
+
+\bibitem{BharitkarBook}
+S.~Bharitkar and C.~Kyriakakis, \textit{Immersive Audio Signal Processing}.
+New York: Springer, 2006.
+
+\bibitem{DiracBass}
+L.-J.~Br\"annmark, F.~Rosencrantz and M.~Ueno Andersson, \textit{Dirac Live
+Bass Control}. Dirac Research, technical white paper, 2020.
+
+\bibitem{Kim2025}
+J.~Kim, ``Group delay-driven crossover optimization for subwoofer satellite
+systems at listening position,'' \textit{Acta Acustica}, vol.~9, art.~51, 2025.
+
+\bibitem{Knapp1976}
+C.~H. Knapp and G.~C. Carter, ``The generalized correlation method for
+estimation of time delay,'' \textit{IEEE Trans.\ Acoust., Speech, Signal
+Process.}, vol.~24, no.~4, pp.~320--327, 1976.
+
+\bibitem{Vanderkooy2006}
+J.~Vanderkooy, ``The acoustic center: a new concept for loudspeakers at low
+frequencies,'' in \textit{Proc.\ 121st AES Convention}, San Francisco, 2006.
 
 \bibitem{Toole}
 F.~E. Toole, \textit{Sound Reproduction: The Acoustics and
