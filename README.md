@@ -72,6 +72,16 @@ The matrix settings are deliberately not host-automatable parameters
 (6 x 256 frames); they are saved with the plugin state. Host parameters:
 A..F, Exclusive, Level, Mute, Dim, Mono.
 
+The plugin state (saved with the host project and in presets) holds the
+matrix configurations and size, the outputs' processing including their FIR
+corrections, and the host parameters. The work in the other views (loaded
+measurements, Analysis and Group analysis results and settings, the
+Calibration and Config tool controls, the editor's page and layout) lasts
+only as long as the plugin instance: closing and reopening the editor keeps
+it, reopening the project does not. Whatever an analysis wrote onto the
+outputs is part of the plugin state, and the measurement folders, exported
+IRs and reports stay on disk. The mic and SPL calibrations are machine-wide.
+
 ## Part 2 — Measurement (Calibration view)
 
 Select the microphone input, the **measurement type**, the channels to
