@@ -10,8 +10,8 @@ monitoring section of a studio. It is the big brother of
 \begin{itemize}[nosep]
   \item route up to 32 inputs to 32 outputs (8 by default) through a
         full routing matrix, with per-crosspoint gain, a 2-band EQ and phase;
-  \item apply one \gterm{fir}{FIR} correction filter per output (zero-latency WDL
-        convolution) to flatten each loudspeaker;
+  \item apply one \gterm{fir}{FIR} correction filter per output (zero-latency \href{https://www.cockos.com/wdl/}{WDL
+        convolution}) to flatten each loudspeaker;
   \item measure the loudspeakers in the room with built-in stimuli;
   \item analyse those measurements and design the FIR
         correction curves (magnitude and phase), including phase-coherent
@@ -30,12 +30,12 @@ the \textbf{Group analysis} view (Chapter~\ref{ch:groupanalysis}).
 What you hear at the listening position is never the loudspeaker alone: it is the loudspeaker convolved with the room, sampled by your ears (or a microphone) at one place. Several independent mechanisms each leave their mark on that combined response, and they behave very differently, which is exactly why some of them can be corrected electronically and some cannot.
 
 \subsection{The room's low-frequency modes}
-Below roughly the Schroeder frequency (typically \SIrange{150}{300}{\hertz} in a domestic-sized room), the room behaves as a small set of discrete resonances: standing waves between parallel surfaces. Each \textbf{room mode} stores energy and releases it slowly, producing large peaks and dips in the magnitude response (often \SI{10}{\decibel} or more) together with audible
-ringing (slow modal decay) in the time domain. Modes are strongly position dependent: a dip at one seat can be a peak half a metre away.
+Below roughly the Schroeder frequency (typically \SIrange{150}{300}{\hertz} in a domestic-sized room), the room behaves as a small set of discrete resonances. Each room mode stores energy and releases it slowly, producing large peaks and dips in the magnitude response (often \SI{10}{\decibel} or more) together with audible
+ringing (slow modal decay) in the time domain. Modes are strongly position dependent: a dip at one position can be a peak half a metre away.
 
 \subsection{Boundary and early reflections}
 Sound radiated towards nearby surfaces returns to the listener delayed and attenuated. Reflections off the desk, floor, ceiling and side walls combine with the direct sound to produce \gterm{comb}{comb filtering} (regularly spaced peaks and notches) across the midrange and treble, and the speaker-boundary interference (\gterm{sbir}{SBIR}) cancellation places a characteristic dip in the
-upper bass whose frequency is set by the speaker-to-wall distance. Unlike modes these are essentially wide-band and tied to geometry.
+upper bass whose frequency is set by the speaker-to-wall distance.
 
 \subsection{Imperfect loudspeakers}
 Even in an anechoic chamber no speaker is perfectly flat: drivers have their own magnitude ripple and roll-offs, which are essentially \gterm{minphase}{minimum-phase}, and the \gterm{crossover}{crossover} between drivers adds a phase rotation which is not. That excess phase is \gterm{allpass}{all-pass} rather than a cancellation: it has unit magnitude, so unlike a reflection notch it still has a stable inverse, and a \gterm{linphase}{linear-phase} filter can pre-compensate it at the cost of latency (Appendix~\ref{ch:minphasedef}, Section~\ref{sec:render}). This part of the error is a property of the box and is the same at every listening position, which is what makes it the most cleanly correctable: one filter fixes it everywhere in the listening area, whereas a room correction is only valid where it was measured.
@@ -45,7 +45,7 @@ Adding a subwoofer introduces a second source, in a different place, with its ow
 level problem.
 
 \subsection{What SuperMoTo can and cannot do}\label{sec:cando}
-Which errors a filter can undo at all hinges on a single property of the response: whether it is minimum-phase, meaning its energy arrives as early as its magnitude allows, so that its inverse is itself causal and stable. A single loudspeaker resonance, a driver roll-off and an isolated low-frequency \gterm{roommode}{room mode} are essentially minimum-phase, and are invertible. A pure propagation
+Which errors a filter can undo depend on a single property of the response: whether it is minimum-phase, meaning its energy arrives as early as its magnitude allows, so that its inverse is itself causal and stable. A single loudspeaker resonance, a driver roll-off and an isolated low-frequency \gterm{roommode}{room mode} are essentially minimum-phase, and are invertible. A pure propagation
 delay, a discrete reflection arriving after the direct sound, and the deep cancellation notch where two out-of-phase sources sum are not: they carry \textbf{excess phase}, lag beyond that minimum which no stable causal filter can remove. Those three are not equally hopeless, though: excess phase that is merely all-pass, such as a delay or a crossover's phase rotation, still has a
 stable inverse and can be pre-compensated by a linear-phase filter at the cost of latency, whereas a true cancellation null cannot be undone at all. Appendix~\ref{ch:minphasedef} develops both pictures and what they imply for the correction filter.
 
@@ -57,13 +57,13 @@ Correction is a linear filter applied to the signal before the speaker. That mak
   \item \textbf{Cannot do.} It cannot remove energy that arrives later than the direct sound: a reflection is a separate event in time, so "correcting" for it only pre-distorts the direct sound and the dip usually returns elsewhere. Deep cancellation notches are non-minimum-phase and effectively non-invertible: boosting into them wastes headroom and excites the mode further rather than filling the null~\cite{NeelyAllen,Mourjopoulos1994}. And because the measurement is taken around one reference area, a correction is only valid there: it cannot be flat everywhere at once~\cite{Toole}.
 \end{itemize}
 
-This is why SuperMoTo, like tools aiming at room correction, derives its correction from a \gterm{spatialavg}{spatial average} of several microphone positions (so it follows the response that is consistent across the listening area rather than chasing one position's interference notches), limits its boost with a soft ceiling, and smooths the target more coarsely as frequency rises (Chapter~\ref{ch:analysis}).
+This is why SuperMoTo, like other tools aiming at room correction, derives its correction from a \gterm{spatialavg}{spatial average} of several microphone positions (so it follows the response that is consistent across the listening area rather than chasing one position's interference notches), limits its boost with a soft ceiling, and smooths the target more coarsely as frequency rises (Chapter~\ref{ch:analysis}).
 
 \subsection{Treat the room first}
 Electronic correction should not be considered as a substitute for acoustics. It is the last step of an audio system optimization. The errors it handles worst (reflections and modal ringing) are precisely the ones that respond to physical treatment, so the most effective gains come upstream, before any filter is designed:
 
 \begin{itemize}[nosep]
-  \item \textbf{Placement} of speakers and listening position relative to the walls (avoiding strong gterm{sbir}{SBIR} dips and the worst modal seats).
+  \item \textbf{Placement} of speakers and listening position relative to the walls (avoiding strong \gterm{sbir}{SBIR} dips and the worst modal positions).
   \item \textbf{Symmetry} of the left/right setup, so the stereo image is not skewed by the room.
   \item \textbf{Bass trapping} in the corners to shorten modal decay. This reduces ringing, which no magnitude filter can.
   \item \textbf{Broadband absorption} at the first reflection points to reduce comb filtering.
@@ -112,11 +112,10 @@ re-aligned so loudspeakers with different FIR lengths stay time-coherent.}
 \begin{itemize}[nosep]
   \item Formats: \textbf{VST3}, \textbf{AU}, \textbf{Standalone}.
   \item Bus layout: one input bus and one output bus, each
-        \textbf{32 discrete channels}
-        (\texttt{AudioChannelSet::discreteChannels(32)}). The plugin only reports support for the exact 32-in / 32-out layout: no other
+        32 discrete channels. The plugin only reports support for the exact 32-in / 32-out layout: no other
         channel count is negotiated.
         \item Plugin type: audio effect (not a synth, no MIDI).
 \end{itemize}
 
-The bus is fixed rather than negotiated on purpose: JUCE's per-host discrete channel-count discovery is inconsistent (the AU wrapper only probes up to 16 channels; VST3's channel-set/\texttt{SpeakerArrangement} mapping has no defined bit for more than one unnamed discrete channel), which left some hosts stuck offering only 8 channels when the layout was negotiable. A single fixed 32-channel bus sidesteps that entirely: unused channels are left disconnected in the host, and the \emph{active} matrix size (independent
+The bus is fixed rather than negotiated on purpose: JUCE's per-host discrete channel-count discovery is inconsistent (the AU wrapper only probes up to 16 channels; VST3's channel-set/\texttt{SpeakerArrangement} mapping has no defined bit for more than one unnamed discrete channel), which left some hosts stuck offering only 8 channels when the layout was negotiable. A single fixed 32-channel bus sidesteps that entirely: unused channels are left disconnected in the host, and the active matrix size (independent
 of the bus, Section~\ref{sec:outputchain}) is what actually limits how many are routed. This fixed 32$\times$32 discrete layout is the key constraint for host compatibility (see Chapter~\ref{ch:daw}).

@@ -72,7 +72,7 @@ The recorded response is deconvolved by the sweep's analytic spectral inverse, t
       \left( 1 - \ln\frac{f}{f_1} \right) + j\,\frac{\pi}{4} \right).
   \label{eq:sweepinv}
 \end{equation}
-The recording is transformed, multiplied by~\eqref{eq:sweepinv}, and transformed back. Because the inverse is known in closed form, nothing is divided by a measured spectrum. There is no ill-conditioned denominator to \gterm{regularization}{regularise} (contrast the $\varepsilon$ term in~\eqref{eq:h1}), and the whole band arrives in one shot with its true phase, from a single sweep rather than from an average over segments.
+The recording is transformed, multiplied by~\eqref{eq:sweepinv}, and transformed back. Because the inverse is known in closed form, nothing is divided by a measured spectrum. There is no ill-conditioned denominator to \gterm{regularization}{regularise} (contrast the $\varepsilon$ term in~\eqref{eq:h1}), and the whole band, magnitude and phase, comes from a single sweep rather than from an average over segments.
 
 \subsection{Why the harmonic orders separate}\label{sec:sweepharm}
 A distortion product of order $m$ at frequency $f$ is generated while the sweep is passing $f/m$. By~\eqref{eq:sweeptime} that happens

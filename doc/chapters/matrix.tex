@@ -2,10 +2,6 @@
 \chapter{The monitoring matrix}\label{ch:matrix}
 %==============================================================================
 
-% TODO(screenshot): full plugin window in Matrix view: top bar (A..F, Exclusive,
-% Level, Mute/Dim/Mono, collapse), the grid of frames with vu-meters (default
-% 8x8, resizable up to 32x32), the output strip along one edge, the analyzer,
-% and the frame editor panel.
 \screenshot{SuperMoTo_matrix_view.png}{The Matrix view: top bar with configuration
 buttons A--F, Exclusive toggle, master Level and Mute/Dim/Mono; the matrix
 grid of frames (here at its default 8$\times$8, resizable up to 32$\times$32)
@@ -14,7 +10,7 @@ and the frame editor panel (bottom-right).}
 
 \section{Concepts}
 The matrix is a grid of up to 32$\times$32. The cell at row "in", column "out" is a frame (crosspoint): mainly a routing cell (how much of input "in" is sent to output "out"), but it also
-carries a small EQ of its own for a config-specific tonal tweak of crossover tuning on just that one route. Everything that describes the physical speaker (trim, its own EQ, delay and the \gterm{fir}{FIR} correction) lives on the output instead, since output settings are global and therefore shared by all configurations (A-F) that route into it.
+carries a small EQ of its own for a config-specific tonal tweak of crossover tuning on just that one route. Everything that describes the physical speaker (trim, polarity, its own EQ, delay and the \gterm{fir}{FIR} correction) lives on the output instead, since output settings are global and therefore shared by all configurations (A-F) that route into it.
 
 A fresh instance starts at 2 in / 8 out, set with the Inputs and Outputs selectors in the bottom bar and saved with the session. Two inputs is the stereo mixing case, one stereo source feeding several monitoring destinations, which is what the outputs are for. Raise the input count when the source itself is multichannel:
 
@@ -37,7 +33,7 @@ A fresh instance starts at 2 in / 8 out, set with the Inputs and Outputs selecto
           \item \textbf{Another decoder decodes.} If an upstream plugin
                 already produces the speaker feeds for your exact rig, set the
                 input count to the number of speakers instead and leave
-                the matrix as plain routing. SuperMoTo then contributes the
+                the matrix as plain diagonal routing. SuperMoTo then contributes the
                 per-output correction, delay and level, and the A-F switching,
                 without touching the decode.
         \end{itemize}
@@ -63,11 +59,14 @@ The Config tool (Chapter~\ref{ch:config}) sets both counts for you: applying a r
 Each output is the chain applied to the summed signal of all active frames feeding it. Click an output cell (top strip) to edit it:
 \begin{itemize}[nosep]
   \item \textbf{Trim} (output level, dB);
+  \item \textbf{Phase invert}, the same flip as a frame's but applied to everything the output plays;
   \item a \textbf{2-band EQ}: each band can be lowpass, highpass, bandpass or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in series. This is where the bass-management \gterm{crossover}{crossover} lives (a highpass on a main, a lowpass on the sub);
   \item a \textbf{delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second}, fractional (sub-sample), for \textbf{time-aligning} the speaker;
   \item one \textbf{FIR correction} filter (Section~\ref{sec:render}), loaded from a wav \gterm{ir}{impulse response};
   \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox.
 \end{itemize}
+
+\paragraph{Frame or output polarity.} The two switches multiply, so an inverted frame feeding an inverted output plays in normal polarity. A frame's switch belongs to one route of one configuration, which is where a decoder puts its negative coefficients. An output's switch belongs to the speaker as wired, whatever feeds it, and is the one to use for a subwoofer that sums better inverted against the mains. With an Ambisonics decoder in the frames, this keeps the subwoofer balance out of the decode (Section~\ref{sec:ambisonics}). Group analysis sets the subwoofer output's switch from "Invert sub" (Section~\ref{sec:groupsub}). Measurements in "Dry" mode bypass the output's switch, while "FIR" and "System" include it (Section~\ref{sec:modes}). Either switch fades through zero over \SI{50}{\milli\second} rather than clicking.
 
 \begin{figure}[ht]
 \centering
@@ -81,8 +80,9 @@ Each output is the chain applied to the summed signal of all active frames feedi
   \node[block, right=6mm of phase] (frameeq) {frame\\2-band EQ};
   \node[draw, circle, right=8mm of frameeq, fill=smtgold!40] (sum) {$\Sigma$};
   \node[block, right=8mm of sum] (trim) {trim};
-  \node[block, right=5mm of trim] (eq) {2-band\\EQ};
-  \node[block, below=6mm of eq] (delay) {delay};
+  \node[block, below=6mm of trim] (outphase) {phase\\invert};
+  \node[block, left=5mm of outphase] (eq) {2-band\\EQ};
+  \node[block, left=5mm of eq] (delay) {delay};
   \node[block, left=5mm of delay] (fir) {FIR};
   \node[block, left=5mm of fir] (out) {output\\$out$};
   \draw[->] (in) -- (gain);
@@ -90,7 +90,8 @@ Each output is the chain applied to the summed signal of all active frames feedi
   \draw[->] (phase) -- (frameeq);
   \draw[->] (frameeq) -- (sum);
   \draw[->] (sum) -- (trim);
-  \draw[->] (trim) -- (eq);
+  \draw[->] (trim) -- (outphase);
+  \draw[->] (outphase) -- (eq);
   \draw[->] (eq) -- (delay);
   \draw[->] (delay) -- (fir);
   \draw[->] (fir) -- (out);
@@ -98,8 +99,8 @@ Each output is the chain applied to the summed signal of all active frames feedi
     {sum of all active\\frames into $out$};
 \end{tikzpicture}
 \caption{Routing frames (gain + phase + their own 2-band EQ) sum into each
-output, which then applies the per-speaker trim, its own 2-band EQ, delay and
-FIR correction.}
+output, which then applies the per-speaker trim, polarity, its own 2-band EQ,
+delay and FIR correction.}
 \label{fig:frame}
 \end{figure}
 
@@ -125,12 +126,14 @@ Vertical drag        & Adjust the frame gain. \\
 Alt+click            & Toggle the frame's analyzer trace. \\
 Right-click          & Context menu for the frame. \\
 \midrule
-Click an output      & Select it (opens it in the output editor: trim, EQ,
-                       delay, FIR). \\
+Click an output      & Select it (opens it in the output editor: trim,
+                       polarity, EQ, delay, FIR). \\
 Output: double-click & Toggle that output's FIR on/off. \\
 Output: vertical drag& Adjust the output trim. \\
 Output: alt+click    & Toggle the output-sum analyzer trace. \\
-Output: right-click  & Load / clear the impulse-response (FIR) wav file. \\
+Output: right-click  & Context menu for the output: FIR on/off, load / clear
+                       the impulse-response wav file, phase invert, analyzer
+                       trace, trim reset. \\
 \bottomrule
 \end{tabularx}
 \caption{Mouse interactions in the matrix and output strip. Every page also
@@ -141,11 +144,11 @@ has an info button \textbf{(i)} summarising its controls and shortcuts.}
 \section{Per-output FIR correction and latency compensation}\label{sec:latencycomp}
 Each output can carry one \gterm{fir}{FIR} filter (loaded from a wav impulse response, convolved with the zero-latency WDL engine) to compensate the attached loudspeaker. Linear-phase correction IRs are rendered with their energy centred (see Chapter~\ref{ch:analysis}). In that case, a FIR of length $L$ adds about $L/2$ samples of delay to that output.
 
-SuperMoTo applies automatic \gterm{latencycomp}{inter-output latency compensation}: among the outputs fed by the engaged configuration, the ones with shorter (or no) FIR are delayed so that all outputs stay time-aligned with the longest output FIR. This is what keeps a subwoofer aligned with a \gterm{linphase}{linear-phase}-corrected main. A gold LED on an output cell indicates its alignment is automatic; hover to read the details.
+SuperMoTo applies automatic \gterm{latencycomp}{inter-output latency compensation}: among the outputs fed by the engaged configuration, the ones with shorter (or no) FIR are delayed so that all outputs stay time-aligned with the longest output FIR. This is what keeps a subwoofer aligned with a \gterm{linphase}{linear-phase}-corrected main. A gold LED on an output cell indicates its alignment is automatic (hover to read the details).
 
-\paragraph{Self-absorption.} Before adding that compensation delay, an output that already carries its own manual delay first "spends" up to $L/2$ samples of it paying for its own FIR's latency, instead of that latency being added as extra delay somewhere else. Only the unabsorbed remainder, if any, still needs compensating on the other outputs, so a main that already has slack in its Delay control needs little or no compensation added to the sub at all. For example: a main delayed \SI{25}{\milli\second}
+\paragraph{Self-absorption.} Before adding that compensation delay, an output that already carries its own manual delay first "spends" up to $L/2$ samples of it paying for its own FIR's latency, instead of that latency being added as extra delay somewhere else. Only the unabsorbed remainder, if any, still needs compensating on the other outputs, so a main that already has slack in its Delay control needs little or no compensation added to the sub at all. For example, a main delayed \SI{25}{\milli\second}
 to align with a farther sub, corrected with a 1024-sample linear-phase FIR ($L/2 \approx \SI{11.6}{ms}$ at \SI{44.1}{\kilo\hertz}). Since $25 > 11.6\,\text{ms}$, the main's delay control fully absorbs the FIR's latency (only $25-11.6\approx\SI{13.4}{ms}$ of it is actually applied as a real
-delay) and the sub needs no extra compensation at all, instead of the $\approx\SI{11.6}{ms}$ it would have received otherwise. The relative alignment between main and sub is identical either way: self-absorption only lowers the overall system latency, never changes what you hear. The elay control itself always keeps showing the value you set. Only how much of it becomes an actual delay line changes.
+delay) and the sub needs no extra compensation at all, instead of the $\approx\SI{11.6}{ms}$ it would have received otherwise. The relative alignment between main and sub is identical either way: self-absorption only lowers the overall system latency, never changes what you hear. The delay control itself always keeps showing the value you set. Only how much of it becomes an actual delay line changes.
 
 % TODO(screenshot): close-up of the output strip showing a gold LED on the
 % subwoofer output and the hover tooltip with the compensation amount.
@@ -157,7 +160,7 @@ the tooltip shows the amounts in samples / milliseconds.}
 The analyzer can display any combination of individual matrix frames of output frames, up to 8 simultaneous traces A clickable "avg/peak" badge switches the per-point aggregation. The analyzer also can be controlled with mouse wheel and ctrl-mouse wheel to change the axes limits and zooming.
 
 \section{Host-automatable parameters}
-The matrix settings themselves are deliberately not exposed as host parameters: $6 \times 32 \times 32$ frames with $\sim$10 fields each would swamp any host. They are saved with the plugin state. Only the master controls are real host parameters:
+The matrix settings themselves are deliberately not exposed as host parameters: $6 \times 32 \times 32$ frames with $\sim$10 fields each would swamp any host. They are saved with the plugin state (Section~\ref{sec:projectstate}). Only the master controls are real host parameters:
 
 \begin{table}[ht]
 \centering
@@ -178,5 +181,5 @@ The matrix settings themselves are deliberately not exposed as host parameters: 
 \label{tab:params}
 \end{table}
 
-\section{Compact (collapsed) view}
+\section{Compact (collapsed) view}\label{sec:compact}
 The collapse button (\textbf{$\blacktriangle$}) shrinks the window to a compact "output-strip-only" view, or a very compact view with only switches and gain slider, handy as a permanent monitor controller once the routing is set.

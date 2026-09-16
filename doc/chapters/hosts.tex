@@ -2,7 +2,9 @@
 \chapter{Host (DAW) compatibility}\label{ch:daw}
 %==============================================================================
 
-SuperMoTo is primarily designed and tested in \textbf{REAPER}. To host it usefully a DAW must satisfy two requirements:
+\emph{SuperMoTo is primarily designed and tested in \textbf{REAPER}. The informations given here were not known by the author and were gathered with the help of an AI assistant.}
+
+To host it usefully a DAW must satisfy two requirements:
 
 \begin{enumerate}[nosep]
   \item \textbf{Flexible channel routing}: the ability to feed the plugin's discrete inputs from arbitrary sources and to send its discrete outputs to arbitrary hardware outputs / busses.
@@ -75,3 +77,8 @@ tested.}
 \screenshot{reaper-monitoring-fx.png}{REAPER ``Monitoring FX'' window with
 SuperMoTo inserted, showing the fixed 32-in/32-out pin/channel mapping to the
 hardware outputs.}
+
+\section{What the host project saves}\label{sec:projectstate}
+The plugin state, saved with the host project and in presets, holds what SuperMoTo needs to monitor. That is the six matrix configurations, the matrix size, each output's processing (trim, polarity, EQ, delay and \gterm{fir}{FIR} correction, the impulses included) and the host parameters.
+
+The work in progress in the other views lasts only as long as the plugin instance. That covers the measurements loaded in Analysis and Group analysis with their settings and results, the Calibration and Config tool controls, and the editor's page, window size and matrix selection. Closing and reopening the editor loses none of it, but reopening the project (or removing and adding the plugin again) starts these views afresh. What an analysis has written onto the outputs is part of the plugin state and comes back with the project, and the measurement folders, exported impulses and reports stay on disk to be loaded again. The microphone and SPL calibrations are machine-wide settings, remembered across projects (Section~\ref{sec:miccal}).

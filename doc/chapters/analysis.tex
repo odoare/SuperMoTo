@@ -15,17 +15,36 @@ integration section (crossover, Invert, Mains delay), and the Export buttons.}
 The Analysis view turns the measurements of one loudspeaker into a correction filter. You load the measurement set, check the averaged response on the plot, tune the \gterm{smoothing}{smoothing} and the correction controls until the corrected curve looks right, optionally align a subwoofer, then export the filter and assign it to an output. This chapter describes what each step does and how to set it. The signal processing behind it, with the equations, is in Appendix~\ref{ch:anatheory}.
 
 \section{Loading and estimating the response}\label{sec:welch}
-Click "Load measurements\ldots" and select the files of one loudspeaker, measured at several microphone positions around the listening point. For each file SuperMoTo estimates the loudspeaker-room \gterm{tf}{transfer function} from the stimulus and the microphone signal stored in it (Section~\ref{sec:export}). If a microphone calibration is in effect, it is divided out at this stage (Section~\ref{sec:micsource}), so the curves describe the loudspeaker and the room rather than the microphone.
+Click "Load measurements\ldots" and select the files of one loudspeaker, measured at several microphone positions around the listening point. For each file SuperMoTo estimates the loudspeaker-room \gterm{tf}{transfer function} from the stimulus and the microphone signal stored in it (Section~\ref{sec:export}). If a microphone calibration is in effect, it is divided out at this stage (Section~\ref{sec:micsource}), so the curves describe the loudspeaker and the room and exclude the microphone.
 
 \subsection{Choosing the estimator}
 The "TF" selector chooses how each transfer function is estimated.
 
 \begin{itemize}[nosep]
   \item \textbf{\gterm{welch}{Welch}} averages the spectra of many overlapping segments of the recording. It works with any stimulus and is always available.
-  \item \textbf{Sweep (Farina)} deconvolves a logarithmic sweep. It is offered, and selected automatically, as soon as the loaded folder's \texttt{measurement.xml} records the sweep's parameters (Section~\ref{sec:manifest}). It recovers the whole band with its true phase from a single sweep, and it moves the harmonic distortion out of the linear response instead of leaving it folded in, which gives a cleaner estimate.
+  \item \textbf{Sweep (Farina)} deconvolves a logarithmic sweep. It is offered, and selected automatically, as soon as the loaded folder's \texttt{measurement.xml} records the sweep's parameters (Section~\ref{sec:manifest}). It estimates the whole band from a single sweep rather than from an average of segments, and it moves the harmonic distortion out of the linear response instead of leaving it folded in, which gives a cleaner estimate.
 \end{itemize}
 
-\noindent Everything after the estimate, from averaging to export, is identical for both.
+\noindent Both give magnitude and phase, and everything after the estimate, from averaging to export, is identical for both.
+
+\subsection{Microphone calibration}\label{sec:micsource}
+The microphone's own response is divided out of each measured transfer function as soon as it is estimated, so the curves describe the loudspeaker and the room alone. Section~\ref{sec:miccal} covers the calibration file itself and Section~\ref{sec:micchoice} which orientation to use. At each frequency bin the measured response is multiplied by the inverse of the microphone curve,
+\begin{equation}
+  H_{\text{corr}}(f) = H_{\text{meas}}(f)\;
+      10^{-c_{\mathrm{dB}}(f)/20}\; e^{-j\,c_{\phi}(f)},
+  \label{eq:miccal}
+\end{equation}
+where $c_{\mathrm{dB}}$ and $c_{\phi}$ are the calibration magnitude and phase, interpolated in log-frequency and held flat (at the endpoint value) outside the file's range. When the file has no phase column, $c_{\phi}\equiv 0$ and only the magnitude is corrected.
+
+The right curve is not always the one currently loaded on the Calibration view, so a source selector chooses which one is divided out.
+
+\begin{itemize}[nosep]
+  \item \textbf{Global mic cal} is the curve loaded on the Calibration view. This is the default and is what you want while the measurements in front of you were made with the microphone you are using now.
+  \item \textbf{Folder mic cal} is the curve embedded in the measurements' own \texttt{measurement.xml} (Section~\ref{sec:manifest}). Offered only when the loaded set actually carries one.
+  \item \textbf{No mic cal} analyses the raw measurements, with no microphone correction at all. Useful to see how much the calibration is doing, or when you suspect the calibration file itself.
+\end{itemize}
+
+\noindent When a loaded set carries an embedded curve, "Folder" is selected automatically. Measurements made a year ago with a different microphone are then analysed with that microphone's calibration, although that can be overridden. The name of the curve in effect is shown next to the selector (\textit{Mic cal: \ldots}) as a reminder. Because the captures stay raw, changing the source re-analyses the loaded set immediately, with no need to measure again.
 
 \subsection{The Welch window}
 The "Welch window" sets the length of the analysis segments, from 16384 to 262144 samples, 65536 by default. A longer window gives a finer frequency resolution, about \SI{0.67}{\hertz} at \SI{44.1}{\kilo\hertz} with the default, which is what resolves low-frequency \gterm{roommode}{room modes}. A shorter window cuts the same recording into more segments to average, which lowers the noise of the estimate. With the swept-sine estimator the window also sets how much of the deconvolved response is kept, and a window too large for the sweep makes the analysis fall back to Welch (Section~\ref{sec:sweep}).
@@ -52,14 +71,16 @@ The sweep method needs the sweep's parameters, which SuperMoTo reads from the me
 
 \noindent The fallback is per file and silent. A set that mixes sweep and noise runs still analyses, each file by whichever estimator applies to it. Welch remains the right, and only, choice for a noise stimulus, and stays selectable for a sweep recording if you want to compare the two.
 
-\section{What the plot shows}
+\section{The plot component}
+
+The plot shows:
 \begin{itemize}[nosep]
-  \item the \textbf{individual} smoothed \gterm{tf}{transfer functions}, one per position (thin lines);
-  \item their complex \textbf{average} (thick line);
-  \item the proposed \textbf{correction};
-  \item the \textbf{corrected response}, the average with the correction applied;
-  \item the \textbf{subwoofer} response, when a subwoofer set is loaded (Section~\ref{sec:subalign});
-  \item the \textbf{harmonic-distortion} magnitudes H2\ldots{}H5, with the swept-sine estimator only.
+  \item the individual smoothed \gterm{tf}{transfer functions}, one per position (thin lines);
+  \item their complex average (thick line);
+  \item the proposed correction;
+  \item the predicted corrected response, the average with the correction applied;
+  \item the subwoofer response, when a subwoofer set is loaded (Section~\ref{sec:subalign});
+  \item the harmonic-distortion magnitudes H2\ldots{}H5, with the swept-sine estimator only.
 \end{itemize}
 
 \noindent By default, magnitudes are normalised to the \SIrange{200}{2000}{\hertz} mean of the average, so \SI{0}{\dB} is the mid-band level, independent of the absolute measurement gain. Phase is shown as principal value with the propagation delay already removed. The correction's phase follows the "Phase" setting, so with "Min phase" selected it shows the phase the exported filter will actually have. Two selectors change what the panel displays.
@@ -68,9 +89,9 @@ The sweep method needs the sweep's parameters, which SuperMoTo reads from the me
 The "Level" selector sets the vertical reference of the measured curves. It is a display choice only. The correction is designed from the same data either way, and the correction curve itself is always shown in absolute \si{\dB}, since it is a gain and has no reference to choose.
 
 \begin{itemize}[nosep]
-  \item \textbf{Normalized} is the default described above, with \SI{0}{\dB} at the \SIrange{200}{2000}{\hertz} mean. Best for judging shape, and the only sensible choice when comparing speakers measured at different gains.
-  \item \textbf{Absolute dB} shows the recorded level per unit of stimulus level, with no normalisation. Use it to compare the actual sensitivity of two speakers, or to see how much level a correction is giving away.
-  \item \textbf{dB SPL} shows the estimated sound pressure during the measurement. This needs both an SPL calibration and the run's stimulus level, so it is offered only when the folder's manifest supplies them (Section~\ref{sec:manifest}), and greys out otherwise. It is exact for a sweep run and approximate for noise, the stimulus level being defined for a sine.
+  \item "Normalized" is the default described above, with \SI{0}{\dB} at the \SIrange{200}{2000}{\hertz} mean. Best for judging shape, and the only sensible choice when comparing speakers measured at different gains.
+  \item "Absolute dB" shows the recorded level per unit of stimulus level, with no normalisation. Use it to compare the actual sensitivity of two speakers, or to see how much level a correction is giving away.
+  \item "dB SPL" shows the estimated sound pressure during the measurement. This needs both an SPL calibration and the run's stimulus level, so it is offered only when the folder's manifest supplies them (Section~\ref{sec:manifest}), and greys out otherwise. It is exact for a sweep run and approximate for noise, the stimulus level being defined for a sine.
 \end{itemize}
 
 \subsection{Frequency response or impulse response}\label{sec:irview}
@@ -144,11 +165,7 @@ The correction compensates both magnitude and phase. It starts from the exact in
 \addlegendentry{corrected response}
 \end{axis}
 \end{tikzpicture}
-\caption{Schematic of the correction principle: the correction (gold, dashed)
-is the regularised inverse of the smoothed measured average (blue); applying
-it yields an approximately flat corrected response (green). The boost ceiling
-prevents the correction from fully inverting deep notches; the low-frequency
-slope rolls the correction off below the target corner. \emph{This plot is
+\caption{Schematic of the correction principle: the correction (gold, dashed) is the regularised inverse of the smoothed measured average (blue); applying it yields an approximately flat corrected response (green). The boost ceiling prevents the correction from fully inverting deep notches; the low-frequency slope rolls the correction off below the target corner. \emph{This plot is
 illustrative, not real measurement data.}}
 \label{fig:correction}
 \end{figure}
@@ -161,21 +178,21 @@ Where a main and a subwoofer overlap around the \gterm{crossover}{crossover}, th
   \item Load the main's measurement set as usual.
   \item Click "Load sub measurements\ldots" and select the subwoofer set, measured at the same positions and loaded in the same order as the main's. Each subwoofer measurement is paired with the main measurement at the same position, which preserves their relative timing (Section~\ref{sec:thsubalign}).
   \item Set the "Crossover" to the crossover frequency of the system, \SI{80}{\hertz} by default. Below it the main's phase is steered onto the subwoofer's, and the steering is released over the octave above, so the main keeps its own flat-phase correction in its passband.
-  \item Tick "Invert sub" if the subwoofer is wired, or behaves, out of \gterm{polarity}{polarity}.
+  \item Tick "Invert sub" if the subwoofer is wired, or behaves, out of \gterm{polarity}{polarity}. The design then assumes an inverted subwoofer, so also turn on "Phase inv." on the subwoofer's output (Section~\ref{sec:outputchain}). This pane does not know which output that is and leaves it to you.
   \item Tune the "Mains delay", described below, and export.
 \end{enumerate}
 
 \subsection{The Mains delay control}\label{sec:timealign}
 The subwoofer usually lags the mains by several milliseconds, its own \gterm{groupdelay}{group delay} added to any difference in path or processing latency. Folding all of that into the phase correction would demand a long, low-frequency-heavy \gterm{fir}{FIR}. Instead the "Mains delay" slider, \SI{-40}{} to \SI{40}{\milli\second}, declares a bulk delay that you apply to the main output(s) with the per-output delays in the matrix, and the correction only carries the residual. A positive value delays the main(s) and a negative one delays the subwoofer. When it matches the real offset, the corrected main's phase is already flat through the crossover, which gives a short, well-behaved FIR. The corrected-phase curve visibly flattens as you approach the right value.
 
-On loading the subwoofer set, SuperMoTo estimates the offset from the slope of the subwoofer's phase around the crossover and shows it as a recommendation. It is not applied automatically, because the value is a promise that the matching delay will be set in the matrix. You opt in by moving the slider, and the on-screen message then states the exact delay to dial in, and on which output. Appendix~\ref{ch:delays} explains why the phase slope, rather than the arrival time, is the right measure for a subwoofer.
+On loading the subwoofer set, SuperMoTo estimates the offset from the slope of the subwoofer's phase around the crossover and shows it as a recommendation. It is not applied automatically. You have to move the slider, and the on-screen message then states the exact delay to dial in, and on which output. Appendix~\ref{ch:delays} explains why the phase slope is the right measure for a subwoofer,  not the arrival time.
 
 \paragraph{Applying it with the FIR.} To skip the manual matrix step, tick "Apply bulk delay". "Export correction IR" then writes the delay onto the assigned output at the same time it loads the FIR, so the bulk delay and the residual correction land together. Output delays cannot be negative, so a negative value is clamped to zero, and in that case you delay the subwoofer's output by hand. This is the per-speaker measured route of Section~\ref{sec:ambisonics}. Each main's exported delay equals its path-length term, so all mains, and the subwoofer, arrive together at the centre.
 
 The alignment only exists in the \gterm{linphase}{linear-phase} rendering. With "Min phase" selected the exported filter carries no phase steering, and "Crossover", "Invert sub" and "Mains delay" have no effect on it (Section~\ref{sec:render}).
 
 \section{Phase type and latency}\label{sec:render}
-Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} of the chosen "\gterm{fir}{FIR} length", from 256 to 65536 samples, 4096 by default. Longer filters reach lower frequencies, at the cost of more latency in linear phase. The "Phase" selector chooses how the correction is rendered, while the measured-response export is always linear phase.
+Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} of the chosen "\gterm{fir}{FIR} length", from 256 to 65536 samples, 4096 by default. Longer filters reach lower frequencies, at the cost of more latency in linear phase. The "Phase" selector chooses how the correction is rendered:
 
 \begin{itemize}[nosep]
   \item \textbf{Linear phase}, the default, keeps the full correction, magnitude and phase, including the subwoofer alignment. Its energy is centred in the filter, which adds a latency of half the FIR length on that output. The matrix's \gterm{latencycomp}{inter-output latency compensation} absorbs it automatically so all outputs stay time-aligned (Chapter~\ref{ch:matrix}).
