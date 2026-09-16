@@ -456,9 +456,7 @@
     (Part 4, use case E, the test list) and tooltips (`grp::runs`, and
     `grp::loadFolder`, which still named the readme as the source).*
 
-## To do
-
-- [ ] When closed and reopened, the plugin editor looses all its state. If we were working on an analysis or a group analysis for instance, we loose all our current work. The state of the plugin should be kept outside the plugin editor.
+- [x] When closed and reopened, the plugin editor looses all its state. If we were working on an analysis or a group analysis for instance, we loose all our current work. The state of the plugin should be kept outside the plugin editor.
 
     *Plan (2026-09-14), not implemented yet.*
 
@@ -659,4 +657,7 @@
       FxmeTools' `doc/api-changes.md`. The Calibration pane's spectrum uses it
       too (`CalibrationSettings::spectrumView`), which that pane's step had
       missed.*
-    - [ ] *Docs (step 9): what survives closing the editor.*
+    - [x] *Docs (step 9): not needed. Keeping the editor's state is what a
+      user expects of a plugin, so the manual does not describe it.*
+
+## To do
