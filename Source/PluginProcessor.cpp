@@ -115,7 +115,17 @@ void SuperMoToAudioProcessor::changeProgramName (int, const juce::String&) {}
 //==============================================================================
 void SuperMoToAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    preparedBlockSize = juce::jmax (1, samplesPerBlock);
+    // A validating host (auval, and Logic during its plugin scan) may call this
+    // with zero values. Everything below sizes buffers, filter coefficients and
+    // smoothing ramps from them, so stay unprepared instead: processBlock
+    // returns early while preparedBlockSize is 0, and the real call follows.
+    if (sampleRate <= 0.0 || samplesPerBlock <= 0)
+    {
+        preparedBlockSize = 0;
+        return;
+    }
+
+    preparedBlockSize = samplesPerBlock;
     inputCopy.setSize (smt::numChannels, preparedBlockSize);
     engine.prepare (sampleRate, samplesPerBlock);
     engine.updateFirFiles();
