@@ -33,6 +33,7 @@ Licenced under the GNU LGPL Version 3.0
 SPDX-License-Identifier: LGPL-3.0-or-later
 """
 import argparse
+import io
 import os
 import numpy as np
 from scipy.io import wavfile
@@ -113,6 +114,40 @@ def load_set(data, prefix, positions, main_idx, sub_idx):
             subs.append(remove_delay(Hs, d))
         out[name] = dict(H=np.array(mains), S=np.array(subs),
                          d=np.array(dmain), d_sub_own=np.array(dsub))
+    return sr, np.arange(W // 2 + 1) * sr / W, out
+
+
+def load_manifest(data, positions=None):
+    """Read a measurement folder the plugin wrote. Returns the main channel
+    numbers, the subwoofer channel (0 = none) and the position list."""
+    import re
+    xml = io.open(os.path.join(data, 'measurement.xml'), encoding='utf-8').read()
+    sub = int(re.search(r'subChannel="(\d+)"', xml).group(1))
+    npos = int(re.search(r'positions="(\d+)"', xml).group(1))
+    chans = [int(c) for c in re.findall(r'<Channel number="(\d+)"', xml)]
+    mains = [c for c in chans if c != sub]
+    return mains, sub, positions or list(range(1, npos + 1))
+
+
+def load_folder(data, mains, sub, positions):
+    """Per-position transfer functions from a plugin measurement folder, mains
+    with their own delay removed and subwoofers anchored on the main of the
+    same position. File naming is the plugin's: chNN_posPPP.wav, sub_posPPP.wav."""
+    out, sr = {}, None
+    for ch in mains:
+        H_, S_, dm, ds = [], [], [], []
+        for p in positions:
+            sr, m = wavfile.read(os.path.join(data, f'ch{ch:02d}_pos{p:03d}.wav'))
+            _, s_ = wavfile.read(os.path.join(data, f'sub_pos{p:03d}.wav'))
+            Hm = welch_h1(m[:, 0].astype(float), m[:, 1].astype(float))
+            Hs = welch_h1(s_[:, 0].astype(float), s_[:, 1].astype(float))
+            d = ir_peak_delay(Hm)
+            dm.append(d)
+            ds.append(ir_peak_delay(Hs))
+            H_.append(remove_delay(Hm, d))
+            S_.append(remove_delay(Hs, d))
+        out[f'ch{ch:02d}'] = dict(H=np.array(H_), S=np.array(S_),
+                                  d=np.array(dm), d_sub_own=np.array(ds))
     return sr, np.arange(W // 2 + 1) * sr / W, out
 
 
@@ -305,7 +340,7 @@ CONDITIONS = [
 ]
 
 
-def evaluate(d, f, sr, fx, loo):
+def evaluate(d, f, sr, fx, loo, fx_bm=None, sub_gain_db=0.0):
     """Score every condition. With loo=True the correction for position p is
     designed from the other positions only."""
     npos = len(d['H'])
@@ -323,8 +358,10 @@ def evaluate(d, f, sr, fx, loo):
             else:
                 T = group_delay_estimate(Ssm, sr, fx, True)
             C = design(Hsm, Ssm, f, fx, T, inv, kind)
-            M = np.exp(-1j * 2 * np.pi * f * T / 1000.0) * butterworth(np.maximum(f, 1e-6), fx, 'hp') * C * d['H'][p]
-            S = (-1.0 if inv else 1.0) * butterworth(np.maximum(f, 1e-6), fx, 'lp') * d['S'][p]
+            fb = fx_bm or fx
+            M = np.exp(-1j * 2 * np.pi * f * T / 1000.0) * butterworth(np.maximum(f, 1e-6), fb, 'hp') * C * d['H'][p]
+            S = ((-1.0 if inv else 1.0) * 10 ** (sub_gain_db / 20.0)
+                 * butterworth(np.maximum(f, 1e-6), fb, 'lp') * d['S'][p])
             per.append(metrics(M, S, f, fx))
             if p == 0 and kind.startswith('mixed'):
                 A = allpass_term(Ssm, f, fx, T, inv,
@@ -406,14 +443,40 @@ def main():
     ap.add_argument('--sub', type=int, default=3, help='subwoofer file index')
     ap.add_argument('--crossover', type=float, default=85.0)
     ap.add_argument('--figure', default=None, help='write the summation figure here')
+    ap.add_argument('--manifest', action='store_true',
+                    help='read measurement.xml and the plugin file naming instead of --prefix')
+    ap.add_argument('--analysis-low', type=float, default=ANALYSIS_LO)
+    ap.add_argument('--smooth-lo', type=float, default=SMOOTH_LO)
+    ap.add_argument('--smooth-hi', type=float, default=SMOOTH_HI)
+    ap.add_argument('--max-boost', type=float, default=MAX_BOOST_DB)
+    ap.add_argument('--sub-gain', type=float, default=0.0,
+                    help="subwoofer routing level relative to the mains, in dB, "
+                         "as set in the matrix (the dry captures carry neither)")
+    ap.add_argument('--bm-crossover', type=float, default=None,
+                    help='bass-management crossover actually in the matrix, if it '
+                         'differs from the crossover the analysis was run at')
     args = ap.parse_args()
+
+    globals()['ANALYSIS_LO'] = args.analysis_low
+    globals()['SMOOTH_LO'] = args.smooth_lo
+    globals()['SMOOTH_HI'] = args.smooth_hi
+    globals()['MAX_BOOST_DB'] = args.max_boost
 
     positions = [int(p) for p in args.positions.split(',')]
     mains = dict((kv.split('=')[0], int(kv.split('=')[1])) for kv in args.mains.split(','))
     fx = args.crossover
 
     print('loading and estimating transfer functions ...', flush=True)
-    sr, f, sets = load_set(args.data, args.prefix, positions, mains, args.sub)
+    if args.manifest:
+        mn, sb, positions = load_manifest(args.data,
+                                          None if args.positions == '1,2,3,4,5' else positions)
+        print(f'manifest: mains {mn}, sub channel {sb}, {len(positions)} positions')
+        sr, f, sets = load_folder(args.data, mn, sb, positions)
+    else:
+        sr, f, sets = load_set(args.data, args.prefix, positions, mains, args.sub)
+    print(f'settings: crossover {fx:g} Hz, analysis from {ANALYSIS_LO:g} Hz, '
+          f'smoothing {SMOOTH_LO:.3f}/{SMOOTH_HI:.3f} oct, max boost {MAX_BOOST_DB:g} dB, '
+          f'sub routing {args.sub_gain:+g} dB')
     print(f'sample rate {sr} Hz, {len(f)} bins, resolution {sr / W:.2f} Hz')
 
     for name, d in sets.items():
@@ -427,8 +490,10 @@ def main():
               f'(spread {np.ptp(d["d_sub_own"]) / sr * 1000:.1f} ms)')
         print(f'T: crossover-band {tw:.2f} ms (weighted) / {tu:.2f} ms (unweighted), '
               f'arrival difference {tarr:.2f} ms')
-        print_table(evaluate(d, f, sr, fx, loo=False), 'design on all positions')
-        print_table(evaluate(d, f, sr, fx, loo=True), 'leave-one-position-out')
+        print_table(evaluate(d, f, sr, fx, loo=False, fx_bm=args.bm_crossover,
+                             sub_gain_db=args.sub_gain), 'design on all positions')
+        print_table(evaluate(d, f, sr, fx, loo=True, fx_bm=args.bm_crossover,
+                             sub_gain_db=args.sub_gain), 'leave-one-position-out')
 
     print('\n--- estimator stability vs crossover setting (ms) ---')
     print(f'{"fx":>6s} ' + ' '.join(f'{n + " weighted":>14s}{n + " plain":>13s}' for n in sets))
