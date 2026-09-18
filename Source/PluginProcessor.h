@@ -7,24 +7,27 @@
 
     (c) 2023-2026 Olivier Doaré
 
-    Licenced under the GNU Lesser General Public License (LGPL) Version 3.0
-    SPDX-License-Identifier: LGPL-3.0-or-later
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
 
   ------------------------------------------------------------------------------
     This file is part of the SuperMoTo plugin.
 
     SuperMoTo is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Lesser General Public License as published by
+    it under the terms of the GNU Affero General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
     SuperMoTo is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Lesser General Public License for more details.
+    GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Lesser General Public License
+    You should have received a copy of the GNU Affero General Public License
     along with SuperMoTo. If not, see <https://www.gnu.org/licenses/>.
+
+    Alternatively, commercial terms are available from the author for
+    holders of a commercial JUCE licence: see LICENSE.md.
   ------------------------------------------------------------------------------
 */
 

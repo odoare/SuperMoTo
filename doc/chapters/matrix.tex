@@ -61,7 +61,7 @@ Each output is the chain applied to the summed signal of all active frames feedi
   \item \textbf{Trim} (output level, dB);
   \item \textbf{Phase invert}, the same flip as a frame's but applied to everything the output plays;
   \item a \textbf{2-band EQ}: each band can be lowpass, highpass, bandpass or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in series. This is where the bass-management \gterm{crossover}{crossover} lives (a highpass on a main, a lowpass on the sub);
-  \item a \textbf{delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second}, fractional (sub-sample), for \textbf{time-aligning} the speaker;
+  \item a \textbf{delay}, \SI{0}{\milli\second} to \SI{100}{\milli\second}, applied to the nearest whole sample (\SI{23}{\micro\second}, or \SI{8}{\milli\metre} of path, at \SI{44.1}{\kilo\hertz}), for \textbf{time-aligning} the speaker;
   \item one \textbf{FIR correction} filter (Section~\ref{sec:render}), loaded from a wav \gterm{ir}{impulse response};
   \item a \textbf{vu-meter} and an \textbf{analyzer} checkbox.
 \end{itemize}

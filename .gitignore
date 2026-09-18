@@ -7,4 +7,10 @@ doc/**/*.out
 doc/**/*.fdb_latexmk
 doc/**/*.fls
 doc/**/*.pdf
+!doc/SuperMoTo.pdf
+!doc/paper.pdf
 doc/**/*.synctex.gz
+
+# Python bytecode from the doc/experiments scripts
+__pycache__/
+*.py[cod]

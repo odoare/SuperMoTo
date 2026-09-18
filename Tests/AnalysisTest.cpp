@@ -11,6 +11,11 @@
       - the exported impulse response actually applies that correction.
 
     Run: build target SuperMoToTests and execute it; exits 0 on success.
+
+    Author: Olivier Doaré, github.com/odoare
+    (c) 2023-2026 Olivier Doaré
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
   ------------------------------------------------------------------------------
 */
 

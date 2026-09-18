@@ -18,4 +18,25 @@ cmake --build build -j
 The build produces VST3, AU and Standalone formats, all with a fixed 32 in/32 out discrete bus. The active matrix size, 2 in / 8 out by default, is independent of the bus and set with the plugin's own "Inputs" and "Outputs" selectors. Continuous-integration builds for Linux, macOS (universal) and Windows are provided by the GitHub Actions workflow \texttt{.github/workflows/release.yml}, triggered by pushing a version tag (\texttt{v\textit{X.Y.Z}}).
 
 \section{License}
-LGPL-3.0-or-later. \textcopyright{} 2023-2026 Olivier Doaré.
+SuperMoTo is distributed under the GNU Affero General Public License version~3
+or later, or under commercial terms from the author for holders of a commercial
+JUCE licence:
+\begin{verbatim}
+SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
+\end{verbatim}
+JUCE~8 is itself dual-licensed (AGPLv3, or a commercial JUCE licence) and the
+plugin mirrors that shape: whichever route you are already on for JUCE, the same
+route works here. A commercial grant from the author covers this code only and is
+not a JUCE licence, which must be obtained separately from Raw Material Software.
+
+A few parts are framework-free and stay under the GNU Lesser General Public
+License version~3 or later, so they can be used without JUCE: the Ambisonics
+decoding helper (\texttt{Source/Dsp/AmbisonicsDecode.h}), the microphone
+calibration script (\texttt{Tools/mic\_cal.py}), this manual and the paper. The
+shared FX-Mechanics code in the \texttt{lib/FxmeTools} submodule is split the same
+way, its framework-free \texttt{core/} half being LGPL as well, and the WDL
+convolution engine it carries is zlib-licensed (Cockos Incorporated). The
+repository's \texttt{LICENSE.md} states which licence applies to which file, and
+every file names its own in an SPDX header.
+
+\textcopyright{} 2023-2026 Olivier Doaré.

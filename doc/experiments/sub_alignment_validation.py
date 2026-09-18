@@ -33,8 +33,10 @@ Licenced under the GNU LGPL Version 3.0
 SPDX-License-Identifier: LGPL-3.0-or-later
 """
 import argparse
+import html
 import io
 import os
+import re
 import numpy as np
 from scipy.io import wavfile
 
@@ -76,9 +78,15 @@ def remove_delay(H, delay, w=W):
     return H * np.exp(1j * 2 * np.pi * np.arange(len(H)) * delay / w)
 
 
-def smooth_var_octave(H, sr, lo=SMOOTH_LO, hi=SMOOTH_HI, w=W):
+def smooth_var_octave(H, sr, lo=None, hi=None, w=W):
     """Moving complex average over a +/- (fraction/2) octave band, the octave
-    fraction log-interpolated between the two anchors."""
+    fraction log-interpolated between the two anchors.
+
+    lo and hi are read from the module globals when omitted rather than taken
+    as default arguments: the command line rebinds those globals, and a default
+    would have been bound once, at def time."""
+    lo = SMOOTH_LO if lo is None else lo
+    hi = SMOOTH_HI if hi is None else hi
     n = len(H)
     pre = np.concatenate([[0], np.cumsum(H)])
     f = np.arange(n) * sr / w
@@ -117,6 +125,34 @@ def load_set(data, prefix, positions, main_idx, sub_idx):
     return sr, np.arange(W // 2 + 1) * sr / W, out
 
 
+def load_mic_cal(data):
+    """The microphone calibration the plugin embedded in `measurement.xml`, as
+    the linear gain to divide the captures by, on the analysis bin grid. The
+    file carries magnitude only, so the correction is magnitude only, which is
+    what fxme::MicCalibration::correctionAt does with it. Returns None when the
+    folder has no calibration."""
+    path = os.path.join(data, 'measurement.xml')
+    if not os.path.exists(path):
+        return None
+    xml = io.open(path, encoding='utf-8', errors='replace').read()
+    m = re.search(r'<MicCalibration[^>]*>(.*?)</MicCalibration>', xml, re.S)
+    if m is None:
+        return None
+    pts = re.findall(r'^\s*([\d.]+)\s+(-?[\d.]+)\s*$', html.unescape(m.group(1)), re.M)
+    if len(pts) < 2:
+        return None
+    return (np.array([float(a) for a, _ in pts]),
+            np.array([float(b) for _, b in pts]))
+
+
+def mic_cal_gain(cal, f):
+    """The calibration sampled on `f`, held flat outside its own range."""
+    if cal is None:
+        return np.ones_like(f)
+    fc, dc = cal
+    return 10.0 ** (np.interp(f, fc, dc, left=dc[0], right=dc[-1]) / 20.0)
+
+
 def load_manifest(data, positions=None):
     """Read a measurement folder the plugin wrote. Returns the main channel
     numbers, the subwoofer channel (0 = none) and the position list."""
@@ -129,11 +165,15 @@ def load_manifest(data, positions=None):
     return mains, sub, positions or list(range(1, npos + 1))
 
 
-def load_folder(data, mains, sub, positions):
+def load_folder(data, mains, sub, positions, mic_cal=True):
     """Per-position transfer functions from a plugin measurement folder, mains
     with their own delay removed and subwoofers anchored on the main of the
-    same position. File naming is the plugin's: chNN_posPPP.wav, sub_posPPP.wav."""
+    same position. File naming is the plugin's: chNN_posPPP.wav, sub_posPPP.wav.
+    The microphone calibration embedded in the folder is divided out, as the
+    plugin's own analysis does, unless mic_cal is False."""
     out, sr = {}, None
+    cal = load_mic_cal(data) if mic_cal else None
+    gain = None
     for ch in mains:
         H_, S_, dm, ds = [], [], [], []
         for p in positions:
@@ -141,6 +181,9 @@ def load_folder(data, mains, sub, positions):
             _, s_ = wavfile.read(os.path.join(data, f'sub_pos{p:03d}.wav'))
             Hm = welch_h1(m[:, 0].astype(float), m[:, 1].astype(float))
             Hs = welch_h1(s_[:, 0].astype(float), s_[:, 1].astype(float))
+            if gain is None:
+                gain = mic_cal_gain(cal, np.arange(W // 2 + 1) * sr / W)
+            Hm, Hs = Hm / gain, Hs / gain
             d = ir_peak_delay(Hm)
             dm.append(d)
             ds.append(ir_peak_delay(Hs))
@@ -182,7 +225,12 @@ def butterworth(f, fc, kind, order=4):
     return H
 
 
-def band_weight(f, lo=ANALYSIS_LO, hi=ANALYSIS_HI):
+def band_weight(f, lo=None, hi=None):
+    """The raised-cosine skirt that fades the correction back to unity outside
+    the analysis band (AnalysisEngine::bandWeight). Globals, not defaults, for
+    the reason given in smooth_var_octave."""
+    lo = ANALYSIS_LO if lo is None else lo
+    hi = ANALYSIS_HI if hi is None else hi
     w = np.ones_like(f)
     below, above = f < lo, f > hi
     d = np.clip(np.log2(np.maximum(f[below], 1e-6) / lo) / 0.5 + 1.0, 0, 1)
@@ -253,17 +301,32 @@ def min_phase(C):
 
 
 def design(Hsm, Ssm, f, fx, T_ms, invert, kind):
-    """kind: none | mag | mixed | mixed_unwrapped"""
+    """kind: none | mag | mixed | mixed_unwrapped
+
+    kind: none | mag | min_export | mixed | mixed_unwrapped
+
+    `mag` drops the alignment and renders the magnitude minimum phase, which is
+    also what the plugin's Phase type switch produces, since the all-pass is
+    unit magnitude. `min_export` keeps the all-pass in the complex correction
+    before taking the magnitude, as the plugin literally does; the two differ
+    only inside the band-edge skirt, where the fade blends towards unity and
+    (1-w) + w c A is therefore not (1-w) + w c in magnitude, and they score the
+    same here to 0.01 dB.
+
+    The fade must come before the cepstrum, as it does in AnalysisEngine: the
+    minimum-phase render works on the magnitude of the finished correction, and
+    rendering before the fade instead moves the score of the magnitude-only
+    rows by about 0.7 dB.
+    """
     if kind == 'none':
         return np.ones_like(Hsm)
     c = base_correction(Hsm, f)
-    if kind == 'mag':
-        c = min_phase(c)
-    else:
+    if kind != 'mag':
         c = c * allpass_term(Ssm, f, fx, T_ms, invert,
-                             'phasor' if kind == 'mixed' else 'unwrapped')
+                             'unwrapped' if kind == 'mixed_unwrapped' else 'phasor')
     w = band_weight(f)
-    return (1 - w) + w * c
+    c = (1 - w) + w * c
+    return min_phase(c) if kind in ('mag', 'min_export') else c
 
 
 def render_ir(C, f, sr, n=16384):
@@ -452,6 +515,9 @@ def main():
     ap.add_argument('--sub-gain', type=float, default=0.0,
                     help="subwoofer routing level relative to the mains, in dB, "
                          "as set in the matrix (the dry captures carry neither)")
+    ap.add_argument('--no-mic-cal', action='store_true',
+                    help='ignore the microphone calibration embedded in the folder '
+                         '(the plugin always applies it)')
     ap.add_argument('--bm-crossover', type=float, default=None,
                     help='bass-management crossover actually in the matrix, if it '
                          'differs from the crossover the analysis was run at')
@@ -471,7 +537,11 @@ def main():
         mn, sb, positions = load_manifest(args.data,
                                           None if args.positions == '1,2,3,4,5' else positions)
         print(f'manifest: mains {mn}, sub channel {sb}, {len(positions)} positions')
-        sr, f, sets = load_folder(args.data, mn, sb, positions)
+        cal = None if args.no_mic_cal else load_mic_cal(args.data)
+        print('mic calibration: ' + ('none' if cal is None else
+                                     f'{len(cal[0])} points, {cal[0][0]:g}-{cal[0][-1]:g} Hz'))
+        sr, f, sets = load_folder(args.data, mn, sb, positions,
+                                  mic_cal=not args.no_mic_cal)
     else:
         sr, f, sets = load_set(args.data, args.prefix, positions, mains, args.sub)
     print(f'settings: crossover {fx:g} Hz, analysis from {ANALYSIS_LO:g} Hz, '

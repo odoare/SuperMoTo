@@ -34,6 +34,11 @@ exact placement.  On the recordings in this folder that scatter reaches 2 dB rms
 between 4 and 9 kHz for two takes at the same nominal angle, while octave-band
 values repeat to 0.3 dB.  The default is 1/3 octave; use --smooth 1 for a curve you
 can defend from a single position, and average takes whenever you can.
+
+Author: Olivier Doaré, github.com/odoare
+(c) 2023-2026 Olivier Doaré
+Licenced under the GNU LGPL Version 3.0
+SPDX-License-Identifier: LGPL-3.0-or-later
 """
 
 import argparse

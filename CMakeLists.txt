@@ -206,6 +206,30 @@ juce_generate_juce_header(SuperMoToOutputTests)
 set_target_properties(SuperMoToOutputTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME output COMMAND SuperMoToOutputTests)
 
+# ── Offline test of the per-output fractional time-alignment delay ───────────
+juce_add_console_app(SuperMoToDelayTests PRODUCT_NAME "SuperMoToDelayTests")
+target_sources(SuperMoToDelayTests PRIVATE
+    Tests/FractionalDelayTest.cpp
+    Source/Model/ConfigModel.cpp
+)
+# OutputProcessor reaches fxme::Biquad through JuceHeader.h, so the module has
+# to be attached here as it is for the output test.
+fxmetools_attach(SuperMoToDelayTests)
+target_compile_definitions(SuperMoToDelayTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(SuperMoToDelayTests PRIVATE
+    juce::juce_audio_basics juce::juce_audio_formats juce::juce_audio_processors
+    juce::juce_audio_utils juce::juce_core juce::juce_data_structures juce::juce_dsp
+    juce::juce_events juce::juce_graphics juce::juce_gui_basics
+    juce::juce_recommended_config_flags
+)
+juce_generate_juce_header(SuperMoToDelayTests)
+set_target_properties(SuperMoToDelayTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME delay COMMAND SuperMoToDelayTests)
+
 # ── Offline test of the measurement-folder reader and run helpers ────────────
 # MeasurementFolder needs juce_core only, which is why it lives apart from
 # MeasurementEngine.

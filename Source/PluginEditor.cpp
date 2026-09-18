@@ -7,8 +7,8 @@
 
     (c) 2023-2026 Olivier Doaré
 
-    Licenced under the GNU Lesser General Public License (LGPL) Version 3.0
-    SPDX-License-Identifier: LGPL-3.0-or-later
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
 
   ------------------------------------------------------------------------------
     This file is part of the SuperMoTo plugin.
