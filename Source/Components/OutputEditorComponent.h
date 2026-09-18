@@ -9,8 +9,8 @@
     ConfigModel (these are not host parameters).
 
     Author: Olivier Doaré, github.com/odoare
-    Licenced under the GNU LGPL Version 3.0
-    SPDX-License-Identifier: LGPL-3.0-or-later
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
   ------------------------------------------------------------------------------
 */
 
@@ -92,6 +92,10 @@ public:
         levelSlider.setTooltip (smt::tips::mtx::outTrim);
         initBar (delaySlider, delayLabel, "Delay", 0.0, (double) smt::maxDelayMs, 0.01, SuperMoToTheme::delay);
         delaySlider.setTooltip (smt::tips::mtx::outDelay);
+        // Two decimals whatever the step below turns out to be: the step is a
+        // sample period, which is not a round number of milliseconds.
+        delaySlider.setNumDecimalPlacesToDisplay (2);
+        updateDelayStep();
 
         setOutput (-1);
     }
@@ -173,13 +177,35 @@ private:
         firButton.setToggleState (s.firOn, juce::dontSendNotification);
         spectrumButton.setToggleState (s.spectrum, juce::dontSendNotification);
         levelSlider.setValue (s.gainDb, juce::dontSendNotification);
-        delaySlider.setValue (s.delayMs, juce::dontSendNotification);
+        updateDelayStep();
+        delaySlider.setValue (snapDelayMs (s.delayMs), juce::dontSendNotification);
         clearButton.setEnabled (s.firPath.isNotEmpty());
         bandEditor.setBands (s.bands.data(), (int) s.bands.size());
 
         setControlsEnabled (true);
         resized();
         updating = false;
+    }
+
+    /** The output stage rounds its delay to whole samples (OutputProcessor),
+        so the control steps in whole samples too: every position it can take
+        is one the engine will actually apply. Re-read on each refresh because
+        the host can change the rate under us. */
+    void updateDelayStep()
+    {
+        const double sr = engine.getSampleRate();
+        if (sr > 0.0)
+            delaySlider.setRange (0.0, (double) smt::maxDelayMs, 1000.0 / sr);
+    }
+
+    /** The delay the output stage will really apply, in milliseconds. */
+    double snapDelayMs (double ms) const
+    {
+        const double sr = engine.getSampleRate();
+        if (sr <= 0.0)
+            return ms;
+        return juce::jlimit (0.0, (double) smt::maxDelayMs,
+                             juce::roundToInt (ms * 0.001 * sr) * 1000.0 / sr);
     }
 
     smt::OutputSettings collect() const
@@ -189,7 +215,7 @@ private:
         s.firOn       = firButton.getToggleState();
         s.spectrum    = spectrumButton.getToggleState();
         s.gainDb      = (float) levelSlider.getValue();
-        s.delayMs     = (float) delaySlider.getValue();
+        s.delayMs     = (float) snapDelayMs (delaySlider.getValue());
         s.firPath     = curFirPath;
         bandEditor.collectInto (s.bands.data(), (int) s.bands.size());
         return s;

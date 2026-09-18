@@ -14,8 +14,8 @@
     files are loaded on the message thread via updateFirFiles().
 
     Author: Olivier Doaré, github.com/odoare
-    Licenced under the GNU LGPL Version 3.0
-    SPDX-License-Identifier: LGPL-3.0-or-later
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
   ------------------------------------------------------------------------------
 */
 
@@ -37,6 +37,12 @@ public:
     explicit MatrixEngine (ConfigModel& m) : model (m) {}
 
     void prepare (double sampleRate, int maxBlockSize);
+
+    /** The rate the engine was last prepared at. The editor needs it to quantize
+        the time-alignment delay to whole samples the way OutputProcessor does,
+        so that the number on the control is the number the output applies.
+        Written by prepare() with the audio stopped. */
+    double getSampleRate() const noexcept       { return sr; }
 
     /** Mixes inputs into outputs through every active configuration.
         @param inputs       16 input channel pointers

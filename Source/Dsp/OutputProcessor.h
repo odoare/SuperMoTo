@@ -5,9 +5,19 @@
     Per-output (per-loudspeaker) processing applied after the matrix sum and the
     output trim, and before the FIR correction: a 2-band cascaded IIR EQ
     (lowpass / highpass / bandpass for the bass-management crossover, peaking for
-    correction) and a fractional time-alignment delay. Runs in place on the
+    correction) and a time-alignment delay. Runs in place on the
     output buffer; no allocation on the audio thread. The coefficient math is
     shared with FrameProcessor's own 2-band EQ via BandFilter.h.
+
+    The delay is rounded to a whole number of samples and read straight out of
+    the line. Half a sample is 11 us at 44.1 kHz, 4 mm of path, and a relative
+    error of one sample between two outputs puts its first cancellation notch
+    at fs/2, so it can never comb inside the audio band; what it buys is that
+    a delay is a pure sample shift, identical on every output whatever its
+    length. Interpolating instead colours the treble by where between two
+    samples the delay happens to fall, which measurably differed from output
+    to output; FractionalDelay.h holds the windowed-sinc interpolator that
+    does it properly, kept for a rig that ever needs the resolution back.
 
     The delay line self-absorbs this output's own FIR latency (see
     setFirLatencySamples(), pushed by MatrixEngine::recomputeLatencyComp()):
@@ -19,8 +29,8 @@
     message thread.
 
     Author: Olivier Doaré, github.com/odoare
-    Licenced under the GNU LGPL Version 3.0
-    SPDX-License-Identifier: LGPL-3.0-or-later
+    Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
+    SPDX-License-Identifier: AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
   ------------------------------------------------------------------------------
 */
 
@@ -90,21 +100,19 @@ public:
             }
         }
 
-        if (! applyDelay || delaySamples < 0.5f)
+        if (! applyDelay || delaySamples == 0)
             return;
 
         const int dlSize = (int) delayLine.size();
-        const int di = (int) delaySamples;
-        const float frac = delaySamples - (float) di;
 
         for (int i = 0; i < n; ++i)
         {
             delayLine[(size_t) writePos] = data[i];
 
-            int r0 = writePos - di;   if (r0 < 0) r0 += dlSize;
-            int r1 = r0 - 1;          if (r1 < 0) r1 += dlSize;
-            data[i] = delayLine[(size_t) r0] * (1.0f - frac)
-                    + delayLine[(size_t) r1] * frac;
+            int r = writePos - delaySamples;
+            if (r < 0)
+                r += dlSize;
+            data[i] = delayLine[(size_t) r];
 
             if (++writePos >= dlSize)
                 writePos = 0;
@@ -120,9 +128,18 @@ private:
 
     void updateDelaySamples()
     {
-        const float raw = (float) (settings.delayMs * 0.001 * sr);
-        const float effective = juce::jmax (0.0f, raw - (float) firLatencySamples);
-        delaySamples = juce::jlimit (0.0f, (float) delayLine.size() - 2.0f, effective);
+        // Rounded to the nearest sample. The rounding happens on the user's
+        // delay and the FIR latency comes off afterwards, which is the order
+        // MatrixEngine::recomputeLatencyComp() uses for the same quantity: it
+        // has to be the same integer at both ends or the inter-output
+        // compensation is off by a sample. Rounding first is not a detail --
+        // juce::roundToInt is round-half-to-even, so it does not commute with
+        // subtracting the latency (roundToInt(1284.5) - 17 is 1267, while
+        // roundToInt(1267.5) is 1268).
+        const int userDelay = juce::roundToInt (settings.delayMs * 0.001 * sr);
+        const int effective = juce::jmax (0, userDelay - firLatencySamples);
+        const int room = juce::jmax (0, (int) delayLine.size() - 2);
+        delaySamples = juce::jlimit (0, room, effective);
     }
 
     double sr = 44100.0;
@@ -134,7 +151,7 @@ private:
 
     std::vector<float> delayLine;
     int writePos = 0;
-    float delaySamples = 0.0f;
+    int delaySamples = 0;       // whole samples, rounded from settings.delayMs
     int firLatencySamples = 0;
 };
 
