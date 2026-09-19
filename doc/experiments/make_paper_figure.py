@@ -5,7 +5,7 @@ Panel (a) : the correction the system really applied, against the one that was
             designed, for both phase renderings of the same analysis.
 Panel (b) : the measured system through the crossover against the prediction
             of the offline model, for the three configurations that were run.
-Panel (c) : summation efficiency through the crossover for four alignment
+Panel (c) : summation efficiency through the crossover for five alignment
             strategies, predicted from the dry measurements.
 
     python3 make_paper_figure.py --dry DIR --system DIR [--out ../figures/validation.png]
@@ -51,6 +51,7 @@ FX = 85.0            # crossover, in the analysis and in the matrix alike
 FX_BM = 85.0         # bass-management crossover, 4th order, from the matrix
 SUB_ROUTE_DB = -4.8  # subwoofer routing level relative to the mains
 T_REPORT = {1: 29.73, 2: 29.41}
+FIR_TAPS = 0         # the length the measured run's filter was rendered at
 RUNS = {}            # display name -> the folder holding that system run
 EXPORTS = {}         # display name -> the folder holding that export
 
@@ -124,6 +125,39 @@ def dry_index(folder):
     return out
 
 
+def position_map(spec):
+    """'sysname=dryname,...' -> the dry capture each system position pairs with.
+
+    Positions are matched by the comment each run carries, which only works
+    while the two sessions name them the same way. They have not always: a
+    campaign whose '1' is 8 cm above the dry session's '1' (which that session
+    called 'h1') pairs four of six positions wrongly and silently. Pass the
+    correspondence here when the names have drifted; the geometry file that
+    comes with a campaign is what settles it, and the arrival times and the
+    room responses both confirm it."""
+    out = {}
+    for pair in spec.split(','):
+        if pair.strip():
+            sysname, dryname = pair.split('=')
+            out[sysname.strip()] = dryname.strip()
+    return out
+
+
+def paired(meas, idx, spec):
+    """The system positions that have a dry counterpart, and which one.
+
+    A non-empty `spec` is the whole correspondence: a system position it does
+    not name has no dry capture at all and is left out of everything the model
+    touches. It still counts for what is measured directly. Campaign 6 is why:
+    its positions 2 and 3 are 8 cm above anything the dry session visited, and
+    pairing them with the captures of the same name would have compared two
+    different places in the room."""
+    pos = position_map(spec)
+    if pos:
+        return {p: idx[d] for p, d in pos.items() if p in meas and d in idx}
+    return {p: idx[p] for p in meas if p in idx}
+
+
 def tf(path):
     _, d = wavfile.read(path)
     return welch_h1(d[:, 0].astype(float), d[:, 1].astype(float))
@@ -159,14 +193,24 @@ class Main:
             self.meas[name] = {p: tf(os.path.join(folder, files[p][si - 1])) / cal
                                for p in files}
 
+        self.positions = sorted(self.meas['linear'], key=lambda z: (len(z), z))
+        pairs = paired(self.meas['linear'], dry_index(a.dry), a.positions)
+        self.shared = [p for p in self.positions if p in pairs]
+        # Every dry position, and the subset the two sessions share. The
+        # strategy comparison is a property of the design set and uses all of
+        # them; anything checked against a measured run uses the shared ones.
         idx = dry_index(a.dry)
-        self.shared = [p for p in self.meas['linear'] if p in idx]
-        self.dry = {}
-        for p in self.shared:
-            A = tf(os.path.join(a.dry, f'ch{CH_OF[si]:02d}_pos{idx[p]:03d}.wav'))
-            B = tf(os.path.join(a.dry, f'sub_pos{idx[p]:03d}.wav'))
+        self.dry_all, self.arrivals = {}, {}
+        for name, k in idx.items():
+            A = tf(os.path.join(a.dry, f'ch{CH_OF[si]:02d}_pos{k:03d}.wav'))
+            B = tf(os.path.join(a.dry, f'sub_pos{k:03d}.wav'))
             d = ir_peak_delay(A)
-            self.dry[p] = (remove_delay(A, d) / cal, remove_delay(B, d) / cal)
+            self.dry_all[name] = (remove_delay(A, d) / cal, remove_delay(B, d) / cal)
+            # Kept unanchored: the arrival-time estimator is the difference of
+            # the two peaks, and the anchoring would take it out.
+            self.arrivals[name] = (d, ir_peak_delay(B))
+        bynum = {k: name for name, k in idx.items()}
+        self.dry = {p: self.dry_all[bynum[pairs[p]]] for p in self.shared}
 
     def predict(self, name, p, hp, lp, g, invert=False):
         """The system this model expects at position p, from~(eq:predsum)."""
@@ -232,17 +276,24 @@ def panel_b(ax, m, f, hp, lp, g, sm, nz):
 
 
 def panel_c(ax, m, f, hp, lp, g):
-    """Summation efficiency through the crossover, per strategy."""
+    """Summation efficiency through the crossover, per strategy. Over every
+    position of the design set, as Table 1 is: it needs no measured run."""
     b = (f >= 35) & (f <= 400)
-    Hm = np.array([m.dry[p][0] for p in m.shared])
-    Hs = np.array([m.dry[p][1] for p in m.shared])
+    Hm = np.array([v[0] for v in m.dry_all.values()])
+    Hs = np.array([v[1] for v in m.dry_all.values()])
     Hsm = smooth_var_octave(Hm.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
     Ssm = smooth_var_octave(Hs.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+    # The two delay estimators of Table 1, both of them: they can be more than
+    # a millisecond apart, and which one a magnitude-only correction is given
+    # is worth most of a decibel, so plotting only one of the two would make
+    # the all-pass look better or worse than it is.
     T = group_delay_estimate(Ssm, SR, FX, True)
+    Ta = float(np.mean([sub - main for main, sub in m.arrivals.values()])) * 1000.0 / SR
     for lbl, kind, Tc, col in [
             ('no correction', 'none', 0.0, 'tab:gray'),
             ('magnitude only', 'mag', 0.0, 'tab:orange'),
-            ('magnitude + delay', 'mag', T, 'tab:green'),
+            ('magnitude + crossover-band delay', 'mag', T, 'tab:green'),
+            ('magnitude + arrival-time delay', 'mag', Ta, 'tab:purple'),
             ('all-pass alignment', 'mixed', T, 'tab:blue')]:
         Cc = design(Hsm, Ssm, f, FX, Tc, False, kind)
         eff = []
@@ -281,7 +332,7 @@ def panel_length(ax, m, f, hp, lp, g, sm, nz):
     T = group_delay_estimate(Ssm, SR, FX, True)
     C = design(Hsm, Ssm, f, FX, T, False, 'mixed')
     meas = np.mean([nz(sm(m.meas['linear'][p]), 500, 2000) for p in m.shared], axis=0)
-    ax.semilogx(f[b], meas[b], color='k', lw=2.2, label='measured, 2048')
+    ax.semilogx(f[b], meas[b], color='k', lw=2.2, label=f'measured, {FIR_TAPS}')
     for n, col in zip(LENGTHS, LENGTH_COLOURS):
         Cz = rendered(C, f, n)
         cur = np.mean([nz(sm(np.exp(-2j * np.pi * f * T_REPORT[m.si] / 1000.0)
@@ -329,6 +380,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry', required=True, help='folder with the per-loudspeaker captures')
     ap.add_argument('--system', required=True, help='folder with the system runs and the exports')
+    ap.add_argument('--positions', default='',
+                    help="how the system positions pair with the dry ones when the two "
+                         "sessions name them differently, e.g. '1=h1,b1=1'; by default "
+                         "they are matched by name")
     ap.add_argument('--check-polarity', action='store_true',
                     help='fit each run\'s subwoofer polarity against the dry captures')
     ap.add_argument('--sub-gain', default='fit',
@@ -341,12 +396,13 @@ def main():
                     help='where to write the filter-length figure')
     a = ap.parse_args()
 
-    global FX, FX_BM, SUB_ROUTE_DB, T_REPORT, RUNS, EXPORTS
+    global FX, FX_BM, SUB_ROUTE_DB, T_REPORT, RUNS, EXPORTS, FIR_TAPS
     RUNS, EXPORTS = discover(a.system)
     rep = read_report(EXPORTS['linear'])
     FX = rep['crossover']
     FX_BM = a.bm_crossover if a.bm_crossover is not None else FX
     T_REPORT = rep['delays']
+    FIR_TAPS = rep['fir_length']
     V.ANALYSIS_LO = rep['analysis_lo']
     V.SMOOTH_LO, V.SMOOTH_HI = 1 / 6, 1 / 3
     V.MAX_BOOST_DB = rep['max_boost']
@@ -406,12 +462,18 @@ def main():
         x.set_xlabel('frequency (Hz)')
         x.grid(True, which='both', alpha=.25)
         x.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax[0, 0].legend(fontsize=9, loc='lower right')
-    ax[0, 1].legend(fontsize=9, loc='lower center', ncol=3,
-                    columnspacing=0.8, handlelength=1.4,
-                    title='measured (solid) / predicted (dashed)', title_fontsize=8)
-    ax[0, 2].legend(fontsize=9, loc='lower right')
     fig.tight_layout()
+    # One legend under each column rather than inside the panels: at this size
+    # there is no corner of any of them that some curve does not cross.
+    for col, (ncol, title) in enumerate([(1, None),
+                                         (1, 'measured (solid) / predicted (dashed)'),
+                                         (1, None)]):
+        h, l = ax[0, col].get_legend_handles_labels()
+        box = ax[1, col].get_position()
+        fig.legend(h, l, fontsize=8.5, loc='upper center', ncol=ncol,
+                   bbox_to_anchor=((box.x0 + box.x1) / 2, 0.015),
+                   bbox_transform=fig.transFigure, columnspacing=1.0,
+                   handlelength=1.6, frameon=False, title=title, title_fontsize=8)
     fig.savefig(a.out, dpi=220, bbox_inches='tight')
     print('wrote', a.out)
     figure_length(a, f, hp, lp, g, cal, sm, nz, a.out_length)
@@ -456,7 +518,8 @@ def report(a, f, hp, lp, g, cal, sm, nz):
                 e.append(np.sqrt(np.mean((q - mm)[band_lo] ** 2)))
                 pv.append(10 * np.log10(np.mean(10 ** (q[xband] / 10))))
                 mv.append(10 * np.log10(np.mean(10 ** (mm[xband] / 10))))
-            band[name] = np.array(mv)
+            band[name] = np.array([10 * np.log10(np.mean(10 ** (nz(sm(m.meas[name][q]), 500, 2000)[xband] / 10)))
+                                   for q in m.positions])
             print(f'  main {si} {name:8s}: model vs measured {np.mean(e):.2f} dB RMS over '
                   f'35-250 Hz (worst {max(e):.2f}); crossover band predicted '
                   f'{np.mean(pv):+.2f} dB, measured {np.mean(mv):+.2f} dB')

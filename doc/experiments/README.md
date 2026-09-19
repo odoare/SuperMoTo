@@ -30,8 +30,8 @@ On a measurement folder the plugin wrote, `--manifest` reads `measurement.xml`
 for the channels, the subwoofer, the positions and the microphone calibration:
 
     python3 sub_alignment_validation.py --manifest \
-        --data ~/Documents/supermoto/MeasurementCampaign/Mirage_panneaux_paper \
-        --crossover 85 --sub-gain -4.8 --analysis-low 85 \
+        --data ~/Documents/supermoto/supermoto_paper6/Mirage_panneaux_paper \
+        --crossover 80 --sub-gain -7.4 --analysis-low 40 \
         --smooth-lo 0.1667 --smooth-hi 0.3333 --max-boost 10
 
 The design settings should match the group analysis that produced the
@@ -55,13 +55,27 @@ channel 2 the microphone). Needs numpy, scipy and, for `--figure`, matplotlib.
 prints every number the paper's Section "Validation" quotes:
 
     python3 make_paper_figure.py --check-polarity \
-        --dry    ~/Documents/supermoto/MeasurementCampaign/Mirage_panneaux_paper \
-        --system ~/Documents/supermoto/supermoto_paper4
+        --positions "1=h1,4=h4,5=h5,6=h6,b6=6,b1=1" \
+        --dry    ~/Documents/supermoto/supermoto_paper6/Mirage_panneaux_paper \
+        --system ~/Documents/supermoto/supermoto_paper6
 
 `--dry` is the folder the group analysis was run on; `--system` the folder
-holding the three system runs and the two exports. Positions are matched
-between the two sessions by the comment each run carries, so they need not be
-named in the same order or be the same in number.
+holding the three system runs and the two exports; everything else -- the
+crossover, the analysis edge, the max boost, the FIR length and the delay each
+main was given -- is read from the group report next to the exports, and
+`--sub-gain fit` (the default) recovers the subwoofer's routing level from the
+no-FIR run.
+
+**`--positions` matters.** Without it the two sessions are paired by the
+comment each run carries, which is right only while they name the positions the
+same way. They have not always: `supermoto_paper6` calls "1" a point 8 cm above
+the one the design session called "1" (and called "h1"), so pairing by name
+puts four of the six shared positions in the wrong place, silently. The
+campaign's geometry file is what settles it. The data confirms it: arrival
+times fix the horizontal coordinate (neighbours are 15-30 cm and so tens of
+samples apart) but cannot see 8 cm of height, which is a quarter of a sample;
+the room response above 200 Hz can, and matching each system capture against
+every dry candidate picks height and coordinate together.
 
 ## Following the plugin exactly
 
@@ -122,100 +136,92 @@ uncorrected system; the orange one a magnitude-only correction, which deepens
 the crossover cancellation rather than curing it; the blue one is the all-pass
 alignment, flat across the region.
 
-## Result on the September 2026 campaign (10 positions, main L)
+## Result on the September 2026 design set (10 positions, main L)
 
 Leave-one-position-out, so none of these numbers are fitted to what they are
-scored on. This is the set the paper reports:
+scored on, at the settings `supermoto_paper6` was run with: crossover 80 Hz,
+analysis from 40 Hz, subwoofer 7.4 dB below the mains. This is the set the
+paper reports.
 
 | strategy                        | eff dB | worst | \|dphi\| | notch  |
 |---------------------------------|--------|-------|----------|--------|
-| no correction, no alignment     | -1.27  | -1.97 | 79 deg   | -5.5   |
-| magnitude only (min-phase)      | -1.79  | -2.46 | 81 deg   | -9.9   |
-| mag + arrival-time delay        | -0.45  | -0.69 | 42 deg   | -1.4   |
-| mag + crossover-band delay      | -0.76  | -1.23 | 52 deg   | -1.8   |
-| **all-pass alignment**          | **-0.39** | **-0.94** | **42 deg** | **-1.7** |
-| all-pass, subwoofer inverted    | -1.05  | -1.33 | 77 deg   | -4.9   |
-| all-pass, no bulk delay         | -0.58  | -1.38 | 46 deg   | -2.3   |
-| ablation: unwrapped-angle blend | -0.39  | -0.95 | 42 deg   | -1.7   |
-| ablation: unwrapped, no delay   | -0.63  | -1.45 | 51 deg   | -2.5   |
+| no correction, no alignment     | -0.89  | -1.44 | 74 deg   | -3.4   |
+| magnitude only (min-phase)      | -1.50  | -2.11 | 85 deg   | -6.5   |
+| mag + arrival-time delay        | -0.41  | -0.56 | 41 deg   | -1.2   |
+| mag + crossover-band delay      | -1.21  | -2.21 | 67 deg   | -3.2   |
+| **all-pass alignment**          | **-0.45** | **-1.13** | **41 deg** | **-1.3** |
+| all-pass, subwoofer inverted    | -0.34  | -0.86 | 41 deg   | -1.5   |
+| all-pass, no bulk delay         | -0.49  | -1.17 | 49 deg   | -1.8   |
+| ablation: unwrapped-angle blend | -0.46  | -1.15 | 41 deg   | -1.3   |
+| ablation: unwrapped, no delay   | -1.47  | -2.31 | 76 deg   | -6.6   |
 
-Run at the campaign's own settings, analysis range from 85 Hz. See "The
-analysis band edge" below: that edge is why the inverted row is as bad as it
-is.
-
-Main R gives the same ordering within 0.2 dB.
+Main R gives the same ordering within 0.05 dB.
 
 Points the table makes:
 
 - Correcting the main's magnitude alone makes the summation *worse* than no
-  correction at all (-1.79 against -1.27 dB), because a minimum-phase
+  correction at all (-1.50 against -0.89 dB), because a minimum-phase
   magnitude correction moves the main's phase through the crossover region
   without regard for the subwoofer.
-- Most of what is recovered comes from the bulk delay, whichever estimator
-  supplies it. The all-pass then takes the remainder and leaves the crossover
-  notch at 1.7 dB, where the magnitude-corrected system loses 10 dB.
-- The all-pass is the best of the five at 7 of the 10 positions on the left
-  main and 6 on the right. Where it loses, it loses to the arrival-time delay,
-  which on this rig is a close second at -0.45 dB. The average is not what
-  separates them; the robustness is.
-- Leave-one-out changes nothing (-0.39 against -0.37 dB in-sample), so the
+- **On the average the all-pass is not better than a magnitude correction with
+  the arrival-time delay** here: -0.45 against -0.41, and each is the better of
+  the two at five of the ten positions. What separates them is robustness, not
+  the mean.
+- It absorbs a subwoofer polarity inversion: -0.34 inverted against -0.45 the
+  right way up, where a delay-only alignment falls to -5.22.
+- It barely cares where the bulk delay comes from: dropping it altogether costs
+  0.04 dB, while for a delay-only alignment the choice between the two
+  estimators (1.3 ms apart here) is worth 0.8 dB.
+- Leave-one-out changes nothing (-0.45 against -0.44 in-sample), so the
   subwoofer's phase through the crossover is a room-wide quantity rather than
   a per-position one.
 - The phasor blend and a carefully anchored unwrapped-angle blend are
-  **equivalent** once the bulk delay has been applied. The phasor blend is
-  better only when it has not, and it avoids needing a phase-unwrapping anchor
-  at all, which is where its real advantage lies.
-- On this rig the arrival-time estimator beats the crossover-band one by
-  0.31 dB for a delay-only alignment. That is a property of this rig, not a
-  general result: an earlier one whose subwoofer arrival wandered by 6.6 ms
-  across positions went the other way. Under the all-pass the choice matters
-  less: dropping the bulk delay altogether costs 0.19 dB, where changing which
-  estimator supplies it costs a delay-only alignment 0.31 dB.
+  equivalent once the bulk delay has been applied (-0.45 against -0.46). The
+  phasor blend is far better without one (-0.49 against -1.47), and it needs no
+  phase-unwrapping anchor at all, which is where its real advantage lies.
 
-## Checked against the measured system (`supermoto_paper4`, 18 Sep 2026)
+## Checked against the measured system (`supermoto_paper6`, 18 Sep 2026)
 
-One analysis, exported twice a minute apart, linear phase and minimum phase,
-with nothing else touched. The system was then measured in "System" mode at
-the same ten positions in three states, no FIR, linear phase, minimum phase,
-each state visited in turn at a position before the microphone was moved.
+One analysis, exported twice two minutes apart, linear phase and minimum
+phase, with nothing else touched: crossover 80 Hz, analysis from 40 Hz, 8192
+taps. The system was then measured in "System" mode at eight positions in
+three states, no FIR / linear / minimum, each state visited in turn at a
+position before the microphone was moved. Six of the eight have a counterpart
+in the design session.
 
-- **The system applies the filter that was designed.** The ratio of a
-  corrected run to the no-FIR run at the same position follows the exported
-  filter to 0.23 dB RMS (left, linear), 0.25 (left, minimum), 0.30 and 0.34
-  (right) over 200 Hz - 10 kHz. Both renderings peak above full scale
-  (+4.7 and +6.4 dBFS for minimum phase, +3.0 for the right linear one) and
-  both are realised exactly, which is the check on the 32-bit float preset
-  container that replaced the integer one. The embedded copies in the preset
-  are bit-identical to the exported files.
-- **The offline model is good to about 0.9 dB in the crossover region.**
-  Predicting each of the six cases (three states, two mains) from the dry
-  captures and the exported filter reproduces the measurement to 0.87-0.93 dB
-  RMS over 35-250 Hz, worst position 1.27 dB, and the crossover-band level to
-  0.43 dB.
-- **The alignment is measurable.** The aligned export carries **0.47 dB** more
-  level through [fx/sqrt2, fx*sqrt2] than the minimum-phase one on both mains,
-  at 10 of 10 positions each, from 0.17 to 0.82 dB. The model predicts 0.32 and
-  0.31 dB for the same quantity. What an alignment buys is coherence rather
-  than level, and a single system measurement cannot separate coherence from
-  the room; the band level is the part a measurement can hold.
-- **...but 2048 taps are not enough to make it a pure phase experiment.** At
-  and above the crossover the two renderings carry the same designed magnitude
-  (|A| = 1 and the band-edge fade is complete there), yet the *rendered*
-  magnitudes differ by 1.63 dB RMS over 85-200 Hz on the left main, 4.1 dB at
-  the worst frequency, and 0.77 dB on the right. Over 200 Hz - 1 kHz they agree
-  to 0.12 and 0.30 dB, and above 1 kHz to 0.01 dB. A linear-phase filter
-  spreads its response over +/-23 ms and a minimum-phase one front-loads it,
-  and at 100 Hz neither has room for the structure the design asks for.
-  Holding the magnitude fixed and swapping only the phase separates the two:
-  the aligned phase is worth 0.21 dB (left) and 0.42 dB (right) on the
-  minimum-phase magnitude, 0.31 and 0.44 dB on the linear-phase one. So between
-  a fifth and a half of a decibel is the alignment; the rest of the 0.47 dB is
-  the two renderings disagreeing about a magnitude they were meant to share.
-  A longer FIR would tighten this.
-- **Latency self-absorption works.** The linear-phase filter peaks 1026
-  samples in (23.3 ms) yet all three states show the same 47.2-48.1 ms system
-  delay, the bulk latency having been absorbed into the 29.7 ms alignment
-  delay.
+- **The system applies the filter that was designed.** The ratio of a corrected
+  run to the no-FIR run follows the exported filter to 0.28 dB RMS (left) and
+  0.36 (right) over 200 Hz - 10 kHz for the minimum-phase export. The
+  linear-phase one manages 0.56 and 0.64, and the gap is not in the filters:
+  an 8192-tap linear-phase correction carries more bulk latency than the
+  output's alignment delay, so that state bypasses the delay line while the
+  other two run 1285 samples through it, and the two-tap interpolation those
+  samples went through cost the treble about half a decibel. That is what sent
+  us to `Source/Dsp/OutputProcessor.h`; the delay is now rounded to whole
+  samples and the interpolation is gone.
+- **The offline model is good to about 1 dB in the crossover region.**
+  Predicting each of the six cases (three states, two mains) reproduces the
+  measurement to 0.78-1.48 dB RMS over 35-250 Hz, and the crossover-band level
+  to 0.32 dB, over the 5.5 dB that separates the uncorrected state from the
+  corrected ones.
+- **The alignment is measured, and it agrees with the model.** At 8192 taps the
+  two exports share their magnitude to 0.06 dB RMS over 80-200 Hz and 0.01 dB
+  above 200 Hz, so only their phase differs. The aligned one carries **+0.78 dB**
+  (left) and **+0.88 dB** (right) more level through [fx/sqrt2, fx*sqrt2], at 8
+  of 8 positions on both mains, from +0.53 to +1.40 dB. The model, given the
+  same two filters, predicts +0.68 and +0.73 -- agreement within 0.15 dB on a
+  quantity neither was fitted to.
+- **Latency self-absorption works in the regime that stresses it.** The
+  linear-phase filter's 4098 samples of bulk latency exceed the 1285 samples of
+  alignment delay, so the compensation adds the remaining 2813 to every output:
+  110.7-111.5 ms of system delay in that state against 46.7-47.5 ms in the
+  other two, a difference of 64 ms against the 63.8 ms the arithmetic gives.
+  The main-to-subwoofer offset is untouched.
+
+The earlier campaign at 2048 taps (`supermoto_paper4`) measured the same A/B at
++0.47 dB on both mains, but there the two renderings did *not* share a
+magnitude (1.63 and 0.77 dB RMS across the crossover), so only about half of
+that was the alignment. The 8192-tap repeat is the clean version.
 
 ## The analysis band edge
 
@@ -231,9 +237,12 @@ the edge at 85 Hz, the crossover itself, and it shows:
 | 60 Hz        | -0.39    | -0.31                  |
 | 40 Hz        | -0.38    | -0.32                  |
 
-Moving the edge an octave below the crossover restores the alignment's
-immunity to subwoofer polarity at no cost to the aligned score. It costs
-nothing else either: the correction down there is faded out in both cases.
+(at the 85 Hz crossover of the earlier campaign.) Moving the edge an octave
+below the crossover restores the alignment's immunity to subwoofer polarity at
+no cost to the aligned score, and it costs nothing else either, since the
+correction down there is faded out in both cases. `supermoto_paper6` was run
+that way -- crossover 80 Hz, analysis from 40 Hz -- and the immunity is there:
+-0.34 dB inverted against -0.45 the right way up.
 **Set the analysis range to start below the crossover, not at it.**
 
 ## What FIR length buys
@@ -250,29 +259,36 @@ ways (this prediction reproduces the measured 2048-tap disagreement, 1.59 and
 | 8192  | 0.06 / 0.05                       | 0.07 / 0.05                          |
 | 16384 | 0.01                              | 0.01                                 |
 
-Left main / right main. `make_paper_figure.py` also writes
-`doc/figures/fir-length.png` (`--out-length`), which puts the same sweep
-through the summation model and against the measured state: the 2048
-prediction follows the measurement dip for dip, including a 6 dB cancellation
-at 115 Hz on the left main that is not in the design and is gone by 4096 taps,
-and from 8192 up the curves coincide. In band power the four lengths are within
-0.05 dB of each other (left: +0.69, +0.73, +0.73, +0.73 dB; right: +0.88,
-+0.78, +0.83, +0.83), so what length buys is the shape, and the agreement
-between the two renderings, not the level.
+Left main / right main, computed before the 8192-tap campaign was run.
+**It then predicted the campaign correctly**, which is the best thing that can
+be said for it: `supermoto_paper6`'s two 8192-tap exports share their magnitude
+to 0.06 and 0.04 dB RMS over 80-200 Hz, against the 0.06 and 0.05 predicted,
+where the 2048 pair differed from itself by 1.63 and 0.77.
 
-Two consequences. For the A/B, 4096 leaves a
-magnitude confound of the same order as the phase effect being measured and
-8192 does not, so a repeat that wants to be a phase experiment needs 8192. For
-the plugin, a 2048-tap linear-phase correction misses its own designed
-magnitude by about 1.9 dB RMS between 85 and 200 Hz, which is an argument for
-the 4096 default whenever the analysis reaches that low.
+`make_paper_figure.py` also writes `doc/figures/fir-length.png`
+(`--out-length`), which puts the same sweep through the summation model and
+against the measured state. Measured at 8192, the run now follows the 8192 and
+16384 renderings, which lie on each other, and parts company with the 2048 one
+by 6 dB at 115 Hz on the left main -- a feature of that length, not of the
+design. In band power the four lengths are within a few tenths of each other,
+so what length buys is the shape, and the agreement between the two renderings,
+not the level.
+
+Two consequences. For the A/B, 4096 leaves a magnitude confound of the same
+order as the phase effect being measured and 8192 does not, so a repeat that
+wants to be a phase experiment needs 8192. For the plugin, a 2048-tap
+linear-phase correction misses its own designed magnitude by about 1.9 dB RMS
+across the crossover region, which is an argument for the 4096 default whenever
+the analysis reaches that low.
 
 The price is latency: a linear-phase filter of n taps carries n/2 samples of
 bulk latency, and what the output's own alignment delay cannot absorb is added
 to every output by the compensation of `MatrixEngine::recomputeLatencyComp`.
-At 2048 taps and a 29.7 ms alignment delay it is free; at 4096 it adds 16.7 ms
-to everything, at 8192, 63 ms. Relative timing between outputs is preserved
-either way, so the experiment stays valid.
+At 2048 taps and a 29 ms alignment delay it is free; at 4096 it adds 17 ms to
+everything, at 8192, 64 ms -- and that last figure is measured, not estimated:
+110.7-111.5 ms of system delay in the linear state against 46.7-47.5 ms in the
+other two. Relative timing between outputs is preserved either way, so the
+experiment stays valid.
 
 ## The subwoofer polarity
 
