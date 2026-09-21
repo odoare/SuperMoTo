@@ -159,38 +159,38 @@ paper reports.
 | strategy                        | eff dB | worst | \|dphi\| | notch  |
 |---------------------------------|--------|-------|----------|--------|
 | no correction, no alignment     | -0.89  | -1.44 | 74 deg   | -3.4   |
-| magnitude only (min-phase)      | -1.50  | -2.11 | 85 deg   | -6.5   |
-| mag + arrival-time delay        | -0.41  | -0.56 | 41 deg   | -1.2   |
-| mag + crossover-band delay      | -1.21  | -2.21 | 67 deg   | -3.2   |
-| **all-pass alignment**          | **-0.45** | **-1.13** | **41 deg** | **-1.3** |
-| all-pass, subwoofer inverted    | -0.34  | -0.86 | 41 deg   | -1.5   |
-| all-pass, no bulk delay         | -0.49  | -1.17 | 49 deg   | -1.8   |
-| ablation: unwrapped-angle blend | -0.46  | -1.15 | 41 deg   | -1.3   |
-| ablation: unwrapped, no delay   | -1.47  | -2.31 | 76 deg   | -6.6   |
+| magnitude only (min-phase)      | -1.21  | -1.72 | 81 deg   | -4.9   |
+| mag + arrival-time delay        | -0.38  | -0.51 | 42 deg   | -1.6   |
+| mag + crossover-band delay      | -0.63  | -1.10 | 53 deg   | -1.8   |
+| **all-pass alignment**          | **-0.42** | **-1.06** | **39 deg** | **-1.1** |
+| all-pass, subwoofer inverted    | -0.37  | -0.92 | 44 deg   | -1.7   |
+| all-pass, no bulk delay         | -0.47  | -1.12 | 48 deg   | -1.4   |
+| ablation: unwrapped-angle blend | -0.42  | -1.07 | 39 deg   | -1.1   |
+| ablation: unwrapped, no delay   | -1.16  | -1.94 | 73 deg   | -4.9   |
 
 Main R gives the same ordering within 0.05 dB.
 
 Points the table makes:
 
 - Correcting the main's magnitude alone makes the summation *worse* than no
-  correction at all (-1.50 against -0.89 dB), because a minimum-phase
+  correction at all (-1.21 against -0.89 dB), because a minimum-phase
   magnitude correction moves the main's phase through the crossover region
   without regard for the subwoofer.
 - **On the average the all-pass is not better than a magnitude correction with
-  the arrival-time delay** here: -0.45 against -0.41, and each is the better of
+  the arrival-time delay** here: -0.42 against -0.38, and each is the better of
   the two at five of the ten positions. What separates them is robustness, not
   the mean.
-- It absorbs a subwoofer polarity inversion: -0.34 inverted against -0.45 the
-  right way up, where a delay-only alignment falls to -5.22.
+- It absorbs a subwoofer polarity inversion: -0.37 inverted against -0.42 the
+  right way up, where a delay-only alignment falls to -6.14.
 - It barely cares where the bulk delay comes from: dropping it altogether costs
-  0.04 dB, while for a delay-only alignment the choice between the two
-  estimators (1.3 ms apart here) is worth 0.8 dB.
-- Leave-one-out changes nothing (-0.45 against -0.44 in-sample), so the
+  0.05 dB, while for a delay-only alignment the choice between the two
+  estimators (0.7 ms apart here) is worth 0.25 dB.
+- Leave-one-out changes nothing (-0.42 against -0.41 in-sample), so the
   subwoofer's phase through the crossover is a room-wide quantity rather than
   a per-position one.
 - The phasor blend and a carefully anchored unwrapped-angle blend are
-  equivalent once the bulk delay has been applied (-0.45 against -0.46). The
-  phasor blend is far better without one (-0.49 against -1.47), and it needs no
+  equivalent once the bulk delay has been applied (-0.42 against -0.42). The
+  phasor blend is far better without one (-0.47 against -1.16), and it needs no
   phase-unwrapping anchor at all, which is where its real advantage lies.
 
 ## Checked against the measured system (`supermoto_paper6`, 18 Sep 2026)
@@ -230,6 +230,17 @@ in the design session.
   110.7-111.5 ms of system delay in that state against 46.7-47.5 ms in the
   other two, a difference of 64 ms against the 63.8 ms the arithmetic gives.
   The main-to-subwoofer offset is untouched.
+
+Every number in this section compares a measurement against the filter that
+was actually loaded when it was taken, so all of them survive the averaging
+change of 21 Sep 2026. What does not survive is any comparison between one of
+these measurements and a *re-derived* design: the `supermoto_paper6` filters
+were exported by the previous averaging, and the current code designs about
+1.8 dB more level through the crossover region. That is why
+`doc/figures/fir-length.png` still shows the figure made before the change --
+regenerating it needs the correction re-exported from the fixed engine and the
+system measured again. Table 1 of the paper and panel (c) of
+`validation.png` are pure offline comparisons and have been re-derived.
 
 The earlier campaign at 2048 taps (`supermoto_paper4`) measured the same A/B at
 +0.47 dB on both mains, but there the two renderings did *not* share a

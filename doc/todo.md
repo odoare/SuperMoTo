@@ -793,30 +793,57 @@
     runs and never goes near the averaging: still +0.78 dB (main 1) and
     +0.88 dB (main 2) at 8 of 8 positions, same per-position spread, same
     polarity checks, same model-vs-measured RMS, same predicted and measured
-    crossover-band levels. What moves is everything the offline design feeds:
+    crossover-band levels. What moves is everything the offline design feeds.
 
-    - Table 1 (leave-one-out, main 1): magnitude only -1.50 -> -1.21,
-      magnitude + arrival-time delay -0.41 -> -0.38, magnitude +
-      crossover-band delay -1.21 -> -0.63, all-pass -0.45 -> -0.42. The
-      ordering and the conclusions hold, and the wrong-polarity row gets
-      worse (-5.2 -> -6.1 dB), which strengthens the polarity argument.
-    - The gap between the two delay estimators narrows from 0.8 dB to about
-      0.25 dB, because the power-averaged subwoofer magnitude is a better
-      weight for the crossover-band phase fit (the weighted estimate moves
-      from 29.22 to 29.80 ms, against an arrival difference of 30.49 ms).
-      Section 4's "that choice is worth 0.8 dB to a delay-only alignment" and
-      the Figure 1(c) caption's "worth most of a decibel" both have to change.
-    - The Figure 2 (fir-length) levels shift by about +1.8 dB for the reason
-      in the note above; the shape that figure is about — 2048 taps apart,
-      4096 and up within 0.05 dB — is unchanged.
+    *Done for everything that is purely offline (21 Sep 2026). Table 1 carries
+    the new leave-one-out scores, `doc/figures/validation.png` is regenerated
+    — its panels (a) and (b) redraw the same numbers, since they compare
+    measurements against the exported filters and never touch the averaging;
+    only panel (c) moved — and the paragraphs that quote the table, plus the
+    Figure 1(c) caption, follow. The README's design-set table and its bullets
+    are updated with it. The paper builds at 11 pages, no warnings.*
 
-    So: re-run `make_paper_figure.py` and `sub_alignment_validation.py` with
-    the campaign-6 arguments in `doc/experiments/README.md`, regenerate
-    `doc/figures/validation.png` and `doc/figures/fir-length.png`, and update
-    Table 1, the two paragraphs that quote it, and the Figure 1(c) caption.
-    Worth doing in one pass with a re-export of the correction FIRs, so that
-    the paper and the shipped filters describe the same engine.
+    *What the change did to the table: magnitude only -1.50 -> -1.21, magnitude
+    + arrival-time delay -0.41 -> -0.38, magnitude + crossover-band delay
+    -1.21 -> -0.63, all-pass -0.45 -> -0.42, wrong polarity -5.2 -> -6.1. The
+    ordering and every conclusion hold: the all-pass and the arrival-time
+    delay still land within 0.05 dB of each other and each still wins at five
+    of the ten positions on both mains, the polarity argument gets stronger,
+    and leave-one-out still matches in-sample (to 0.03 dB now). The gap
+    between the two delay estimators narrows from 0.8 dB to 0.25 dB, because
+    the power-averaged subwoofer magnitude is a better weight for the
+    crossover-band phase fit (29.22 -> 29.80 ms against an arrival difference
+    of 30.49 ms), so the "worth most of a decibel" line in the Figure 1(c)
+    caption became "sensitive to which of the two it is given where the
+    all-pass is not".*
 
+    **Left, and it needs the re-export first.** Figure 2 (`fir-length.png`)
+    compares a *measurement* against renderings of a *re-derived* design.
+    Those were the same design until now; they are not any more, because the
+    campaign-6 filters were exported by the old averaging and the current code
+    designs about 1.8 dB more level through the crossover region. Regenerated
+    with the fixed code the measured curve no longer follows the 8192-tap
+    rendering, which is an artefact of mixing two engine versions, not a
+    result — so the committed figure is deliberately still the one made before
+    the change, and the file has been reverted to it. Honestly regenerating it
+    needs the correction re-exported from the fixed engine *and* the system
+    measured again.
+
+    Two other numbers wait on the same re-export:
+
+    - Section 5's "that chain reproduces the plugin's own exported filters to
+      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
+      two implementations of the same arithmetic agreeing, and it will hold
+      again once the exports come from the fixed engine; right now it cannot
+      be checked, because the chain and the exported filters are two different
+      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
+      the size of the fix rather than an error).
+    - Section 5's "the same pair rendered at 2048 taps differs from itself by
+      1.63 dB RMS across the crossover region". Re-deriving it with the new
+      averaging gives about 1.5 dB on the left main, but the exact figure in
+      the text could not be reproduced by either averaging, so it wants
+      recomputing rather than editing — the claim it supports (neither 2048-tap
+      rendering has room for the structure) is unaffected.
 
 - [ ] Group analysis: the per-speaker Load button does less than every other
   load path.

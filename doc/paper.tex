@@ -218,9 +218,9 @@ The two exports are also the measured control on the alignment itself. They are 
   averaged over the six positions the two sessions share, against the
   prediction of~\eqref{eq:predsum}. (c) Summation efficiency through the
   crossover for five strategies, averaged over the ten positions of the design
-  set. Both delay estimators are drawn, since which one a magnitude-only
-  correction is given is worth most of a decibel here. Zero is coherent
-  addition.}
+  set. Both delay estimators are drawn, since a magnitude-only
+  correction is sensitive to which of the two it is given where the all-pass
+  is not. Zero is coherent addition.}
   \label{fig:validation}
 \end{figure}
 
@@ -248,13 +248,13 @@ Table~\ref{tab:validation} scores the strategies over $[\,f_x/2,\,2f_x\,]$. Summ
     strategy & left & right & (deg) & (dB)\\
     \midrule
     no correction, no alignment                  & $-0.89$ & $-0.94$ & 75 & $-3.5$\\
-    magnitude correction only                    & $-1.50$ & $-1.41$ & 84 & $-6.4$\\
-    magnitude and arrival-time delay             & $-0.41$ & $-0.43$ & 42 & $-1.3$\\
-    magnitude and crossover-band delay           & $-1.21$ & $-1.17$ & 66 & $-3.1$\\
-    magnitude, crossover-band delay and all-pass & $\mathbf{-0.45}$ & $\mathbf{-0.47}$ & \textbf{41} & $\mathbf{-1.3}$\\
+    magnitude correction only                    & $-1.21$ & $-1.17$ & 81 & $-4.9$\\
+    magnitude and arrival-time delay             & $-0.38$ & $-0.39$ & 42 & $-1.5$\\
+    magnitude and crossover-band delay           & $-0.63$ & $-0.63$ & 52 & $-1.8$\\
+    magnitude, crossover-band delay and all-pass & $\mathbf{-0.42}$ & $\mathbf{-0.44}$ & \textbf{40} & $\mathbf{-1.1}$\\
     \midrule
-    as above, with the subwoofer inverted        & $-0.34$ & $-0.35$ & 41 & $-1.5$\\
-    as above, without the bulk delay             & $-0.49$ & $-0.49$ & 49 & $-1.7$\\
+    as above, with the subwoofer inverted        & $-0.37$ & $-0.38$ & 44 & $-1.7$\\
+    as above, without the bulk delay             & $-0.47$ & $-0.48$ & 49 & $-1.4$\\
     \bottomrule
   \end{tabular}
   \caption{Main-to-subwoofer summation over $[\,f_x/2,\,2f_x\,]$, ten positions,
@@ -262,9 +262,9 @@ Table~\ref{tab:validation} scores the strategies over $[\,f_x/2,\,2f_x\,]$. Summ
   \label{tab:validation}
 \end{table}
 
-Four things follow. Correcting the main's magnitude on its own makes the summation worse than leaving the system alone, by \SI{0.6}{\dB}, because a minimum-phase magnitude correction moves the main's phase through the crossover region without regard for the subwoofer. Most of what is then recovered comes from the bulk delay, and the all-pass leaves \SI{-0.45}{\dB} of efficiency and a worst cancellation of \SI{1.3}{\dB} where the magnitude-corrected system loses \SI{6.4}{\dB} and the untouched one \SI{3.5}{\dB}. On the average it is not, on this rig, better than a magnitude correction given the arrival-time delay, which reaches \SI{-0.41}{\dB}. The two are within \SI{0.04}{\dB} of each other and each is the better of the pair at five of the ten positions, the aligned one running from \SI{-0.12}{\dB} at its best position to \SI{-1.13}{\dB} at its worst. What separates them is not the average but what it takes to get there, which is the subject of the next paragraph. And the leave-one-out scores match the in-sample ones to \SI{0.02}{\dB}, so the subwoofer's phase through the crossover behaves as a property of the room and the rig rather than of one seat, which is what justifies designing the alignment from a spatial average.
+Four things follow. Correcting the main's magnitude on its own makes the summation worse than leaving the system alone, by \SI{0.3}{\dB}, because a minimum-phase magnitude correction moves the main's phase through the crossover region without regard for the subwoofer. Most of what is then recovered comes from the bulk delay, and the all-pass leaves \SI{-0.42}{\dB} of efficiency and a worst cancellation of \SI{1.1}{\dB} where the magnitude-corrected system loses \SI{4.9}{\dB} and the untouched one \SI{3.5}{\dB}. On the average it is not, on this rig, better than a magnitude correction given the arrival-time delay, which reaches \SI{-0.38}{\dB}. The two are within \SI{0.05}{\dB} of each other and each is the better of the pair at five of the ten positions on both mains, the aligned one running from \SI{-0.09}{\dB} at its best position to \SI{-1.06}{\dB} at its worst. What separates them is not the average but what it takes to get there, which is the subject of the next paragraph. And the leave-one-out scores match the in-sample ones to \SI{0.03}{\dB}, so the subwoofer's phase through the crossover behaves as a property of the room and the rig rather than of one seat, which is what justifies designing the alignment from a spatial average.
 
-The all-pass is the strategy that does not need to be told anything. Inverting the subwoofer, with the correction redesigned against it as the plugin does when that switch is set, leaves the aligned result at \SI{-0.34}{\dB} against \SI{-0.45}{\dB} the right way up, where an alignment by delay alone falls to \SI{-5.2}{\dB}. Indeed, the all-pass can absorb the half turn, a delay cannot. Nor does it much care which estimator supplies the bulk delay, or whether one is supplied at all (dropping it entirely costs \SI{0.04}{\dB}) where the two estimators of Section~\ref{sec:subalign} disagree by \SI{1.3}{\milli\second} here and that choice is worth \SI{0.8}{\dB} to a delay-only alignment. This is also where the analysis band edge earns its setting. The correction fades to unity over a half-octave skirt below that edge and the alignment factor fades with it, so an edge at the crossover switches the steering off below $f_x/\sqrt2$, inside the region the subwoofer dominates. An earlier campaign run that way lost the polarity immunity entirely, the inverted case falling to \SI{-1.05}{\dB}. It is therefore best to define the analysis range so that it begins below the cutoff frequency rather than at that level; there is no downside to this, since the correction tapers off anyway.
+The all-pass is the strategy that does not need to be told anything. Inverting the subwoofer, with the correction redesigned against it as the plugin does when that switch is set, leaves the aligned result at \SI{-0.37}{\dB} against \SI{-0.42}{\dB} the right way up, where an alignment by delay alone falls to \SI{-6.1}{\dB}. Indeed, the all-pass can absorb the half turn, a delay cannot. Nor does it much care which estimator supplies the bulk delay, or whether one is supplied at all (dropping it entirely costs \SI{0.05}{\dB}) where the two estimators of Section~\ref{sec:subalign} disagree by \SI{0.7}{\milli\second} here and that choice is worth \SI{0.25}{\dB} to a delay-only alignment. This is also where the analysis band edge earns its setting. The correction fades to unity over a half-octave skirt below that edge and the alignment factor fades with it, so an edge at the crossover switches the steering off below $f_x/\sqrt2$, inside the region the subwoofer dominates. An earlier campaign run that way lost the polarity immunity entirely, the inverted case falling to \SI{-1.05}{\dB}. It is therefore best to define the analysis range so that it begins below the cutoff frequency rather than at that level; there is no downside to this, since the correction tapers off anyway.
 
 Three limits should be stated. First, the comparison between strategies is predicted rather than measured; the measured pair above tests the one step the exports can isolate, and the rest of the table rests on the offline chain. Rendered at the same 8192 taps and compared like with like, that chain reproduces the plugin's own exported filters to between \SI{0.06}{\dB} and \SI{0.13}{\dB} RMS in every band from \SI{40}{\hertz} to \SI{8}{\kilo\hertz}, for both renderings and both mains, which is as close as two independent implementations of the same arithmetic are likely to come. Second, the geometry limits what the arrival-time estimator can mean: it places the subwoofer between \SI{1.45}{\metre} and \SI{1.75}{\metre} from the ten positions, a spread of \SI{29}{\centi\metre}, of which its impulse-response peak reports \SI{8}{\centi\metre}. The arrival time of a source band-limited to the crossover region is repeatable without being accurate, and on an earlier rig whose subwoofer arrival wandered by \SI{6.6}{\milli\second} across positions it was the crossover-band estimate that held; that it is the weaker of the two here is a property of this rig. Third, one rig with one subwoofer in one room is one case, and the numbers here are not a claim about rooms in general.
 
