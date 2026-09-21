@@ -326,22 +326,87 @@ void GroupAnalysisSession::loadMeasurementFolder (const juce::File& dir, bool ke
     });
 }
 
+// Files picked by hand still come from a measurement folder, and that folder's
+// manifest is as much a part of the analysis as the wavs are: it carries the
+// microphone calibration the design divides out, and the sweep identity that
+// decides between Welch and the Farina deconvolution. loadMeasurementFolder()
+// adopts both from its own scan, and AnalysisSession::loadFiles() does the
+// same in the Analysis pane; the two per-row loaders below used to do neither,
+// so the same files loaded through them were analyzed with whatever the pane
+// was last left on -- a different microphone calibration and a different
+// estimator from the Analysis pane, on the same measurements. Nothing in
+// either pane showed that; the curves simply disagreed at the band edges.
+//
+// A folder with no manifest adopts nothing rather than clearing what is in
+// force, so a row picked out of a folder from before measurement.xml does not
+// silently drop the calibration the rest of the group is using.
+GroupAnalysisSession::AdoptedFolderInfo
+GroupAnalysisSession::adoptFolderInfo (const juce::Array<juce::File>& files)
+{
+    AdoptedFolderInfo adopted;
+    if (files.isEmpty())
+        return adopted;
+
+    auto info = readMeasurementFolderInfo (files[0].getParentDirectory());
+    if (! info.manifestFound)
+        return adopted;
+
+    folderInfo = std::move (info);
+    folderMicCal.clear();
+    adopted.micCal = folderInfo.hasMicCal()
+        && folderMicCal.loadFromText (folderInfo.micCalText, folderInfo.micCalName);
+
+    // Still overridable from the source selector, like the folder load's.
+    if (adopted.micCal)
+        settings.micCalSource = 2;
+    else if (settings.micCalSource == 2)
+        settings.micCalSource = 1;      // the folder that carried one is gone
+
+    const bool wasSweep = settings.sweepMethod;
+    updateSweepAvailability (files, true);
+    adopted.methodChanged = settings.sweepMethod != wasSweep;
+    return adopted;
+}
+
 void GroupAnalysisSession::loadSpeakerFiles (int speaker, const juce::Array<juce::File>& files)
 {
     if (busy || files.isEmpty() || speaker < 0 || speaker >= SpeakerGroupAnalysis::maxSpeakers)
         return;
 
     forgetFolderRuns();         // this row no longer comes from the folder
-    pushSettingsTo (*group.speaker (speaker).engine, false);
-    group.speaker (speaker).engine->setSweepInfo (sweepInfoFor (files));
+    const auto adopted = adoptFolderInfo (files);
+    applySettings();            // both are shared, so every engine gets them
 
-    startBatch ({ [this, speaker, files] { group.loadSpeakerFiles (speaker, files); } },
-                group.speaker (speaker).label + ": analyzing...",
-                [this, speaker]
+    std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+    juce::String running;
+
+    if (adopted.methodChanged)
+    {
+        // The manifest asks for the other estimator, and the sets already
+        // loaded were analyzed with the one it replaces, so they go again too.
+        // buildReloadJobs() reads the rows' files, hence the assignment here,
+        // on the message thread, before any job runs.
+        group.speaker (speaker).files = files;
+        jobs = buildReloadJobs();
+        running = "Re-analyzing " + juce::String ((int) jobs.size())
+                + " measurement set(s) with the "
+                + juce::String (settings.sweepMethod ? "sweep" : "Welch") + " method...";
+    }
+    else
+    {
+        group.speaker (speaker).engine->setSweepInfo (sweepInfoFor (files));
+        jobs.push_back ([this, speaker, files] { group.loadSpeakerFiles (speaker, files); });
+        running = group.speaker (speaker).label + ": analyzing...";
+    }
+
+    const juce::String cal = adopted.micCal ? " Embedded mic cal applied." : juce::String();
+
+    startBatch (std::move (jobs), running,
+                [this, speaker, cal]
                 {
                     endBatch (group.speaker (speaker).label + ": "
                               + juce::String (group.speaker (speaker).engine->getNumCurves())
-                              + " file(s) analyzed.");
+                              + " file(s) analyzed." + cal);
                 });
 }
 
@@ -351,19 +416,38 @@ void GroupAnalysisSession::loadSubFiles (const juce::Array<juce::File>& files)
         return;
 
     forgetFolderRuns();         // the sub no longer comes from the folder
-    pushSettingsTo (*group.subEntry().engine, true);
-    group.subEntry().engine->setSweepInfo (sweepInfoFor (files));
+    const auto adopted = adoptFolderInfo (files);
+    applySettings();
 
-    // Pairs each speaker with the sub by run when both sets are files of the
-    // loaded folder. A copy, taken here: the job runs elsewhere.
-    const auto info = runInfoForSub (files);
+    std::vector<fxme::BackgroundTaskRunner::Job> jobs;
+    juce::String running;
 
-    startBatch ({ [this, files, info] { group.loadSubFiles (files, info); } },
-                "Sub: analyzing...",
-                [this]
+    if (adopted.methodChanged)
+    {
+        group.subEntry().files = files;
+        jobs = buildReloadJobs();       // re-pairs every speaker with the sub as well
+        running = "Re-analyzing " + juce::String ((int) jobs.size())
+                + " measurement set(s) with the "
+                + juce::String (settings.sweepMethod ? "sweep" : "Welch") + " method...";
+    }
+    else
+    {
+        group.subEntry().engine->setSweepInfo (sweepInfoFor (files));
+
+        // Pairs each speaker with the sub by run when both sets are files of
+        // the loaded folder. A copy, taken here: the job runs elsewhere.
+        const auto info = runInfoForSub (files);
+        jobs.push_back ([this, files, info] { group.loadSubFiles (files, info); });
+        running = "Sub: analyzing...";
+    }
+
+    const juce::String cal = adopted.micCal ? " Embedded mic cal applied." : juce::String();
+
+    startBatch (std::move (jobs), running,
+                [this, cal]
                 {
                     endBatch ("Sub: " + juce::String (group.subEntry().engine->getNumCurves())
-                              + " file(s) analyzed.");
+                              + " file(s) analyzed." + cal);
                 });
 }
 

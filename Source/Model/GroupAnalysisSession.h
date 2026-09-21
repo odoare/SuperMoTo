@@ -224,6 +224,14 @@ private:
                                   bool selectWhenAvailable);
     void forgetFolderRuns();
 
+    /** What adoptFolderInfo() took from the manifest beside a hand-picked set. */
+    struct AdoptedFolderInfo
+    {
+        bool micCal = false;         // the folder carried one and it is now in force
+        bool methodChanged = false;  // the TF method moved, so every other set is stale
+    };
+    AdoptedFolderInfo adoptFolderInfo (const juce::Array<juce::File>& files);
+
     // The sub's analysis range is capped here regardless of the shared Range
     // control; see pushSettingsTo in the .cpp for why, and for the 500 Hz
     // floor that makes the effective cap higher than it reads.

@@ -879,6 +879,30 @@
     same way. Then the two panes can only disagree if a control really is set
     differently, and the first item removes the rest.
 
+    *Done 21 Sep 2026, not yet built. `GroupAnalysisSession::adoptFolderInfo()`
+    reads the manifest next to a hand-picked set and takes the two things that
+    belong to the measurements rather than to the pane: the embedded
+    microphone calibration (selecting `Folder mic cal`, still overridable) and
+    the sweep identity, which selects the Farina deconvolution through
+    `updateSweepAvailability()`. Both `loadSpeakerFiles()` and `loadSubFiles()`
+    call it, then `applySettings()` rather than pushing to their own engine
+    alone, since both settings are shared by the whole group.*
+
+    *Two details that took some thought. A folder with no `measurement.xml`
+    adopts nothing rather than clearing what is in force, so picking a row out
+    of a pre-manifest folder does not silently drop the calibration the rest
+    of the group is using. And when the manifest does change the
+    transfer-function method, every set already loaded was analysed with the
+    other one, so that case re-runs the lot through `buildReloadJobs()`
+    instead of just the row being loaded — the row's files are assigned on the
+    message thread first, since the jobs read them. The status line says which
+    happened, and reports the adopted calibration the way the folder load
+    does.*
+
+    *`doc/chapters/group-analysis.tex` gains a sentence on it: the folder
+    travels with the files whichever button brings them in. The manual builds
+    at 77 pages with no unresolved references.*
+
 - [ ] Monitor target curve ("house curve"): a selectable gentle downward tilt
   on the monitor path, so that a correction designed against the measured
   in-room response does not end up sounding harsh.
