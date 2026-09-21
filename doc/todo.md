@@ -754,6 +754,70 @@
     200 Hz, where |R| is 0.99, so the conclusions should not move — but that
     has to be shown, not assumed).
 
+    *Implemented 21 Sep 2026, not yet built. `computeAverage()` and
+    `computeSubAverage()` accumulate both the complex sum and the power sum in
+    one pass and combine them as above; `applySmoothing()` gained a
+    `smoothMagPhase` lambda that smooths the averages' magnitude and phase
+    separately and leaves the individual curves on plain complex smoothing.
+    `getBandLevelDb()` needed no change — it was already a mean-power over the
+    band, and it now reads a magnitude that is a mean power over the positions
+    too, which is what its own comment argues for. The offline mirror follows:
+    `position_average()` and `smooth_average()` in
+    `doc/experiments/sub_alignment_validation.py`, used there and in
+    `make_paper_figure.py`.*
+
+    *Verified on the campaign-6 ch03 set through the mirror. The average now
+    sits inside the spread of the curves it came from at 13.35 kHz (curves
+    -3.3 to -1.4 dB, average -1.6, where it used to read -12.0). It barely
+    depends on the smoothing fraction any more: 0.6 dB from 1/12 to 1 octave
+    against 1.7 dB before. The designed correction loses 4.8 dB (ch03) and
+    4.9 dB (ch04) of mean gain over 2-16 kHz, and its net treble lift over the
+    midrange falls from +4.8 / +5.6 dB to +1.0 / +2.3 dB.*
+
+    *One consequence to expect on re-export, beyond the treble: the 200 Hz -
+    2 kHz reference the correction normalises to was itself being cancelled
+    by 1 to 4 dB, so the bass was being cut against a reference that sat too
+    low. The new design gives about 2.5 dB more at 63-125 Hz relative to the
+    midrange, and the modelled crossover-band level rises with it, from
+    -0.7 dB to +1.1 dB at 8192 taps. The subwoofer level and trim were fitted
+    against the old averaging and should be checked again after re-exporting.*
+
+    *Left to do from this item: the positional-coherence trace (step 4) is not
+    implemented — nothing computes or displays |R(f)| yet, and the phase
+    correction is still not tapered with it. And the paper's numbers move; see
+    the item below.*
+
+- [ ] Re-derive the paper's Table 1 and Figure 1 from the fixed averaging.
+
+    The measured A/B is untouched, as it should be — it compares two measured
+    runs and never goes near the averaging: still +0.78 dB (main 1) and
+    +0.88 dB (main 2) at 8 of 8 positions, same per-position spread, same
+    polarity checks, same model-vs-measured RMS, same predicted and measured
+    crossover-band levels. What moves is everything the offline design feeds:
+
+    - Table 1 (leave-one-out, main 1): magnitude only -1.50 -> -1.21,
+      magnitude + arrival-time delay -0.41 -> -0.38, magnitude +
+      crossover-band delay -1.21 -> -0.63, all-pass -0.45 -> -0.42. The
+      ordering and the conclusions hold, and the wrong-polarity row gets
+      worse (-5.2 -> -6.1 dB), which strengthens the polarity argument.
+    - The gap between the two delay estimators narrows from 0.8 dB to about
+      0.25 dB, because the power-averaged subwoofer magnitude is a better
+      weight for the crossover-band phase fit (the weighted estimate moves
+      from 29.22 to 29.80 ms, against an arrival difference of 30.49 ms).
+      Section 4's "that choice is worth 0.8 dB to a delay-only alignment" and
+      the Figure 1(c) caption's "worth most of a decibel" both have to change.
+    - The Figure 2 (fir-length) levels shift by about +1.8 dB for the reason
+      in the note above; the shape that figure is about — 2048 taps apart,
+      4096 and up within 0.05 dB — is unchanged.
+
+    So: re-run `make_paper_figure.py` and `sub_alignment_validation.py` with
+    the campaign-6 arguments in `doc/experiments/README.md`, regenerate
+    `doc/figures/validation.png` and `doc/figures/fir-length.png`, and update
+    Table 1, the two paragraphs that quote it, and the Figure 1(c) caption.
+    Worth doing in one pass with a re-export of the correction FIRs, so that
+    the paper and the shipped filters describe the same engine.
+
+
 - [ ] Group analysis: the per-speaker Load button does less than every other
   load path.
 

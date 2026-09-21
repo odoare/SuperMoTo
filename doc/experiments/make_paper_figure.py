@@ -33,7 +33,8 @@ from scipy.io import wavfile
 
 import sub_alignment_validation as V
 from sub_alignment_validation import (welch_h1, ir_peak_delay, remove_delay,
-                                      smooth_var_octave, butterworth, design,
+                                      smooth_var_octave, position_average,
+                                      smooth_average, butterworth, design,
                                       group_delay_estimate, load_mic_cal,
                                       mic_cal_gain, render_ir, W)
 
@@ -281,8 +282,8 @@ def panel_c(ax, m, f, hp, lp, g):
     b = (f >= 35) & (f <= 400)
     Hm = np.array([v[0] for v in m.dry_all.values()])
     Hs = np.array([v[1] for v in m.dry_all.values()])
-    Hsm = smooth_var_octave(Hm.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
-    Ssm = smooth_var_octave(Hs.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+    Hsm = smooth_average(position_average(Hm), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+    Ssm = smooth_average(position_average(Hs), SR, V.SMOOTH_LO, V.SMOOTH_HI)
     # The two delay estimators of Table 1, both of them: they can be more than
     # a millisecond apart, and which one a magnitude-only correction is given
     # is worth most of a decibel, so plotting only one of the two would make
@@ -327,8 +328,8 @@ def panel_length(ax, m, f, hp, lp, g, sm, nz):
     b = (f >= 35) & (f <= 250)
     Hm = np.array([m.dry[p][0] for p in m.shared])
     Hs = np.array([m.dry[p][1] for p in m.shared])
-    Hsm = smooth_var_octave(Hm.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
-    Ssm = smooth_var_octave(Hs.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+    Hsm = smooth_average(position_average(Hm), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+    Ssm = smooth_average(position_average(Hs), SR, V.SMOOTH_LO, V.SMOOTH_HI)
     T = group_delay_estimate(Ssm, SR, FX, True)
     C = design(Hsm, Ssm, f, FX, T, False, 'mixed')
     meas = np.mean([nz(sm(m.meas['linear'][p]), 500, 2000) for p in m.shared], axis=0)
@@ -526,8 +527,8 @@ def report(a, f, hp, lp, g, cal, sm, nz):
         # what a longer filter would do to the same band (Figure: fir-length)
         Hm = np.array([m.dry[q][0] for q in m.shared])
         Hs = np.array([m.dry[q][1] for q in m.shared])
-        Hsm = smooth_var_octave(Hm.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
-        Ssm = smooth_var_octave(Hs.mean(axis=0), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+        Hsm = smooth_average(position_average(Hm), SR, V.SMOOTH_LO, V.SMOOTH_HI)
+        Ssm = smooth_average(position_average(Hs), SR, V.SMOOTH_LO, V.SMOOTH_HI)
         Cd = design(Hsm, Ssm, f, FX, group_delay_estimate(Ssm, SR, FX, True), False, 'mixed')
         lev = []
         for n in LENGTHS:

@@ -13,8 +13,12 @@
     signal, averaged over Hann windows of selectable size (default 65536).
 
     The propagation delay of each measurement is estimated and removed, so
-    the complex responses can be averaged across microphone positions. A
-    correction curve compensating modulus AND phase is then derived from
+    the responses can be averaged across microphone positions. The average
+    takes its MAGNITUDE from a power mean and its PHASE from the complex
+    mean (see computeAverage): above the room's transition frequency the
+    positions no longer agree on phase, and a plain complex mean there reads
+    far below every curve that went into it. A correction curve compensating
+    modulus AND phase is then derived from
     the regularized inverse of the (octave-fraction smoothed) average, with
     an adjustable correction level from 0 (none) to 1 (flat, except a slope
     towards low frequencies), and exported as an impulse response wav that
@@ -228,8 +232,14 @@ public:
     }
 
     /** Octave-fraction smoothing applied to the displayed transfer functions
-        AND to the average the correction is derived from (complex smoothing,
-        so magnitude and phase together). 1/6 octave = 1.0f/6.0f; 0 = off.
+        AND to the average the correction is derived from. 1/6 octave =
+        1.0f/6.0f; 0 = off.
+
+        Individual curves are smoothed as complex values (magnitude and phase
+        together, keeping that position's phase detail); the averages have
+        their magnitude and phase smoothed separately, since a complex moving
+        average would re-introduce the very cancellation computeAverage()
+        avoids — see applySmoothing().
 
         The smoothing is frequency dependent: the octave fraction is
         interpolated (log-frequency) between lowFraction at/below

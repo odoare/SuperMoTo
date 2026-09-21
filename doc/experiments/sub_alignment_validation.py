@@ -101,6 +101,34 @@ def smooth_var_octave(H, sr, lo=None, hi=None, w=W):
     return (pre[khi + 1] - pre[klo]) / (khi - klo + 1)
 
 
+def position_average(H):
+    """The average across microphone positions, as AnalysisEngine::computeAverage()
+    builds it: magnitude from the power mean, phase from the complex mean.
+
+    |mean H| is not mean |H|. Above the room's transition frequency the
+    positions no longer agree on phase, and a plain complex mean of ten
+    near-random phasors reads about 1/sqrt(10) low -- 0.2 dB at 200 Hz but
+    12 dB at 13 kHz on the campaign-6 set, at bins where every individual
+    curve is flat. The power mean is the spatial average of the field; the
+    complex mean still supplies the phase, which is meaningful exactly where
+    the positions agree about it."""
+    mag = np.sqrt((np.abs(H) ** 2).mean(axis=0))
+    c = H.mean(axis=0)
+    a = np.abs(c)
+    return np.where(a > 1e-30, c / np.maximum(a, 1e-300) * mag, mag)
+
+
+def smooth_average(H, sr, lo=None, hi=None, w=W):
+    """Smooths an average's magnitude and phase separately, as
+    AnalysisEngine::applySmoothing() does. A complex moving average would put
+    back the cancellation position_average() avoids: at 13 kHz a 1/3-octave
+    window spans 3 kHz, over which the residual phase turns several times."""
+    m = np.real(smooth_var_octave(np.abs(H).astype(complex), sr, lo, hi, w))
+    p = smooth_var_octave(H, sr, lo, hi, w)
+    a = np.abs(p)
+    return np.where(a > 1e-30, p / np.maximum(a, 1e-300) * m, m)
+
+
 def load_set(data, prefix, positions, main_idx, sub_idx):
     """Per-position transfer functions, mains with their own delay removed and
     subwoofers anchored on the main of the same position."""
@@ -412,8 +440,8 @@ def evaluate(d, f, sr, fx, loo, fx_bm=None, sub_gain_db=0.0):
         per, spans = [], []
         for p in range(npos):
             tr = [q for q in range(npos) if q != p] if loo else list(range(npos))
-            Hsm = smooth_var_octave(d['H'][tr].mean(axis=0), sr)
-            Ssm = smooth_var_octave(d['S'][tr].mean(axis=0), sr)
+            Hsm = smooth_average(position_average(d['H'][tr]), sr)
+            Ssm = smooth_average(position_average(d['S'][tr]), sr)
             if tmode == 'zero':
                 T = 0.0
             elif tmode == 'arr':
@@ -456,8 +484,8 @@ def make_figure(d, f, sr, fx, path):
 
     hp = butterworth(np.maximum(f, 1e-6), fx, 'hp')
     lp = butterworth(np.maximum(f, 1e-6), fx, 'lp')
-    Hsm = smooth_var_octave(d['H'].mean(axis=0), sr)
-    Ssm = smooth_var_octave(d['S'].mean(axis=0), sr)
+    Hsm = smooth_average(position_average(d['H']), sr)
+    Ssm = smooth_average(position_average(d['S']), sr)
     T = group_delay_estimate(Ssm, sr, fx, True)
 
     shown = [('no correction', 'none', 0.0, 'tab:gray'),
@@ -551,7 +579,7 @@ def main():
 
     for name, d in sets.items():
         print(f'\n################  main {name}  ################')
-        Ssm = smooth_var_octave(d['S'].mean(axis=0), sr)
+        Ssm = smooth_average(position_average(d['S']), sr)
         tw = group_delay_estimate(Ssm, sr, fx, True)
         tu = group_delay_estimate(Ssm, sr, fx, False)
         tarr = (np.median(d['d_sub_own']) - np.median(d['d'])) / sr * 1000.0
@@ -570,7 +598,7 @@ def main():
     for fxi in (60, 85, 100, 120, 150):
         line = f'{fxi:6.0f} '
         for name, d in sets.items():
-            Ssm = smooth_var_octave(d['S'].mean(axis=0), sr)
+            Ssm = smooth_average(position_average(d['S']), sr)
             line += (f'{group_delay_estimate(Ssm, sr, fxi, True):14.1f}'
                      f'{group_delay_estimate(Ssm, sr, fxi, False):13.1f}')
         print(line)

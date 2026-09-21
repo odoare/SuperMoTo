@@ -79,8 +79,18 @@ every dry candidate picks height and coordinate together.
 
 ## Following the plugin exactly
 
-Two details of `AnalysisEngine` are easy to get wrong offline and both move the
-crossover-region scores by more than the effect being measured:
+Five details of `AnalysisEngine` are easy to get wrong offline, and each moves
+the scores by more than the effect being measured:
+
+- **The average is not a complex average.** `computeAverage()` takes the
+  magnitude from a power mean across the positions and only the phase from the
+  complex mean, and `applySmoothing()` then smooths those two separately. A
+  plain complex mean reads far below every curve that went into it wherever
+  the positions stop agreeing on phase — 0.2 dB at 200 Hz but 12 dB at 13 kHz
+  on the campaign-6 set — and a complex moving average over a 1/3-octave
+  window puts that back even if the positions were averaged correctly. Mirrored
+  here by `position_average()` and `smooth_average()`; use them instead of
+  `smooth_var_octave(H.mean(axis=0), ...)`.
 
 - **The microphone calibration is part of the design.** The plugin divides the
   mic response out of every spectrum before it inverts anything, so a chain
@@ -102,9 +112,12 @@ crossover-region scores by more than the effect being measured:
   unrendered frequency-domain design is not comparable to it below a few
   hundred hertz.
 
-With all four right, the offline chain reproduces the plugin's exported filters
+With all five right, the offline chain reproduces the plugin's exported filters
 to **0.02-0.13 dB RMS in every band from 60 Hz to 8 kHz**, for both renderings
-and both mains.
+and both mains — measured before the averaging changed, against exports the
+old engine wrote. Until the filters are exported again from the fixed engine,
+that comparison is between two different designs and will read about 0.6 dB
+RMS over 200 Hz - 10 kHz; that is the size of the fix, not an error.
 
 ## What it reports
 
