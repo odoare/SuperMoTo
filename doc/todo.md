@@ -661,3 +661,367 @@
       user expects of a plugin, so the manual does not describe it.*
 
 ## To do
+
+- [ ] Average the positions in power, not as complex vectors: the correction is
+  inverting a cancellation that exists at no microphone position.
+
+    Found while chasing a reported oddity, and it is the real cause of the
+    harsh treble — it demotes the two items below. With the ch03 set of
+    `supermoto_paper6` loaded in Analysis, every individual curve is flat
+    within a couple of dB above 5 kHz, yet the average shows a 12 dB dip
+    around 13.35 kHz. That is not a plotting bug and not a delay bug:
+    `AnalysisEngine::computeAverage()` sums the *complex* responses, so the
+    curve drawn is |mean H|, not mean |H|, and the two part company as soon as
+    the per-position phase stops agreeing. At 13.35 kHz the ten positions'
+    phases are 145, 177, 169, 163, -6, 0, -57, 28, -158 and 178 degrees: they
+    cancel.
+
+    How far apart the two averages are on that set (per bin, before smoothing;
+    |R| is the mean unit phasor over the ten positions — 1.00 = every position
+    shares a phase, 0.32 = what ten random phases give; dB = what the complex
+    average loses against the power average):
+
+              Hz     30     50     80    125    200    315    500   1250   2000   5000   8000  12.5k    16k
+        ch03 |R|   1.00   0.99   0.99   0.99   0.99   0.93   0.91   0.77   0.62   0.79   0.55   0.27   0.38
+        ch03  dB   -0.0   -0.1   -0.2   -0.1   -0.2   -1.1   -1.1   -2.8   -4.1   -2.3   -5.3  -11.5   -8.2
+        ch04 |R|   1.00   0.98   0.99   0.99   0.96   0.91   0.95   0.81   0.66   0.60   0.54   0.22   0.30
+        ch04  dB   -0.0   -0.2   -0.2   -0.1   -0.5   -1.2   -0.8   -2.1   -3.7   -4.5   -5.7  -13.3  -11.7
+
+    The knee sits between 200 and 315 Hz. That is the room's transition
+    frequency, arrived at from the data rather than from a rule of thumb, and
+    it happens to land exactly where EBU Tech 3276 says to stop equalising.
+    Below it the complex average is right and costs nothing. Above 2 kHz the
+    vectors are near-random and the average reads 4 to 13 dB below every curve
+    that went into it.
+
+    What it costs us:
+
+    - The correction inverts that loss. Designed from the power average
+      instead, the same ten positions ask for **+1.6 dB (ch03) and +2.8 dB
+      (ch04)** of net treble lift over the midrange, against +5.7 and +8.1 dB
+      from the complex average. The difference — about 4 dB on ch03 and 5 dB
+      on ch04 — is what the shipped FIRs are boosting for no acoustic reason,
+      out of the +4.8 / +5.6 dB of net treble lift they carry.
+    - Where the vectors nearly cancel, the displayed level is not a stable
+      property of the measurement: at 13 kHz it moves 1.7 dB with the
+      smoothing setting alone, and the depth of the dip follows the window
+      size and the mic calibration too. That is most of why the Analysis and
+      Group panes disagree at the ends (next item).
+    - Level matching inherits a smaller version of the same bias: over
+      500 Hz - 2 kHz the L/R difference reads +0.22 dB from the complex
+      average and +0.47 dB from the power average.
+    - `computeAverage()` already knows better for the harmonic curves, which
+      it power-averages, with a comment saying that a complex average would
+      cancel because distortion phase is not coherent between positions. The
+      argument is the same for the fundamental above the transition frequency;
+      it was just never applied there.
+
+    **Fix.** Magnitude from the power average, phase from the complex one:
+
+        A(f) = sqrt(mean |H_i(f)|^2) * mean(H_i(f)) / |mean(H_i(f))|
+
+    Every phase feature survives (the LF phase correction, the subwoofer
+    all-pass, the minimum-phase render), and the magnitude stops depending on
+    how well ten microphone positions happen to agree. Steps:
+
+    1. `AnalysisEngine::computeAverage()`: accumulate `sum(H)` and
+       `sum(|H|^2)` in one pass and combine as above. Same for
+       `computeSubAverage()`.
+    2. `applySmoothing()`: smooth magnitude and phase **separately**, or the
+       complex moving average puts the cancellation straight back — at 13 kHz
+       a 1/3-octave window spans 3 kHz, over which the residual phase turns
+       several times. Smooth the real magnitude, smooth the complex average
+       for its argument alone, recombine. Individual curves can stay as they
+       are: per position, complex smoothing costs 0.1 to 0.6 dB.
+    3. Re-check `getBandLevelDb()` and the group's level matching against the
+       new average (they should get slightly more consistent, not less).
+    4. Worth adding while in there: expose |R(f)| as a "positional coherence"
+       trace on the plot. It says where the correction is meaningful, it is
+       nearly free to compute, and it makes the transition frequency visible
+       instead of assumed. A natural follow-on is to taper the *phase*
+       correction with it, so phase stops being corrected exactly where the
+       positions disagree about it.
+
+    **Verification.** With the fix, the ch03 average should read within about
+    1 dB of every individual curve from 5 to 16 kHz instead of 12 dB below
+    them; the curve should barely move when the smoothing fraction changes
+    (measured: the power average moves 0.5 dB between 1/12 and 1 octave where
+    the complex one moves 1.7 dB); the two panes should then agree; and the
+    exported FIR for ch03 should lose about 4 dB of treble boost. Re-run
+    `doc/experiments/sub_alignment_validation.py` afterwards: it mirrors the
+    engine and will need the same change, and the campaign-6 A/B numbers in
+    the paper should be re-derived from it (the subwoofer work is below
+    200 Hz, where |R| is 0.99, so the conclusions should not move — but that
+    has to be shown, not assumed).
+
+- [ ] Group analysis: the per-speaker Load button does less than every other
+  load path.
+
+    `GroupAnalysisSession::loadSpeakerFiles()` pushes the current settings and
+    the sweep identity, but unlike `loadMeasurementFolder()` next to it, and
+    unlike `AnalysisSession::loadFiles()`, it does not:
+
+    - read the folder's `measurement.xml` and adopt the embedded mic
+      calibration (`readMeasurementFolderInfo` + `folderMicCal` +
+      `micCalSource = 2`), and
+    - call `updateSweepAvailability(files, true)`, which is what switches the
+      TF method to the Farina deconvolution when the manifest carries the
+      sweep identity.
+
+    So the same files loaded through that button are analysed with whatever
+    mic calibration and TF method the pane was last left on, while the
+    Analysis pane adopts both from the folder. `loadSubFiles()` has the same
+    gap. What each is worth, measured on ch03 of campaign 6 (dB, relative to
+    the 200 Hz - 2 kHz mean):
+
+    - mic calibration on vs off: +2.0 dB at 25-63 Hz, -2.4 dB at 8 kHz,
+      -1.3 dB at 13 kHz. The obvious suspect for a curve that differs at both
+      ends.
+    - TF method, Welch vs Farina: 0.2 dB or less everywhere above 40 Hz,
+      0.8 dB at 25 Hz. Not the explanation, but still an inconsistency.
+    - window size 16384 vs 131072: nothing above 40 Hz, 5 dB at 25 Hz.
+    - HF smoothing 1/6 vs 1/3 octave: about 1 dB at 2-4 kHz, and up to 1.7 dB
+      at 13 kHz — but that last one only because of the item above.
+
+    Fix: give the per-speaker and sub load paths the same folder-info work the
+    folder load does, so every path through the pane analyses a folder the
+    same way. Then the two panes can only disagree if a control really is set
+    differently, and the first item removes the rest.
+
+- [ ] Monitor target curve ("house curve"): a selectable gentle downward tilt
+  on the monitor path, so that a correction designed against the measured
+  in-room response does not end up sounding harsh.
+
+    **The practice is real.** A loudspeaker whose direct sound is flat does
+    not measure flat in a room: its directivity index rises with frequency
+    (ITU-R BS.1116-3 §7.2.2.2 even *requires* the monitor's DI to rise
+    smoothly, 6-12 dB over 500 Hz - 10 kHz), so the reverberant contribution
+    to a steady-state, spatially averaged measurement falls as frequency
+    rises, and absorption in a treated room takes more off the top. The ear
+    follows the direct sound and the first arrivals; the microphone average
+    follows the steady state. Flatten the steady state and you have raised the
+    direct sound in the treble by the difference. Both listening standards
+    make room for the tilt and neither asks for it to be removed: EBU Tech
+    3276 Fig. 2 holds the upper limit flat at +3 dB but lets the lower limit
+    fall at **1 dB per octave** above 2 kHz (-6 dB at 16 kHz), and ITU-R
+    BS.1116-3 Fig. 2 widens its -3 dB limit downwards at **1.5 dB per octave**
+    above 2 kHz. Preference work puts the middle of the range lower still: the
+    Harman in-room target is a roughly 1 dB/octave fall across the band with a
+    low shelf under ~105 Hz. So 0 dB at the bottom to -3...-6 dB at the top is
+    a conservative reading of the literature, not an eccentric one.
+
+    **How much of it applies here (revised 21 Sep 2026).** The first version of
+    this entry read the tilt straight off the engine's averaged curves and
+    concluded that the room fell 4 to 15 dB above 2 kHz and that the FIRs were
+    putting all of it back. Most of that fall was the complex-averaging
+    artefact of the first item above, not the room. With the positions
+    power-averaged instead, the same campaign-6 set (`supermoto_paper6`,
+    10 positions, mic calibration divided out, 1/6-1/3 octave smoothing,
+    normalised to the 200 Hz - 2 kHz mean) gives:
+
+                       40     63    125    250    500     1k     2k     4k     8k  12.5k    16k
+        ch03 power   -7.3   +1.4   +2.3   +0.8   -0.2   +2.3   -2.6   -0.9   -1.5   -1.8   -1.7
+        ch04 power   -5.8   -0.4   +1.9   +1.1   +3.1   +1.5   -2.8   -5.0   -3.0   -2.7   -3.2
+        ch03 cplx    -5.1   +4.0   +4.8   +3.1   +1.4   +3.8   -4.3   -2.9   -4.1  -11.0   -7.2
+        ch04 cplx    -3.5   +2.0   +4.3   +2.7   +4.9   +2.7   -4.6   -9.5   -6.1  -14.9  -12.2
+
+    So the room's real steady-state fall from the midband to 16 kHz is about
+    1.5 dB on ch03 and 3 dB on ch04 — the gentle tilt the literature describes,
+    not the cliff the plots show. The exported FIRs
+    (`Mirage_linear/Mirage_panneaux_paper_speaker{1,2}_correction.wav`)
+    nevertheless carry
+
+        band gain      63    125    250    500     1k     2k     4k     8k  12.5k    16k
+        speaker 1    -4.4   -3.4   -2.7   -1.3   -3.3   +5.5   +3.0   +4.1   +8.7   +7.0  dB
+        speaker 2    -2.7   -4.4   -0.1   -4.7   -2.6   +5.4   +8.3   +6.0   +9.6   +9.1  dB
+
+    i.e. +1.5 dB power-averaged over 200 Hz - 2 kHz against +6.3 dB over
+    2 - 16 kHz for speaker 1 (+2.2 / +7.8 for speaker 2), a net treble lift of
+    **+4.8 and +5.6 dB** over the midrange — of which about 4 dB (ch03) and
+    5 dB (ch04) is the averaging artefact and the remaining 1.5 to 3 dB is the
+    room, which is what this item is for. The verification set (`Mirage_linear_test`, 8 positions)
+    shows the correction did what it was asked: the corrected system measures
+    flat within about +/-2.5 dB from 63 Hz to 16 kHz, in the same complex
+    average, which is the condition every source above says will sound bright.
+
+    Practical order, then: fix the averaging first, re-export, listen. What is
+    left to dislike is what this item addresses, and it should be worth about
+    3 to 6 dB across the band rather than the 10 dB the first reading
+    suggested.
+
+    *Side note, not a target-curve matter:* the two mains really do differ, by
+    about 4 dB at 4 kHz in the power average (ch04 is the dull one). No global
+    curve fixes that. Worth checking toe-in, the panels and the tweeter axis
+    before blaming the electronics.
+
+    **References** (all checked, numbers taken from the documents):
+
+    - EBU Tech 3276 (2nd ed., 1998), *Listening conditions for the assessment
+      of sound programme material*, §2.4 and Fig. 2. The tolerance mask above,
+      plus the note that matters here: "To avoid degrading the quality of
+      reproduction, electrical equalization should be used carefully. It is
+      advisable to make the corrections in the low-frequency range (f < 300 Hz)
+      only. All channels should be adjusted in the same way."
+    - ITU-R BS.1116-3 (2015), §8.3.4.1 and Fig. 2 (the mask), §7.2.2.2 (the
+      rising directivity index that causes the tilt).
+    - F. E. Toole, *The Measurement and Calibration of Sound Reproducing
+      Systems*, JAES 63(7/8), pp. 512-541, 2015 — the case against equalising
+      a steady-state room curve flat, and what to equalise instead.
+    - F. E. Toole, *Sound Reproduction: The Acoustics and Psychoacoustics of
+      Loudspeakers and Rooms*, 3rd ed., Routledge, 2017 — the long version,
+      chapters on room curves and on what a room curve does and does not tell
+      you.
+    - S. Olive, T. Welti, E. McMullin, *Listener Preferences for In-Room
+      Loudspeaker and Headphone Target Responses*, AES 135th Convention, New
+      York, Oct. 2013, paper 8994 — the preference experiment behind the
+      Harman target (about -1 dB/octave with a bass shelf near 105 Hz).
+    - I. Allen, *The X-Curve: Its Origins and History*, SMPTE Motion Imaging
+      Journal, July/Aug. 2006, and the standards it describes (SMPTE ST 202,
+      ISO 2969: -3 dB/octave above 2 kHz, rooms over 125 m3). Cited as a
+      warning, not a model: that curve is for large rooms, and Allen documents
+      what happened in the 1980s when small dry mix rooms were tuned to it —
+      material sounded dull there, engineers compensated, and the mixes came
+      out bright. A small room needs *less* tilt than a cinema, and the useful
+      idea from that paper is that the turnover frequency, not the slope, is
+      what should move with room size and listening distance.
+
+    **Decision: a live layer on the monitor path, not baked into the FIR.**
+    Reasons, in order of weight:
+
+    1. It is taste and room, not calibration. It has to be turnable while
+       listening; a redesign-and-reload round trip is the wrong instrument for
+       judging 2 dB of treble.
+    2. It must apply to every output, including the ones with no FIR (the
+       subwoofer has none). Identical filtering everywhere leaves the
+       main/sub relative phase exactly as designed, which is what the
+       campaign-6 all-pass work went to some trouble to get right; a tilt
+       baked into the mains' FIRs only would put a small but real phase error
+       back at the crossover. It is also what EBU 3276 asks for in so many
+       words ("All channels should be adjusted in the same way").
+    3. It cannot get out of step with a batch of FIRs exported under some
+       earlier target, so there is no way to apply the tilt twice.
+    4. It costs 4 biquads per output, next to the 4 the output EQ already
+       allows, and nothing next to the convolution.
+
+    The one thing the layer costs us is that the Analysis pane's "corrected"
+    prediction would no longer be what the room does. That is fixed by
+    teaching the *plots* about the target (step 6 below) — never the exported
+    correction.
+
+    **The curve.** One global definition, used by the DSP and by the plots:
+
+    - `tiltDb` (0 ... -12 dB, default -4): the total drop from 20 Hz to
+      20 kHz, straight in dB against log f. -4 dB is -0.4 dB/octave; -10 dB is
+      the Harman slope.
+    - `turnoverHz` (0 = straight line over the whole band, the default;
+      otherwise flat below it and the whole drop spread over
+      `[turnoverHz, 20 kHz]`, the EBU/Allen shape). Allen's point about the
+      turnover moving with room size lives here.
+    - `bassDb` / `bassHz` (default 0 dB, 105 Hz): the optional Harman-style low
+      shelf, one `fxme::BiquadCoeffs::lowShelf`.
+    - Offset so the power mean over 200 Hz - 2 kHz is 0 dB — the same
+      reference `AnalysisEngine::recomputeCorrection()` normalises to, so the
+      plots and the filter agree — and then offset again so the maximum gain is
+      0 dB. Attenuation only: the layer can never clip an output, and the
+      master level makes up the loudness.
+    - `on`: a bypass, because the whole point is the A/B.
+
+    **Realisation.** Interleaved pole/zero sections, not shelves: section k is
+    `(1 + s/z_k)/(1 + s/p_k)` with `z_k = p_k * 10^(T/20N)`, poles geometric
+    over the band widened by two octaves at each end so the line stays straight
+    to 20 Hz and 20 kHz. Measured against the ideal straight tilt (a dozen
+    lines of numpy, worth redoing while implementing): 6 sections = 3 biquads
+    give +/-0.03 dB at
+    -6 dB of tilt and +/-0.045 dB at -10 dB. For comparison, one RBJ S=1 shelf
+    is +/-1.2 dB off a straight line at only -3 dB of tilt, and two are
+    +/-0.26 dB, so the obvious "just use a high shelf" is not good enough.
+
+    **Steps.**
+
+    1. `Source/Dsp/TargetCurve.h` (new): the struct above, `targetGainDb(curve,
+       f)` (the definition — one function, used by the plots and by the test)
+       and `buildTargetCascade(curve, sr, biquads, maxBiquads)` (the
+       realisation), in the shape of `BandFilter.h`'s `buildBiquadCascade`.
+    2. `Source/Model/ConfigModel.h`: one `TargetCurve` for the whole plugin
+       (not per output — identical everywhere is the point), in the ValueTree
+       so presets and sessions carry it, version counter bumped on edit, and
+       carried in `tryCopyForEngine` so the engine pulls it like everything
+       else.
+    3. `Source/Dsp/OutputProcessor.h`: a second cascade (`targetBiquads[4]`,
+       `activeTargetBiquads`), rebuilt in `applySettings()` when the curve
+       changes, run before the delay, skipped entirely when the curve is off,
+       reset with the rest. Note this gives the right behaviour in the
+       Calibration pane for free: `processOutputChainOnly()` runs
+       `OutputProcessor` only when `applyFir` is true, so a "Dry" measurement
+       bypasses the target and an "output + FIR" measurement includes it.
+    4. `Source/PluginProcessor.cpp`: an `AudioParameterBool "Target"` next to
+       Mute/Dim/Mono, so the bypass can be automated or bound to a key for the
+       A/B. The shape stays in the model, not in APVTS.
+    5. UI: on/off plus the tilt in the monitor row; turnover and bass shelf in
+       a small panel with a drawing of the resulting curve.
+    6. `AnalysisEngine` / `GroupAnalysisSession` / the plots: draw the target
+       as a dashed line, and add it to the *predicted* corrected response
+       (`getCorrectedDb`, `renderCorrectedIR`, `renderSystemIR`) so the
+       prediction is what will be heard. It must not enter `correction`: the
+       exported FIR stays the pure correction. Name the target in the markdown
+       report and in the figure legends.
+    7. Manual and tooltips, with one sentence of the why and a pointer to EBU
+       3276.
+
+    Optional, later, off by default: a "bake the target into the exported FIR"
+    checkbox, for handing a calibration to a rig that has no SuperMoTo. If it
+    is ever added, the exported file has to be marked so it cannot be loaded
+    with the live layer on as well.
+
+    **Verification.**
+
+    - A test next to `Tests/FractionalDelayTest.cpp`: the cascade against
+      `targetGainDb()` to 0.05 dB from 20 Hz to 20 kHz, at -1, -4 and -10 dB of
+      tilt and at 44.1, 48 and 96 kHz; unity when off; maximum gain never
+      above 0 dB.
+    - Measure it: one main in "output + FIR" mode with the target on and off,
+      and check the difference against the designed curve.
+    - Then the real one: re-measure the room and confirm the in-room average
+      now falls by the intended amount, and listen.
+
+    **Settle when implementing.** Whether the subwoofer output gets the curve
+    too. It should: with the 200 Hz - 2 kHz normalisation a -4 dB straight tilt
+    is within about 1 dB of unity below 100 Hz, and an identical minimum-phase
+    filter on both sides of the crossover cancels out of the main/sub phase
+    difference, while mains-only would not. If the bass level then wants
+    changing, that is what `bassDb` is for.
+
+- [ ] Correction level as a function of frequency: stop inverting the
+  steady-state room curve above the transition frequency.
+
+    Third in line, behind the averaging fix and the target curve, and no
+    longer urgent now that the first item accounts for most of the treble
+    boost — but still the standard practice, and still worth having. The
+    target curve decides *what* we aim at; this decides *how hard we chase it*,
+    and every source in the item above says the answer should depend on
+    frequency: below the transition frequency the spatially averaged steady
+    state is a fair description of what one hears and is worth inverting;
+    above it, the average is dominated by the reverberant field while the ear
+    follows the direct sound, so inverting it narrow-band is wrong regardless
+    of the target. EBU 3276 puts it bluntly — corrections below 300 Hz only.
+
+    `AnalysisEngine::recomputeCorrection()` already interpolates between bypass
+    and full correction in the log domain, but with a scalar
+    (`correctionLevel`). Make it a function of frequency: full level up to
+    `transitionHz`, a raised-cosine fall over a width in octaves, and `hfLevel`
+    above. Two new settings on `AnalysisSettings` and `GroupAnalysisSettings`,
+    reported in the markdown report; `transitionHz = 0` keeps today's
+    behaviour exactly, so nothing already measured changes meaning.
+
+    Starting point to try on the campaign-6 data, once the averaging fix is
+    in: 400 Hz, `hfLevel` 0.4, HF smoothing at 1 octave. Against the
+    power-averaged design, whose HF boost is +1.6 / +2.8 dB net rather than
+    +4.8 / +5.6, that leaves under a decibel of treble correction, and the
+    target curve then sets the balance on its own. The Analysis pane's
+    corrected curve shows the result before anything is exported, so this is
+    cheap to explore.
+
+    Related and further off: correcting the *direct* sound at HF instead, by
+    gating the impulse response with a frequency-dependent window before the
+    inversion (short at HF, long at LF), which is what the standards are really
+    asking for. Bigger job, and the two settings above get most of the way.
