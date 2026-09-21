@@ -2,11 +2,15 @@
   ------------------------------------------------------------------------------
     OutputEditorComponent.h
 
-    Detail editor for the selected output (loudspeaker): trim, polarity, a
-    time-alignment delay, the FIR correction (load / clear / enable), the
-    analyzer checkbox and a 2-band EQ (BandEqEditor, shared with
+    Detail editor for the selected output (loudspeaker): its description, trim,
+    polarity, a time-alignment delay, the FIR correction (load / clear /
+    enable), the analyzer checkbox and a 2-band EQ (BandEqEditor, shared with
     FrameEditorComponent's per-crosspoint EQ). Writes directly into the
     ConfigModel (these are not host parameters).
+
+    The description is the one place an output is named ("Genelec 8030 Left"),
+    and the name travels: the matrix and the Calibration pane show it on hover,
+    and a measurement run writes it into the folder's manifest.
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
@@ -17,6 +21,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <utility>
 #include "../Model/ConfigModel.h"
 #include "../Dsp/MatrixEngine.h"
 #include "../AppSettings.h"
@@ -69,6 +74,20 @@ public:
         clearButton.onClick = [this] { clearIr(); };
         addAndMakeVisible (clearButton);
 
+        descriptionLabel.setText ("Description", juce::dontSendNotification);
+        descriptionLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
+        descriptionLabel.setColour (juce::Label::textColourId, SuperMoToTheme::dimText);
+        addAndMakeVisible (descriptionLabel);
+
+        descriptionEditor.setColour (juce::TextEditor::backgroundColourId,
+                                     SuperMoToTheme::plotBackground.withAlpha (0.4f));
+        descriptionEditor.setTooltip (smt::tips::mtx::outDescription);
+        // Written on every keystroke rather than on Return, so a name typed
+        // and left unfinished is still the one a preset save or a measurement
+        // run picks up. The refresh below never types over the caret.
+        descriptionEditor.onTextChange = [this] { pushToModel(); };
+        addAndMakeVisible (descriptionEditor);
+
         addAndMakeVisible (bandEditor);
         bandEditor.onChange = [this] { pushToModel(); };
 
@@ -106,6 +125,9 @@ public:
     void setOutput (int out)
     {
         curOut = out;
+        // A different output's name replaces whatever is in the field, even
+        // mid-edit: what is typed next belongs to the output now selected.
+        showDescription = true;
         pullFromModel();
     }
 
@@ -123,6 +145,13 @@ public:
 
         title.setBounds (area.removeFromTop (20));
         area.removeFromTop (2);
+
+        // Row 0: what this output drives, as the preset names it.
+        auto row0 = area.removeFromTop (22);
+        descriptionLabel.setBounds (row0.removeFromLeft (72));
+        descriptionEditor.setBounds (row0.reduced (2, 1));
+
+        area.removeFromTop (6);
 
         // Row 1: Phase inv. / FIR / Analyzer + Load / Clear. 320 px, which is
         // exactly the narrowest this editor gets (a 340 px column, less the
@@ -154,10 +183,13 @@ private:
 
     void pullFromModel()
     {
+        const bool forced = std::exchange (showDescription, false);
+
         if (curOut < 0)
         {
             title.setText (juce::String::fromUTF8 ("No output selected \xe2\x80\x94 click a top-strip cell"),
                            juce::dontSendNotification);
+            descriptionEditor.setText ({}, false);
             setControlsEnabled (false);
             return;
         }
@@ -177,6 +209,12 @@ private:
         firButton.setToggleState (s.firOn, juce::dontSendNotification);
         spectrumButton.setToggleState (s.spectrum, juce::dontSendNotification);
         levelSlider.setValue (s.gainDb, juce::dontSendNotification);
+
+        // Never while it is being typed in: pushToModel() brings us straight
+        // back here on every keystroke, and setText() would move the caret.
+        if (forced || ! descriptionEditor.hasKeyboardFocus (true))
+            descriptionEditor.setText (s.description, false);
+
         updateDelayStep();
         delaySlider.setValue (snapDelayMs (s.delayMs), juce::dontSendNotification);
         clearButton.setEnabled (s.firPath.isNotEmpty());
@@ -217,6 +255,7 @@ private:
         s.gainDb      = (float) levelSlider.getValue();
         s.delayMs     = (float) snapDelayMs (delaySlider.getValue());
         s.firPath     = curFirPath;
+        s.description = descriptionEditor.getText();
         bandEditor.collectInto (s.bands.data(), (int) s.bands.size());
         return s;
     }
@@ -271,7 +310,8 @@ private:
         for (auto* c : { (juce::Component*) &phaseButton, (juce::Component*) &firButton,
                          (juce::Component*) &spectrumButton,
                          (juce::Component*) &loadButton, (juce::Component*) &levelSlider,
-                         (juce::Component*) &delaySlider })
+                         (juce::Component*) &delaySlider,
+                         (juce::Component*) &descriptionEditor })
             c->setEnabled (e);
         clearButton.setEnabled (e && curFirPath.isNotEmpty());
         bandEditor.setBandsEnabled (e);
@@ -281,9 +321,11 @@ private:
     smt::MatrixEngine& engine;
     int curOut = -1;
     bool updating = false;
+    bool showDescription = true;    // the next refresh replaces the field's text
     juce::String curFirPath;
 
-    juce::Label title;
+    juce::Label title, descriptionLabel;
+    juce::TextEditor descriptionEditor;
     juce::ToggleButton phaseButton, firButton, spectrumButton;
     juce::TextButton loadButton, clearButton;
     fxme::FxmeSlider levelSlider, delaySlider;

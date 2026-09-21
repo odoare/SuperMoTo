@@ -21,10 +21,11 @@
     copies the settings it needs when the version counter changes, via
     tryCopyForEngine() — a TRY-lock, so a GUI edit or a state restore holding
     the lock can never block the audio thread; the engine simply keeps last
-    block's settings and retries. That copy also deliberately excludes
-    OutputSettings::firPath (see OutputAudioSettings): assigning a juce::String
-    on the audio thread can free the previous buffer, and the engine never needs
-    the path. copyAll() is the full copy, message thread only (serialization).
+    block's settings and retries. That copy also deliberately excludes the two
+    juce::String members of OutputSettings, firPath and description (see
+    OutputAudioSettings): assigning a juce::String on the audio thread can free
+    the previous buffer, and the engine needs neither. copyAll() is the full
+    copy, message thread only (serialization).
 
     Author: Olivier Doaré, github.com/odoare
     Licenced under the GNU AGPL Version 3.0, or commercial terms (LICENSE.md)
@@ -131,6 +132,13 @@ struct OutputSettings
     float        delayMs     = 0.0f;  // time-alignment delay
     bool         firOn       = false;
     juce::String firPath;             // impulse response wav file
+    juce::String description;         // what this output drives, as the preset
+                                      // names it: "Genelec 8030 Left",
+                                      // "Surround Right". Shown in the matrix
+                                      // and the Calibration pane's tooltips and
+                                      // written into a measurement folder's
+                                      // manifest, so a set of captures says
+                                      // which loudspeaker it came from.
     bool         spectrum    = false; // show this output's sum on the analyzer
     std::array<FrameBand, (size_t) numOutputBands> bands {};
 
@@ -146,18 +154,20 @@ struct OutputSettings
     {
         const OutputSettings d;
         return gainDb == 0.0f && ! phaseInvert && delayMs == 0.0f && ! firOn
-            && firPath.isEmpty() && ! spectrum && bands == d.bands;
+            && firPath.isEmpty() && description.isEmpty() && ! spectrum
+            && bands == d.bands;
     }
 
     /** The subset the audio engine needs, as plain values. Defined below. */
     OutputAudioSettings audio() const noexcept;
 };
 
-// Everything the audio engine reads from an output, with firPath deliberately
-// left out: it is a juce::String, and copy-assigning one on the audio thread
-// releases the previous reference, which can call free(). The path is only ever
-// needed by MatrixEngine::updateFirFiles(), which runs on the message thread and
-// reads it straight from the model.
+// Everything the audio engine reads from an output, with firPath and
+// description deliberately left out: both are juce::Strings, and copy-assigning
+// one on the audio thread releases the previous reference, which can call
+// free(). The path is only ever needed by MatrixEngine::updateFirFiles(), which
+// runs on the message thread and reads it straight from the model; the
+// description is never needed below the GUI at all.
 struct OutputAudioSettings
 {
     float gainDb      = 0.0f;

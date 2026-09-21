@@ -660,9 +660,7 @@
     - [x] *Docs (step 9): not needed. Keeping the editor's state is what a
       user expects of a plugin, so the manual does not describe it.*
 
-## To do
-
-- [ ] Average the positions in power, not as complex vectors: the correction is
+- [x] Average the positions in power, not as complex vectors: the correction is
   inverting a cancellation that exists at no microphone position.
 
     Found while chasing a reported oddity, and it is the real cause of the
@@ -787,7 +785,7 @@
     correction is still not tapered with it. And the paper's numbers move; see
     the item below.*
 
-- [ ] Re-derive the paper's Table 1 and Figure 1 from the fixed averaging.
+- [x] Re-derive the paper's Table 1 and Figure 1 from the fixed averaging.
 
     The measured A/B is untouched, as it should be — it compares two measured
     runs and never goes near the averaging: still +0.78 dB (main 1) and
@@ -817,35 +815,7 @@
     caption became "sensitive to which of the two it is given where the
     all-pass is not".*
 
-    **Left, and it needs the re-export first.** Figure 2 (`fir-length.png`)
-    compares a *measurement* against renderings of a *re-derived* design.
-    Those were the same design until now; they are not any more, because the
-    campaign-6 filters were exported by the old averaging and the current code
-    designs about 1.8 dB more level through the crossover region. Regenerated
-    with the fixed code the measured curve no longer follows the 8192-tap
-    rendering, which is an artefact of mixing two engine versions, not a
-    result — so the committed figure is deliberately still the one made before
-    the change, and the file has been reverted to it. Honestly regenerating it
-    needs the correction re-exported from the fixed engine *and* the system
-    measured again.
-
-    Two other numbers wait on the same re-export:
-
-    - Section 5's "that chain reproduces the plugin's own exported filters to
-      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
-      two implementations of the same arithmetic agreeing, and it will hold
-      again once the exports come from the fixed engine; right now it cannot
-      be checked, because the chain and the exported filters are two different
-      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
-      the size of the fix rather than an error).
-    - Section 5's "the same pair rendered at 2048 taps differs from itself by
-      1.63 dB RMS across the crossover region". Re-deriving it with the new
-      averaging gives about 1.5 dB on the left main, but the exact figure in
-      the text could not be reproduced by either averaging, so it wants
-      recomputing rather than editing — the claim it supports (neither 2048-tap
-      rendering has room for the structure) is unaffected.
-
-- [ ] Group analysis: the per-speaker Load button does less than every other
+- [x] Group analysis: the per-speaker Load button does less than every other
   load path.
 
     `GroupAnalysisSession::loadSpeakerFiles()` pushes the current settings and
@@ -902,6 +872,80 @@
     *`doc/chapters/group-analysis.tex` gains a sentence on it: the folder
     travels with the files whichever button brings them in. The manual builds
     at 77 pages with no unresolved references.*
+
+- [x] A string description should be associated to each output frame, at the preset level (e.g. "[Speaker brand and model] Left", "Surround Right", etc.). This string should be edited as a one-line string entry in the component below the Fourier analysis graph (OutputEdidorComponent.h). The measurement run whould save that field in the produced .xml readme.md files. When passing the mouse over an output frame, a tooltip shoud be shown everytime, showing "Output n: [string]" + eventual info on delay management. When passing over a an output button in the Measurement & Calibration pane, the tooltip "Output n: [string]" should be shown.
+
+    *Done 21 Sep 2026, not yet built. `OutputSettings::description` in
+    `Source/Model/ConfigModel.h`, saved in the model's ValueTree and so in
+    presets and sessions, and kept out of `OutputAudioSettings` for the same
+    reason `firPath` is: assigning a juce::String on the audio thread can call
+    free(). Every other writer of an output starts from `getOutput()` and
+    modifies, so none of them erases a name.*
+
+    *Edited in `OutputEditorComponent` as a "Description" row under the title,
+    written on every keystroke rather than on Return, so a name left unfinished
+    is still the one a preset save or a measurement run picks up. The refresh
+    path never types over the caret (`hasKeyboardFocus`), except when the
+    selected output changes, where the new output's name has to replace what is
+    shown. The row costs the 2-band EQ 28 px of the panel's fixed 280, which it
+    has: its knobs clamp at 54 px and had 156.*
+
+    *The matrix tooltip now always says something — "Output 3: Genelec 8030
+    Left", with the delay and latency-compensation paragraphs after it when
+    there are any, where before it said nothing at all unless there were. The
+    Calibration pane's channel squares name themselves the same way, refreshed
+    from `modelChanged()`, which is how a rename in the matrix reaches them,
+    and say "Input n" in System mode, where the numbers mean inputs.*
+
+    *A run writes the names into both manifests:
+    `<Channel number="3" description="..."/>` in `measurement.xml`, and
+    "Channels: 3 (Genelec 8030 Left), ..." plus the per-run "Channels measured"
+    line in `readme_measurement.md`. Two things that needed care there. The
+    folder's channel list mixes `chNN` captures with the `inNN` ones a System
+    run writes, so only the former (and the sub) can carry an output's name.
+    And a run that cannot name a channel must not erase a name an earlier run
+    wrote, so the descriptions are carried over from the previous manifest the
+    way the calibration record already is.*
+
+    *Documented in `doc/chapters/matrix.tex` (the output chain) and
+    `doc/chapters/measurement.tex` (what the manifest records). Manual builds
+    at 77 pages, no unresolved references. Not done, and not asked for: nothing
+    reads the description back out of a manifest — `MeasurementFolderInfo`
+    still ignores the attribute, so Group analysis cannot yet label its rows
+    with it.*
+
+## To do
+
+- [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
+  Section 5, once the correction FIRs have been re-exported from the
+  fixed engine and the system measured again with them.
+
+    Figure 2 (`fir-length.png`) compares a *measurement* against renderings of
+    a *re-derived* design. Those were the same design until the averaging fix;
+    they are not any more, because the campaign-6 filters were exported by the
+    old averaging and the current code designs about 1.8 dB more level through
+    the crossover region. Regenerated with the fixed code, the measured curve
+    no longer follows the 8192-tap rendering, which is an artefact of mixing
+    two engine versions rather than a result — so the committed figure is
+    deliberately still the one made before the change, and the file was
+    reverted to it. Regenerating it honestly needs the correction re-exported
+    from the fixed engine *and* the system measured again.
+
+    Two other numbers wait on the same re-export:
+
+    - Section 5's "that chain reproduces the plugin's own exported filters to
+      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
+      two implementations of the same arithmetic agreeing, and it will hold
+      again once the exports come from the fixed engine; right now it cannot
+      be checked, because the chain and the exported filters are two different
+      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
+      the size of the fix rather than an error).
+    - Section 5's "the same pair rendered at 2048 taps differs from itself by
+      1.63 dB RMS across the crossover region". Re-deriving it with the new
+      averaging gives about 1.5 dB on the left main, but the exact figure in
+      the text could not be reproduced by either averaging, so it wants
+      recomputing rather than editing — the claim it supports (neither 2048-tap
+      rendering has room for the structure) is unaffected.
 
 - [ ] Monitor target curve ("house curve"): a selectable gentle downward tilt
   on the monitor path, so that a correction designed against the measured
@@ -1140,3 +1184,5 @@
     gating the impulse response with a frequency-dependent window before the
     inversion (short at HF, long at LF), which is what the standards are really
     asking for. Bigger job, and the two settings above get most of the way.
+
+- [ ] When hitting stop button during a measurement run, all the measurements of this run should be cancelled. Currently, if stopping after a few channels have been measured, they end in the data. They shouldn't.

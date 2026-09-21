@@ -80,6 +80,8 @@ juce::ValueTree ConfigModel::toValueTree() const
         vo.setProperty ("delayMs", s.delayMs, nullptr);
         vo.setProperty ("firOn", s.firOn, nullptr);
         vo.setProperty ("firPath", s.firPath, nullptr);
+        if (s.description.isNotEmpty())
+            vo.setProperty ("description", s.description, nullptr);
         vo.setProperty ("spectrum", s.spectrum, nullptr);
 
         for (int bi = 0; bi < numOutputBands; ++bi)
@@ -178,6 +180,7 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                 s.delayMs     = (float) (double) child.getProperty ("delayMs", s.delayMs);
                 s.firOn       = (bool)  child.getProperty ("firOn", s.firOn);
                 s.firPath     = child.getProperty ("firPath", s.firPath).toString();
+                s.description = child.getProperty ("description", s.description).toString();
                 s.spectrum    = (bool)  child.getProperty ("spectrum", s.spectrum);
 
                 int bi = 0;

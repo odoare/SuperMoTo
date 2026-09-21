@@ -11,6 +11,8 @@
 #include "MeasurementEngine.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <set>
 
 namespace smt
 {
@@ -357,6 +359,9 @@ void MeasurementEngine::writeManifests() const
     // from the settings just used instead — a folder is expected to keep
     // one stable sub channel across runs.
     std::vector<int> channels;
+    std::set<int> outputChannels;   // chNN captures: the ones an output
+                                    // description belongs to, as opposed to the
+                                    // inNN captures a System run writes
     bool haveSub = false;
     int maxPosition = 0;
 
@@ -367,13 +372,21 @@ void MeasurementEngine::writeManifests() const
             continue;
         maxPosition = juce::jmax (maxPosition, position);
         if (tag == "sub")
+        {
             haveSub = true;
-        else if (std::find (channels.begin(), channels.end(), channelNumber) == channels.end())
+            continue;
+        }
+        if (tag == "ch")
+            outputChannels.insert (channelNumber);
+        if (std::find (channels.begin(), channels.end(), channelNumber) == channels.end())
             channels.push_back (channelNumber);
     }
-    if (haveSub && settings.subChannel >= 0
-        && std::find (channels.begin(), channels.end(), settings.subChannel + 1) == channels.end())
-        channels.push_back (settings.subChannel + 1);
+    if (haveSub && settings.subChannel >= 0)
+    {
+        outputChannels.insert (settings.subChannel + 1);
+        if (std::find (channels.begin(), channels.end(), settings.subChannel + 1) == channels.end())
+            channels.push_back (settings.subChannel + 1);
+    }
     std::sort (channels.begin(), channels.end());
 
     const auto now = juce::Time::getCurrentTime();
@@ -405,6 +418,29 @@ void MeasurementEngine::writeManifests() const
             splOffsetDb = (float) sc->getDoubleAttribute ("offsetDb");
         }
 
+    // What the preset calls each output, for the manifest and the readme.
+    // Carried over from the previous manifest the way the calibration record
+    // is: a run that cannot name a channel must not erase the name an earlier
+    // one wrote. A System run names nothing (its channels are inputs), and a
+    // dry run of two speakers in a folder that holds four leaves the other two
+    // as they were.
+    std::map<int, juce::String> priorDescriptions;
+    if (priorValid)
+        for (auto* c : priorXml->getChildWithTagNameIterator ("Channel"))
+            if (const auto d = c->getStringAttribute ("description").trim(); d.isNotEmpty())
+                priorDescriptions[c->getIntAttribute ("number")] = d;
+
+    auto descriptionOf = [this, &outputChannels, &priorDescriptions] (int ch) -> juce::String
+    {
+        if (outputChannels.count (ch) == 0)
+            return {};      // an input of a System run: not an output at all
+        if (ch >= 1 && ch <= numChannels)
+            if (const auto d = settings.outputDescriptions[(size_t) (ch - 1)].trim(); d.isNotEmpty())
+                return d;
+        const auto it = priorDescriptions.find (ch);
+        return it != priorDescriptions.end() ? it->second : juce::String();
+    };
+
     // ── measurement.xml: the machine-readable manifest Group analysis's
     // folder loader reads (scanMeasurementFolder). The readme below stays
     // purely human documentation.
@@ -434,7 +470,12 @@ void MeasurementEngine::writeManifests() const
         }
 
         for (int ch : channels)
-            root.createNewChildElement ("Channel")->setAttribute ("number", ch);
+        {
+            auto* c = root.createNewChildElement ("Channel");
+            c->setAttribute ("number", ch);
+            if (const auto d = descriptionOf (ch); d.isNotEmpty())
+                c->setAttribute ("description", d);
+        }
 
         auto* run = root.createNewChildElement ("Run");
         run->setAttribute ("time", now.toISO8601 (true));
@@ -480,7 +521,11 @@ void MeasurementEngine::writeManifests() const
         out << settings.generalComment.trim() << "\n\n";
     out << "Channels: ";
     for (size_t i = 0; i < channels.size(); ++i)
+    {
         out << (i > 0 ? ", " : "") << channels[i];
+        if (const auto d = descriptionOf (channels[i]); d.isNotEmpty())
+            out << " (" << d << ")";
+    }
     out << "\n";
     out << "Sub channel: "
         << (haveSub && settings.subChannel >= 0 ? juce::String (settings.subChannel + 1) : juce::String ("none"))
@@ -515,8 +560,17 @@ void MeasurementEngine::writeManifests() const
     out << "- Channels measured: ";
     for (int i = 0; i < (int) channelList.size(); ++i)
     {
-        const bool isSub = (! full && channelList[(size_t) i] == settings.subChannel);
-        out << (i > 0 ? ", " : "") << (channelList[(size_t) i] + 1) << (isSub ? " (sub)" : "");
+        const int ch = channelList[(size_t) i] + 1;
+        juce::StringArray notes;
+        if (! full && channelList[(size_t) i] == settings.subChannel)
+            notes.add ("sub");
+        if (! full)
+            if (const auto d = descriptionOf (ch); d.isNotEmpty())
+                notes.add (d);
+
+        out << (i > 0 ? ", " : "") << ch;
+        if (! notes.isEmpty())
+            out << " (" << notes.joinIntoString (", ") << ")";
     }
     out << "\n";
     out << "- Files written:\n";

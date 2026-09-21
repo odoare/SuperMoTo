@@ -86,6 +86,10 @@ namespace mtx
         "session rate if needed. The Analysis panes can write and assign one for you.";
     inline constexpr auto outClearIr =
         "Remove this output's impulse response. Its delay, trim and EQ are kept.";
+    inline constexpr auto outDescription =
+        "What this output drives, as this preset names it: \"Genelec 8030 Left\", "
+        "\"Surround Right\". Shown when hovering the output in the matrix and in "
+        "Measurement & calibration, and written into a measurement folder's manifest.";
     inline constexpr auto outTrim =
         "Output trim (dB). Right-click to type a value.";
     inline constexpr auto outDelay =

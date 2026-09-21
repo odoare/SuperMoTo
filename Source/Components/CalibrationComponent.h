@@ -91,7 +91,6 @@ public:
         for (int o = 0; o < smt::numChannels; ++o)
         {
             auto* b = outputToggles.add (new juce::ToggleButton (juce::String (o + 1)));
-            b->setTooltip (smt::tips::cal::outputs);
             SuperMoToTheme::accentToggleButton (*b, SuperMoToTheme::measure);
             addAndMakeVisible (b);
         }
@@ -457,6 +456,7 @@ private:
         const bool full = currentMode() == smt::MeasureMode::fullSystem;
         outputsLabel.setText (full ? "Inputs to measure" : "Outputs to measure",
                               juce::dontSendNotification);
+        updateOutputTooltips();     // the numbers mean outputs or inputs
 
         updateSubUi();
 
@@ -812,8 +812,16 @@ private:
         smt::MeasurementEngine::Settings s;
         s.micInput = micBox.getSelectedId() - 1;
         const int numCh = measureChannelCount();
+        const bool full = currentMode() == smt::MeasureMode::fullSystem;
         for (int o = 0; o < smt::numChannels; ++o)
+        {
             s.channelsToMeasure[(size_t) o] = o < numCh && outputToggles[o]->getToggleState();
+            // The names go with the captures, so a folder says which
+            // loudspeaker each channel was. Not in System mode: there the
+            // numbers are inputs.
+            if (! full)
+                s.outputDescriptions[(size_t) o] = processor.configModel.getOutput (o).description;
+        }
         s.signalType = signalBox.getSelectedId() == 1
                            ? smt::MeasurementEngine::SignalType::whiteNoise
                            : smt::MeasurementEngine::SignalType::logSweep;
@@ -854,8 +862,28 @@ private:
         refresh();
     }
 
+    /** Names each channel toggle the way the preset names the output, so the
+        numbered squares say which loudspeaker they will play. Re-done on every
+        model change, which is also how a rename in the matrix reaches here. */
+    void updateOutputTooltips()
+    {
+        const bool full = currentMode() == smt::MeasureMode::fullSystem;
+
+        for (int o = 0; o < outputToggles.size(); ++o)
+        {
+            juce::String head = (full ? "Input " : "Output ") + juce::String (o + 1);
+            if (! full)
+                if (const auto d = processor.configModel.getOutput (o).description; d.isNotEmpty())
+                    head << ": " << d;
+
+            outputToggles[o]->setTooltip (head + "\n" + smt::tips::cal::outputs);
+        }
+    }
+
     void modelChanged() override
     {
+        updateOutputTooltips();
+
         // Matrix size changed: re-layout the toggles and untick the hidden ones
         // (count depends on the mode: outputs, or inputs in fullSystem).
         for (int o = measureChannelCount(); o < outputToggles.size(); ++o)

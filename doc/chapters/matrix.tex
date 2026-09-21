@@ -58,6 +58,7 @@ The Config tool (Chapter~\ref{ch:config}) sets both counts for you: applying a r
 \subsection{What an output (loudspeaker) contains}\label{sec:outputchain}
 Each output is the chain applied to the summed signal of all active frames feeding it. Click an output cell (top strip) to edit it:
 \begin{itemize}[nosep]
+  \item a \textbf{Description}: what this output drives, as you name it --- "Genelec 8030 Left", "Surround Right". It is part of the preset, so it travels with the configuration it describes. Hovering the output in the matrix shows "Output 3: Genelec 8030 Left" above whatever the output has to say about its delay, the numbered channel squares in Measurement \& calibration name themselves the same way, and a measurement run writes the name into the folder's manifest and readme (Section~\ref{sec:measfolder}), so a set of captures says which loudspeaker it came from;
   \item \textbf{Trim} (output level, dB);
   \item \textbf{Phase invert}, the same flip as a frame's but applied to everything the output plays;
   \item a \textbf{2-band EQ}: each band can be lowpass, highpass, bandpass or peaking; lowpass/highpass are 2nd or 4th order; bands are cascaded in series. This is where the bass-management \gterm{crossover}{crossover} lives (a highpass on a main, a lowpass on the sub);

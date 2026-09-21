@@ -488,10 +488,12 @@ juce::String MatrixComponent::getTooltip()
 
     const int comp     = engine.getOutputLatencyCompSamples (hoverOut);
     const int absorbed = engine.getOutputSelfAbsorbedSamples (hoverOut);
-    if (comp <= 0 && absorbed <= 0)
-        return {};
 
-    juce::String text = "Output " + juce::String (hoverOut + 1) + ":";
+    // Always something: the output is named even when it has no delay story
+    // to tell, which is the point of naming it.
+    const auto description = model.getOutput (hoverOut).description;
+    juce::String text = "Output " + juce::String (hoverOut + 1)
+                      + (description.isNotEmpty() ? ": " + description : juce::String());
 
     // This output's own manual delay is paying for part (or all) of its own
     // FIR's latency, so less (or no) delay had to be added elsewhere to keep

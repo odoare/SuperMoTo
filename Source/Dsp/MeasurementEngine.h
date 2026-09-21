@@ -64,6 +64,12 @@ public:
                                                             //   text for the manifest
         bool  splCalibrated = false;                        // SPL-meter calibration:
         float splOffsetDb = 0.0f;                           //   dB SPL = dBFS + offset
+        // What each output drives, as the preset names it, for every output
+        // rather than only the measured ones: writeManifests() records a
+        // folder's whole channel list, including channels an earlier run of
+        // the same folder wrote. Empty in fullSystem mode, where the toggled
+        // channels are inputs.
+        std::array<juce::String, numChannels> outputDescriptions {};
         int subChannel = -1;                                // 0-based; -1 = none.
                                                             // Only meaningful for dry/FIR
                                                             // modes (fullSystem's toggled

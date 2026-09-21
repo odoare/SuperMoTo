@@ -209,7 +209,7 @@ After every run SuperMoTo (re)writes two manifests in the folder, both regenerat
 \texttt{measurement.xml} carries everything a later analysis needs to interpret them. At the folder level it holds:
 
 \begin{itemize}[nosep]
-  \item the \textbf{channels} measured and which one is the subwoofer, plus the highest position number reached and the time of the last run;
+  \item the \textbf{channels} measured and which one is the subwoofer, plus the highest position number reached and the time of the last run. A channel that the preset names (Section~\ref{sec:outputchain}) carries that description with it, so the folder records which loudspeaker each capture came from. Names are kept from run to run: a run that cannot name a channel, a System run whose channels are inputs for instance, leaves the names an earlier run wrote;
   \item the \textbf{general comment} (Section~\ref{sec:comments});
   \item the \textbf{SPL calibration} in effect, as the single offset relating full scale to sound pressure, $\mathrm{dB\,SPL} = \mathrm{dBFS} + \textit{offset}$, which is what later allows the analysis to plot estimated dB\,SPL (Section~\ref{sec:levelref});
   \item the \textbf{microphone calibration} in effect, stored as its display name plus a verbatim copy of the calibration file itself, so the folder carries its own microphone correction (Section~\ref{sec:micsource}).
