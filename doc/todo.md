@@ -914,40 +914,7 @@
     still ignores the attribute, so Group analysis cannot yet label its rows
     with it.*
 
-## To do
-
-- [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
-  Section 5, once the correction FIRs have been re-exported from the
-  fixed engine and the system measured again with them.
-
-    Figure 2 (`fir-length.png`) compares a *measurement* against renderings of
-    a *re-derived* design. Those were the same design until the averaging fix;
-    they are not any more, because the campaign-6 filters were exported by the
-    old averaging and the current code designs about 1.8 dB more level through
-    the crossover region. Regenerated with the fixed code, the measured curve
-    no longer follows the 8192-tap rendering, which is an artefact of mixing
-    two engine versions rather than a result — so the committed figure is
-    deliberately still the one made before the change, and the file was
-    reverted to it. Regenerating it honestly needs the correction re-exported
-    from the fixed engine *and* the system measured again.
-
-    Two other numbers wait on the same re-export:
-
-    - Section 5's "that chain reproduces the plugin's own exported filters to
-      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
-      two implementations of the same arithmetic agreeing, and it will hold
-      again once the exports come from the fixed engine; right now it cannot
-      be checked, because the chain and the exported filters are two different
-      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
-      the size of the fix rather than an error).
-    - Section 5's "the same pair rendered at 2048 taps differs from itself by
-      1.63 dB RMS across the crossover region". Re-deriving it with the new
-      averaging gives about 1.5 dB on the left main, but the exact figure in
-      the text could not be reproduced by either averaging, so it wants
-      recomputing rather than editing — the claim it supports (neither 2048-tap
-      rendering has room for the structure) is unaffected.
-
-- [ ] Monitor target curve ("house curve"): a selectable gentle downward tilt
+- [x] Monitor target curve ("house curve"): a selectable gentle downward tilt
   on the monitor path, so that a correction designed against the measured
   in-room response does not end up sounding harsh.
 
@@ -1149,6 +1116,115 @@
     filter on both sides of the crossover cancels out of the main/sub phase
     difference, while mains-only would not. If the bass level then wants
     changing, that is what `bassDb` is for.
+
+    *Done 21 Sep 2026. Builds clean, and `SuperMoToTargetTests`,
+    `SuperMoToOutputTests` and `SuperMoToDelayTests` pass. Built as planned,
+    with the decisions the plan left open settled as follows.*
+
+    *`Source/Dsp/TargetCurve.h` holds both halves, and they are the same
+    object: the curve is a cascade of first-order pole/zero sections, and the
+    filter is those same sections discretised, so the plot and the outputs
+    cannot drift apart. That replaced the plan's "definition = an ideal line,
+    realisation = a fit", which broke on the turnover: an ideal knee is
+    something six gentle sections cannot make, and the two disagreed by 1.8 dB
+    around the corner — with the filter carrying gain, which the whole
+    attenuation-only argument forbids. Defining the curve as what the sections
+    do fixes both.*
+
+    *Measured on the shipped code rather than on the analog sketch in the plan.
+    The tilt is straight to 0.011 dB (-3 dB), 0.022 (-6) and 0.036 (-10)
+    against a least-squares line, and delivers the fall it is asked for to
+    0.05 dB. The discretisation is the only thing between the plot and the
+    filter: 0.00 dB to 1 kHz, 0.04 at 5 kHz, 0.18 at 20 kHz for a -6 dB tilt
+    at 44.1 kHz, and 0.37 around 14 kHz for a turnover, whose slope is
+    steeper. The plan's "+/-0.03 dB" was an analog-domain figure and did not
+    survive the bilinear transform at the top of the band; everything else
+    held. `Tests/TargetCurveTest.cpp` (target `SuperMoToTargetTests`,
+    `ctest -R target`) pins all of it at 44.1, 48 and 96 kHz, including that no
+    curve has gain anywhere in the band.*
+
+    *The chain is as planned: `TargetCurve` in the ConfigModel (saved with
+    sessions and presets, kept out of `OutputAudioSettings` like `firPath`),
+    an `AudioParameterBool "Target"` for the engagement, four biquads in
+    `OutputProcessor` after the output EQ and before the delay, built once by
+    `MatrixEngine::updateTargetCascade()` and pushed to every output. One
+    thing the plan did not have: engaging steps the level by a decibel or two,
+    and this is a control made to be flicked while listening, so the stage
+    fades over 50 ms (`OutputProcessor::setTargetEngaged`) rather than
+    switching. The filter keeps running through the fade and is reset when it
+    comes back from fully bypassed, so no stale tail escapes.*
+
+    *The GUI is its own view, "Target", second in the switcher after Matrix
+    (the View enum appends it, so a saved page index still opens what it used
+    to). `Source/Components/TargetCurveComponent.h`: the bank on the left, a
+    plot on the right, the four values under both, and the caveat across the
+    bottom — a target curve only means something on a system that has already
+    been measured, corrected and aligned. The plot subclasses
+    `fxme::SpectrumDisplay` and draws through `paintOverTraces()`, which needed
+    one addition to FxmeTools: `setBadgesVisible(false)`, since a display with
+    no taps has nothing its fft/avg/detector badges can describe. That is
+    additive, defaulted on, and recorded in FxmeTools' `doc/api-changes.md` —
+    the submodule has its own commit to make.*
+
+    *The bank is `Source/Model/TargetCurveStore.h`: one xml file per curve in
+    `<app data>/FXMechanics/SuperMoTo/target_curves`, beside the preset folder.
+    Six factory curves (Flat, Gentle -3, Moderate -4, Strong -6, Harman-like,
+    Flat to 1 kHz -6), rewritten if the folder loses them and not editable
+    through the GUI; Save, Save as, Rename and Delete act on the user's.
+    fxme::PresetManager was not reused: it round-trips the whole APVTS, where
+    a curve is four numbers that must be swappable without touching anything
+    else.*
+
+    *Three things the compiler and the test found, all now fixed: `fxme::FxmeButton`
+    is a wrapper component, so a tooltip goes on the `button` inside it rather
+    than on the wrapper; `Named` is ambiguous in a JUCE translation unit, so
+    the test's little struct is `NamedCurve`; and the plugin target carries
+    `juce_recommended_warning_flags`, which includes -Wfloat-equal, so the
+    curve compares its stored values with `juce::exactlyEqual`. The test also
+    caught a claim that was too strong: a turnover's knee is rounded rather
+    than square, so a fall measured from the turnover itself comes out about
+    0.1 dB short of what was asked for. That is the smooth knee working as
+    intended, and it is what the header, the manual and the test now say.*
+
+    *Documented as a chapter of its own, `doc/chapters/target-curve.tex`,
+    between the matrix and the config tool, with EBU Tech 3276, BS.1116-3,
+    Toole 2015, Olive 2013 and Allen 2006 added to the bibliography. Manual
+    builds at 80 pages with no unresolved references. Still not done, and
+    still optional: baking the target into an exported FIR for a rig that has
+    no SuperMoTo.*
+
+## To do
+
+- [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
+  Section 5, once the correction FIRs have been re-exported from the
+  fixed engine and the system measured again with them.
+
+    Figure 2 (`fir-length.png`) compares a *measurement* against renderings of
+    a *re-derived* design. Those were the same design until the averaging fix;
+    they are not any more, because the campaign-6 filters were exported by the
+    old averaging and the current code designs about 1.8 dB more level through
+    the crossover region. Regenerated with the fixed code, the measured curve
+    no longer follows the 8192-tap rendering, which is an artefact of mixing
+    two engine versions rather than a result — so the committed figure is
+    deliberately still the one made before the change, and the file was
+    reverted to it. Regenerating it honestly needs the correction re-exported
+    from the fixed engine *and* the system measured again.
+
+    Two other numbers wait on the same re-export:
+
+    - Section 5's "that chain reproduces the plugin's own exported filters to
+      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
+      two implementations of the same arithmetic agreeing, and it will hold
+      again once the exports come from the fixed engine; right now it cannot
+      be checked, because the chain and the exported filters are two different
+      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
+      the size of the fix rather than an error).
+    - Section 5's "the same pair rendered at 2048 taps differs from itself by
+      1.63 dB RMS across the crossover region". Re-deriving it with the new
+      averaging gives about 1.5 dB on the left main, but the exact figure in
+      the text could not be reproduced by either averaging, so it wants
+      recomputing rather than editing — the claim it supports (neither 2048-tap
+      rendering has room for the structure) is unaffected.
 
 - [ ] Correction level as a function of frequency: stop inverting the
   steady-state room curve above the transition frequency.

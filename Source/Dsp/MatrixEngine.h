@@ -49,10 +49,23 @@ public:
         @param output       16-channel output buffer (overwritten)
         @param n            number of samples
         @param configActive which of the 6 configurations are engaged
-        @param masterGain   linear master gain (level + mute + dim)        */
+        @param masterGain   linear master gain (level + mute + dim)
+        @param targetOn     engage the monitor target curve the model carries
+                            (TargetCurve.h): its own parameter, so the A/B can
+                            be automated                                     */
     void process (const float* const* inputs, juce::AudioBuffer<float>& output,
                   int n, const std::array<bool, numConfigs>& configActive,
-                  float masterGain);
+                  float masterGain, bool targetOn);
+
+    /** The same, keeping the target curve as it currently stands: what the
+        measurement and SPL-meter paths want, since a System measurement should
+        measure what is being listened to. */
+    void process (const float* const* inputs, juce::AudioBuffer<float>& output,
+                  int n, const std::array<bool, numConfigs>& configActive,
+                  float masterGain)
+    {
+        process (inputs, output, n, configActive, masterGain, appliedTargetOn);
+    }
 
     /** Applies only the per-output chain (trim, polarity, EQ, FIR, but not the
         delay) to one channel of the buffer. Used by the "FIR" measurement mode
@@ -117,6 +130,12 @@ private:
     void computeFedMask();          // which outputs the engaged presets feed
     void recomputeLatencyComp();
 
+    /** Rebuilds the target-curve filter and pushes it to every output, when
+        the curve, the sample rate or the engagement has moved. One build for
+        the whole matrix: the filter is identical on every output, only its
+        state is not. */
+    void updateTargetCascade (bool on);
+
     ConfigModel& model;
 
     std::array<std::array<std::array<FrameProcessor, numChannels>, numChannels>, numConfigs> frames;
@@ -151,6 +170,10 @@ private:
     // ConfigModel::tryCopyForEngine.
     ConfigModel::FrameSettingsArray frameSettings {};
     std::array<OutputAudioSettings, numChannels> outputSettings {};
+    TargetCurve targetCurve {};             // pulled with them
+    TargetCurve appliedTargetCurve {};      // what the outputs are carrying
+    bool appliedTargetOn = false;
+    bool targetDirty = true;                // rebuild on the first block
     std::array<juce::String, numChannels> loadedFirPaths;   // message thread only
 
     juce::AudioBuffer<float> outScratch;

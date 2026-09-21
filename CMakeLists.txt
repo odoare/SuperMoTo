@@ -230,6 +230,29 @@ juce_generate_juce_header(SuperMoToDelayTests)
 set_target_properties(SuperMoToDelayTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME delay COMMAND SuperMoToDelayTests)
 
+# ── Offline test of the monitor target curve ─────────────────────────────────
+# The definition and the biquads that realise it, at three sample rates.
+juce_add_console_app(SuperMoToTargetTests PRODUCT_NAME "SuperMoToTargetTests")
+target_sources(SuperMoToTargetTests PRIVATE
+    Tests/TargetCurveTest.cpp
+)
+# TargetCurve.h reaches fxme::Biquad through JuceHeader.h.
+fxmetools_attach(SuperMoToTargetTests)
+target_compile_definitions(SuperMoToTargetTests PRIVATE
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(SuperMoToTargetTests PRIVATE
+    juce::juce_audio_basics juce::juce_audio_formats juce::juce_audio_processors
+    juce::juce_audio_utils juce::juce_core juce::juce_data_structures juce::juce_dsp
+    juce::juce_events juce::juce_graphics juce::juce_gui_basics
+    juce::juce_recommended_config_flags
+)
+juce_generate_juce_header(SuperMoToTargetTests)
+set_target_properties(SuperMoToTargetTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME target COMMAND SuperMoToTargetTests)
+
 # ── Offline test of the measurement-folder reader and run helpers ────────────
 # MeasurementFolder needs juce_core only, which is why it lives apart from
 # MeasurementEngine.

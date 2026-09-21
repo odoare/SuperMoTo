@@ -60,11 +60,51 @@ namespace bar
                                          "measurements.";
     inline constexpr auto viewGroup    = "Align and correct a whole speaker set at once, "
                                          "subwoofer included.";
+    inline constexpr auto viewTarget   = "The monitor target curve: the gentle downward tilt a "
+                                         "corrected system is aimed at.";
     inline constexpr auto viewPresets  = "Browse, save and organise presets.";
 
     inline constexpr auto tooltips =
         "Show hover help on every control. Turn it off once the layout is familiar; the text "
         "is otherwise the only in-app explanation of what each control does.";
+}
+
+//==============================================================================
+/** Target view: the monitor target curve and its bank of named curves. */
+namespace tgt
+{
+    inline constexpr auto engage =
+        "Apply the target curve to every output. It is a plugin parameter, so a host can "
+        "automate it and it can be bound to a key: the only way to judge a target curve is "
+        "to switch it in and out while listening.";
+    inline constexpr auto preset =
+        "The curves on disk. Factory curves cannot be changed; \"Save as...\" writes your own "
+        "beside them. \"(edited)\" means the values no longer match any stored curve.";
+    inline constexpr auto save =
+        "Overwrite the selected curve with the values as they stand. Only your own curves.";
+    inline constexpr auto saveAs =
+        "Store the values as they stand under a new name.";
+    inline constexpr auto rename =
+        "Rename the selected curve. Only your own.";
+    inline constexpr auto remove =
+        "Delete the selected curve from disk. Only your own.";
+    inline constexpr auto tilt =
+        "How much the target falls in total from 20 Hz to 20 kHz, in dB. Negative falls, which "
+        "is the useful direction; 0 aims at a flat in-room response. -3 to -6 dB is the range "
+        "the listening standards allow for and preference studies land in.";
+    inline constexpr auto turnover =
+        "Keep the target flat below this frequency and spread the whole fall over what is left. "
+        "\"off\" runs the tilt straight across the band, which is the Harman shape; a turnover "
+        "gives the EBU one. Moving the turnover rather than the slope is how the cinema X-curve "
+        "was scaled to room size.";
+    inline constexpr auto bass =
+        "A low shelf under the tilt, in dB. The Harman in-room target carries a few dB of it.";
+    inline constexpr auto bassHz =
+        "Where the bass shelf turns over. 105 Hz is Harman's, chosen because it is about where "
+        "a subwoofer crosses over and where room interaction takes over.";
+    inline constexpr auto level =
+        "How much the target attenuates the outputs. The curve is applied as a cut only, so it "
+        "can never clip an output; make the loudness back up on the master level.";
 }
 
 //==============================================================================

@@ -42,6 +42,7 @@
 #include "Components/FrameEditorComponent.h"
 #include "Components/OutputEditorComponent.h"
 #include "Components/SpectrumAnalyzerComponent.h"
+#include "Components/TargetCurveComponent.h"
 #include "Components/ConfigToolComponent.h"
 #include "Components/CalibrationComponent.h"
 #include "Components/AnalysisComponent.h"
@@ -61,7 +62,10 @@ public:
     void resized() override;
 
 private:
-    enum class View { matrix, configTool, calibration, analysis, presets, groupAnalysis };
+    // Appended rather than inserted in switcher order: the value is what
+    // EditorSettings stores, and renumbering would reopen the wrong view.
+    enum class View { matrix, configTool, calibration, analysis, presets, groupAnalysis,
+                      targetCurve };
     void setView (View v);
     void setEditConfig (int c);
     void layoutInfoButton();
@@ -129,8 +133,8 @@ private:
     // fxme::AccentToggle: the house latching button. Their toggle state is driven
     // from the application state (setView / setEditConfig / setCompactMode), not by
     // the click, so each one has setClickingTogglesState(false) — see the ctor.
-    fxme::AccentToggle matrixViewButton, configToolButton, calibrationButton, analysisButton,
-                       presetsViewButton, groupAnalysisButton;
+    fxme::AccentToggle matrixViewButton, targetCurveButton, configToolButton, calibrationButton,
+                       analysisButton, presetsViewButton, groupAnalysisButton;
     fxme::AccentToggle tooltipsButton;      // "?" — turns the hover help on and off
 
     // ── Matrix view ──────────────────────────────────────────────────────────
@@ -151,6 +155,7 @@ private:
     juce::Rectangle<int> matrixArea, panelArea;
 
     // ── Other views ──────────────────────────────────────────────────────────
+    TargetCurveComponent targetCurve;
     ConfigToolComponent configTool;
     CalibrationComponent calibration;
     AnalysisComponent analysis;

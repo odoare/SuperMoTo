@@ -243,7 +243,10 @@ void SuperMoToAudioProcessor::processChunk (juce::AudioBuffer<float>& buffer, in
         * (apvts.getRawParameterValue ("Mute")->load() > 0.5f ? 0.0f : 1.0f)
         * (apvts.getRawParameterValue ("Dim")->load() > 0.5f ? 0.5f : 1.0f);
 
-    engine.process (inputCopy.getArrayOfReadPointers(), buffer, n, configActive, masterGain);
+    const bool targetOn = apvts.getRawParameterValue ("Target")->load() > 0.5f;
+
+    engine.process (inputCopy.getArrayOfReadPointers(), buffer, n, configActive,
+                    masterGain, targetOn);
 }
 
 //==============================================================================
@@ -414,6 +417,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout SuperMoToAudioProcessor::cre
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "Dim", 1 }, "Dim", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "Mono", 1 }, "Mono", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "Exclusive", 1 }, "Exclusive", true));
+
+    // The target curve's engagement, not its shape: the shape belongs to the
+    // configuration (ConfigModel), while this is a parameter so that the A/B a
+    // target curve is judged by can be automated or bound to a key.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "Target", 1 }, "Target curve", false));
 
     return layout;
 }

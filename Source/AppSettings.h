@@ -43,6 +43,19 @@ inline juce::ApplicationProperties& appProperties()
     return props;
 }
 
+/** The machine-wide SuperMoTo folder, the one fxme::PresetManager puts its
+    "Presets" directory in: <application data>/FXMechanics/SuperMoTo. Anything
+    else the plugin keeps per machine rather than per session (the target
+    curves) goes in a directory of its own beside that one. */
+inline juce::File superMoToDataFolder()
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    dir = dir.getChildFile ("Application Support");
+   #endif
+    return dir.getChildFile ("FXMechanics").getChildFile ("SuperMoTo");
+}
+
 /** Last directory used by a load/export chooser; falls back to the home
     folder when nothing valid has been stored yet. */
 inline juce::File getLastBrowseDir()

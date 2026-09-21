@@ -46,6 +46,7 @@ void MatrixEngine::prepare (double sampleRate, int maxBlockSize)
 
     prepared = true;
     lastModelVersion = 0;       // force a settings pull on the first block
+    targetDirty = true;         // and a target-filter rebuild at the new rate
 }
 
 void MatrixEngine::pullModelIfChanged()
@@ -64,7 +65,8 @@ void MatrixEngine::pullModelIfChanged()
     // lastModelVersion alone and keep processing with the settings we already
     // have; the next block retries. Blocking here would be an xrun, and the
     // edit is a GUI action whose effect can be one buffer late.
-    if (! model.tryCopyForEngine (newIns, newOuts, frameSettings, outputSettings))
+    if (! model.tryCopyForEngine (newIns, newOuts, frameSettings, outputSettings,
+                                  targetCurve))
         return;
 
     lastModelVersion = v;
@@ -111,8 +113,36 @@ void MatrixEngine::pullModelIfChanged()
                                               && o < visOuts);
     }
 
+    if (targetCurve != appliedTargetCurve)
+        targetDirty = true;
+
     computeFedMask();           // frame active-states / matrix size may have changed
     recomputeLatencyComp();     // firOn toggles change the alignment
+}
+
+void MatrixEngine::updateTargetCascade (bool on)
+{
+    // The filter is built whether or not it is engaged: OutputProcessor fades
+    // it in and out over 50 ms and needs it loaded to do that.
+    if (targetDirty)
+    {
+        fxme::BiquadCoeffs coeffs[maxTargetBiquads];
+        const int n = buildTargetCascade (targetCurve, sr, coeffs, maxTargetBiquads);
+
+        for (auto& p : outputProc)
+            p.setTargetCascade (coeffs, n);
+
+        appliedTargetCurve = targetCurve;
+        targetDirty = false;
+    }
+
+    if (on != appliedTargetOn)
+    {
+        for (auto& p : outputProc)
+            p.setTargetEngaged (on);
+
+        appliedTargetOn = on;
+    }
 }
 
 // An output is "fed" if any engaged configuration has an active frame routing
@@ -200,7 +230,7 @@ void MatrixEngine::recomputeLatencyComp()
 
 void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>& output,
                             int n, const std::array<bool, numConfigs>& configActive,
-                            float masterGain)
+                            float masterGain, bool targetOn)
 {
     if (! prepared)
         return;
@@ -227,6 +257,9 @@ void MatrixEngine::process (const float* const* inputs, juce::AudioBuffer<float>
         // run here on the audio thread, not from the message thread directly.
         recomputeLatencyComp();
     }
+
+    // After the pull, which is what tells us the curve moved.
+    updateTargetCascade (targetOn);
 
     smoothedMaster.setTargetValue (masterGain);
 

@@ -5,9 +5,15 @@
     Per-output (per-loudspeaker) processing applied after the matrix sum and the
     output trim, and before the FIR correction: a 2-band cascaded IIR EQ
     (lowpass / highpass / bandpass for the bass-management crossover, peaking for
-    correction) and a time-alignment delay. Runs in place on the
-    output buffer; no allocation on the audio thread. The coefficient math is
-    shared with FrameProcessor's own 2-band EQ via BandFilter.h.
+    correction), the monitor target curve, and a time-alignment delay. Runs in
+    place on the output buffer; no allocation on the audio thread. The
+    coefficient math is shared with FrameProcessor's own 2-band EQ via
+    BandFilter.h.
+
+    The target curve (TargetCurve.h) is the same filter on every output, built
+    once by MatrixEngine and pushed here, and it fades in and out over 50 ms
+    rather than switching: engaging it steps the level, and it is a control
+    meant to be flicked while listening.
 
     The delay is rounded to a whole number of samples and read straight out of
     the line. Half a sample is 11 us at 44.1 kHz, 4 mm of path, and a relative
@@ -39,6 +45,7 @@
 #include <JuceHeader.h>     // fxme::Biquad comes via the FxmeTools module umbrella
 #include "../Model/ConfigModel.h"
 #include "BandFilter.h"
+#include "TargetCurve.h"
 
 namespace smt
 {
@@ -49,6 +56,11 @@ public:
     void prepare (double sampleRate, int /*maxBlockSize*/)
     {
         sr = sampleRate;
+        // The target curve fades in and out over 50 ms, like every other
+        // switch here: engaging it steps the level by a decibel or two, and
+        // this one is meant to be flicked while listening.
+        targetMix.reset (sampleRate, 0.05);
+        targetMix.setCurrentAndTargetValue (targetEngaged ? 1.0f : 0.0f);
         delayLine.assign ((size_t) (maxDelayMs * 0.001 * sr) + 8, 0.0f);
         reset();
         applySettings (settings, true);
@@ -57,6 +69,8 @@ public:
     void reset()
     {
         for (auto& b : biquads)
+            b.reset();
+        for (auto& b : targetBiquads)
             b.reset();
         std::fill (delayLine.begin(), delayLine.end(), 0.0f);
         writePos = 0;
@@ -74,6 +88,41 @@ public:
             updateFilters();
 
         updateDelaySamples();
+    }
+
+    /** The monitor target curve's filter, identical on every output (see
+        TargetCurve.h). MatrixEngine builds it once, when the curve changes,
+        and pushes the same coefficients to every output; `count` 0 (a flat
+        curve) leaves the stage out entirely. The state is kept across a
+        change rather than reset, as the EQ's is: the coefficients move
+        smoothly and a reset would click. Audio thread. */
+    void setTargetCascade (const fxme::BiquadCoeffs* coeffs, int count) noexcept
+    {
+        activeTargetBiquads = juce::jlimit (0, maxTargetBiquads, count);
+        for (int i = 0; i < activeTargetBiquads; ++i)
+            targetBiquads[(size_t) i].c = coeffs[i];
+
+        // Nothing to run: drop the state so a later curve starts clean rather
+        // than with whatever was in the filters when the curve went flat.
+        if (activeTargetBiquads == 0)
+            for (auto& b : targetBiquads)
+                b.reset();
+    }
+
+    /** Engages or bypasses the target curve, fading over 50 ms. The filter
+        keeps running either way (its state has to stay valid to fade back in),
+        so this is a mix rather than a branch. Audio thread. */
+    void setTargetEngaged (bool engaged) noexcept
+    {
+        // Coming back from fully bypassed, the filters have been idle and hold
+        // whatever was in them when they stopped: start them clean, under the
+        // fade-in, rather than letting a stale tail through.
+        if (engaged && ! targetEngaged && ! targetMix.isSmoothing())
+            for (auto& b : targetBiquads)
+                b.reset();
+
+        targetEngaged = engaged;
+        targetMix.setTargetValue (engaged ? 1.0f : 0.0f);
     }
 
     /** Called by MatrixEngine (audio thread only) whenever this output's own
@@ -97,6 +146,22 @@ public:
                 for (int b = 0; b < activeBiquads; ++b)
                     v = biquads[(size_t) b].processSample (v);
                 data[i] = v;
+            }
+        }
+
+        // The target curve, after this output's own EQ and before the delay.
+        // Order does not matter acoustically (everything here is linear), but
+        // it keeps the delay the last thing the signal meets, so the latency
+        // arithmetic reads as it always did.
+        if (activeTargetBiquads > 0 && (targetEngaged || targetMix.isSmoothing()))
+        {
+            for (int i = 0; i < n; ++i)
+            {
+                const float dry = data[i];
+                float v = dry;
+                for (int b = 0; b < activeTargetBiquads; ++b)
+                    v = targetBiquads[(size_t) b].processSample (v);
+                data[i] = dry + targetMix.getNextValue() * (v - dry);
             }
         }
 
@@ -148,6 +213,11 @@ private:
     static constexpr int maxBiquads = numOutputBands * 2;
     fxme::Biquad biquads[maxBiquads];
     int activeBiquads = 0;
+
+    fxme::Biquad targetBiquads[maxTargetBiquads];
+    int activeTargetBiquads = 0;
+    bool targetEngaged = false;
+    juce::LinearSmoothedValue<float> targetMix { 0.0f };
 
     std::vector<float> delayLine;
     int writePos = 0;

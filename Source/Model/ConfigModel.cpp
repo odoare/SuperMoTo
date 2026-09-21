@@ -18,6 +18,7 @@ static const juce::Identifier idConfiguration  ("Configuration");
 static const juce::Identifier idFrame          ("Frame");
 static const juce::Identifier idBand           ("Band");
 static const juce::Identifier idOutput         ("Output");
+static const juce::Identifier idTarget         ("TargetCurve");
 
 juce::ValueTree ConfigModel::toValueTree() const
 {
@@ -99,6 +100,18 @@ juce::ValueTree ConfigModel::toValueTree() const
         tree.addChild (vo, -1, nullptr);
     }
 
+    // The target curve, always written: a state should say which curve was in
+    // force rather than leave it to whatever the default is that day.
+    {
+        const auto t = getTargetCurve();
+        juce::ValueTree vt (idTarget);
+        vt.setProperty ("tiltDb", t.tiltDb, nullptr);
+        vt.setProperty ("turnoverHz", t.turnoverHz, nullptr);
+        vt.setProperty ("bassDb", t.bassDb, nullptr);
+        vt.setProperty ("bassHz", t.bassHz, nullptr);
+        tree.addChild (vt, -1, nullptr);
+    }
+
     return tree;
 }
 
@@ -119,6 +132,7 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                     f = FrameSettings();
         for (auto& o : outputs)
             o = OutputSettings();
+        targetCurve = TargetCurve();
 
         for (int ci = 0; ci < tree.getNumChildren(); ++ci)
         {
@@ -165,6 +179,15 @@ void ConfigModel::restoreFromValueTree (const juce::ValueTree& tree)
                     }
                     frames[(size_t) c][(size_t) i][(size_t) o] = f;
                 }
+            }
+            else if (child.hasType (idTarget))
+            {
+                // Absent from states saved before the target curve existed,
+                // which then load flat-target defaults.
+                targetCurve.tiltDb     = (float) (double) child.getProperty ("tiltDb", targetCurve.tiltDb);
+                targetCurve.turnoverHz = (float) (double) child.getProperty ("turnoverHz", targetCurve.turnoverHz);
+                targetCurve.bassDb     = (float) (double) child.getProperty ("bassDb", targetCurve.bassDb);
+                targetCurve.bassHz     = (float) (double) child.getProperty ("bassHz", targetCurve.bassHz);
             }
             else if (child.hasType (idOutput))
             {

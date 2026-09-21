@@ -74,6 +74,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
       spectrum (p.engine),
       frameEditor (p.configModel),
       outputEditor (p.configModel, p.engine),
+      targetCurve (p.configModel, p.apvts),
       configTool (p.configModel, p.workspace.configTool),
       calibration (p),
       analysis (p),
@@ -170,6 +171,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
         addAndMakeVisible (b);
     };
     initViewButton (matrixViewButton, "Matrix", View::matrix, smt::tips::bar::viewMatrix);
+    initViewButton (targetCurveButton, "Target", View::targetCurve, smt::tips::bar::viewTarget);
     initViewButton (configToolButton, "Config tool", View::configTool, smt::tips::bar::viewConfig);
     initViewButton (calibrationButton, "Calibration", View::calibration, smt::tips::bar::viewCal);
     initViewButton (analysisButton, "Analysis", View::analysis, smt::tips::bar::viewAnalysis);
@@ -294,6 +296,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     addChildComponent (outputEditor);   // shown when an output is selected
 
     // ── Other views (hidden until selected) ─────────────────────────────────
+    addChildComponent (targetCurve);
     addChildComponent (configTool);
     addChildComponent (calibration);
     addChildComponent (analysis);
@@ -458,10 +461,11 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     for (auto* b : editConfigButtons)
         b->setVisible (m);
 
-    for (auto* b : { &matrixViewButton, &configToolButton, &calibrationButton, &analysisButton,
-                     &groupAnalysisButton, &presetsViewButton, &tooltipsButton })
+    for (auto* b : { &matrixViewButton, &targetCurveButton, &configToolButton, &calibrationButton,
+                     &analysisButton, &groupAnalysisButton, &presetsViewButton, &tooltipsButton })
         b->setVisible (! isCompact());
 
+    targetCurve.setVisible (v == View::targetCurve && ! isCompact());
     configTool.setVisible (v == View::configTool && ! isCompact());
     calibration.setVisible (v == View::calibration && ! isCompact());
     analysis.setVisible (v == View::analysis && ! isCompact());
@@ -470,6 +474,7 @@ void SuperMoToAudioProcessorEditor::setView (View v)
     presetBar.setVisible (! isCompact());
 
     matrixViewButton.setToggleState (v == View::matrix, juce::dontSendNotification);
+    targetCurveButton.setToggleState (v == View::targetCurve, juce::dontSendNotification);
     configToolButton.setToggleState (v == View::configTool, juce::dontSendNotification);
     calibrationButton.setToggleState (v == View::calibration, juce::dontSendNotification);
     analysisButton.setToggleState (v == View::analysis, juce::dontSendNotification);
@@ -534,6 +539,43 @@ void SuperMoToAudioProcessorEditor::infoTextFor (View v, juce::String& title, ju
                 "+/- gain \xc2\xb1 0.1 dB\n"
                 " - On an output: F FIR, P phase, 1-2 toggle EQ band, N analyzer, +/- trim \xc2\xb1 0.1 dB\n\n"
                 "Analyzer: click the avg/peak badge (bottom-right) to switch aggregation.";
+            break;
+
+        case View::targetCurve:
+            title = "Monitor target curve";
+            body  =
+                "The response a corrected system should aim at, which is not a flat one.\n\n"
+                "A loudspeaker whose direct sound is flat does not measure flat in a room: its "
+                "directivity rises with frequency, so the reverberant share of a steady-state, "
+                "spatially averaged measurement falls as frequency rises, and absorption takes "
+                "more off the top. The ear follows the direct sound; the microphone average "
+                "follows the steady state. Correct the steady state to flat and the direct "
+                "sound has been lifted in the treble by the difference, which is what \"harsh\" "
+                "sounds like.\n\n"
+                "EBU Tech 3276's tolerance mask lets the room response fall at 1 dB/octave "
+                "above 2 kHz, ITU-R BS.1116-3's widens at 1.5 dB/octave, and the Harman in-room "
+                "target falls about 1 dB/octave across the band with a low shelf near 105 Hz. "
+                "A total of -3 to -6 dB from 20 Hz to 20 kHz is a conservative reading of all "
+                "three.\n\n"
+                "Values\n"
+                " - Tilt: the total fall from 20 Hz to 20 kHz.\n"
+                " - Turnover: keep the target flat below it and spread the fall over the rest. "
+                "\"off\" is the straight Harman shape; a turnover is the EBU one.\n"
+                " - Bass / Bass freq: an optional low shelf under the tilt.\n\n"
+                "The curve is applied identically to every output, after that output's EQ and "
+                "before its delay, and only ever as a cut: the dimmed line on the plot is the "
+                "curve as applied, pulled down so nothing can clip. Applying it to every output "
+                "equally is what keeps it out of the main-to-subwoofer phase relationship, "
+                "which is why it is a layer here rather than something baked into the "
+                "correction filters.\n\n"
+                "Engage is a plugin parameter, so a host can automate it and it can be bound to "
+                "a key: switching it in and out while listening is the only way to judge a "
+                "target.\n\n"
+                "Curves are files in the target_curves folder beside the presets; the path is "
+                "shown under the buttons. The factory ones cannot be changed, and are written "
+                "again if the folder loses them.\n\n"
+                "It shapes what a correction aims at. It corrects nothing by itself: on a rig "
+                "that has not been measured and aligned it is only a tone control.";
             break;
 
         case View::configTool:
@@ -905,12 +947,13 @@ void SuperMoToAudioProcessorEditor::resized()
     // window width the six of them fill the bar exactly, so taking its 34 px
     // afterwards would overlap the edit-config buttons on the left.
     constexpr int tipW = 34;
-    const int vw = juce::jmin (110, (bottom.getWidth() - tipW) / 6);
+    const int vw = juce::jmin (110, (bottom.getWidth() - tipW) / 7);
     presetsViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     groupAnalysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     analysisButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     calibrationButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     configToolButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
+    targetCurveButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     matrixViewButton.setBounds (bottom.removeFromRight (vw).reduced (2, 1));
     // Left of the view switcher, and narrow: it is a single glyph and it is not
     // one of the views.
@@ -921,6 +964,7 @@ void SuperMoToAudioProcessorEditor::resized()
     panelArea = main;                   // full-window panels (info button: top-right)
 
     // Full-window panels
+    targetCurve.setBounds (main);
     configTool.setBounds (main);
     calibration.setBounds (main);
     analysis.setBounds (main);

@@ -37,6 +37,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "../Dsp/TargetCurve.h"   // a value type the model stores, plus its filter
 #include <array>
 #include <atomic>
 
@@ -242,6 +243,28 @@ public:
     }
 
     //==========================================================================
+    /** The monitor target curve: one for the whole plugin, because it has to
+        be the same on every output (see TargetCurve.h). Whether it is engaged
+        is an APVTS parameter rather than a model value, so the A/B can be
+        automated and bound to a key; this is only its shape. */
+    TargetCurve getTargetCurve() const
+    {
+        const juce::SpinLock::ScopedLockType sl (lock);
+        return targetCurve;
+    }
+
+    void setTargetCurve (const TargetCurve& c)
+    {
+        {
+            const juce::SpinLock::ScopedLockType sl (lock);
+            if (targetCurve == c)
+                return;
+            targetCurve = c;
+        }
+        bumpAndNotify();
+    }
+
+    //==========================================================================
     OutputSettings getOutput (int out) const
     {
         const juce::SpinLock::ScopedLockType sl (lock);
@@ -303,7 +326,8 @@ public:
         matrix growing, before they can be processed. */
     bool tryCopyForEngine (int ins, int outs,
                            FrameSettingsArray& dstFrames,
-                           std::array<OutputAudioSettings, numChannels>& dstOutputs) const noexcept
+                           std::array<OutputAudioSettings, numChannels>& dstOutputs,
+                           TargetCurve& dstTarget) const noexcept
     {
         const juce::SpinLock::ScopedTryLockType tl (lock);
         if (! tl.isLocked())
@@ -320,6 +344,8 @@ public:
 
         for (int o = 0; o < numChannels; ++o)
             dstOutputs[(size_t) o] = outputs[(size_t) o].audio();
+
+        dstTarget = targetCurve;    // four floats, no strings
 
         return true;
     }
@@ -369,6 +395,7 @@ private:
     mutable juce::SpinLock lock;
     std::array<std::array<std::array<FrameSettings, numChannels>, numChannels>, numConfigs> frames {};
     std::array<OutputSettings, numChannels> outputs {};
+    TargetCurve targetCurve {};
     std::atomic<int> numIns { defaultIns }, numOuts { defaultOuts };
     std::atomic<int> version { 1 };
 
