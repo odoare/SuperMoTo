@@ -63,6 +63,12 @@ namespace topBar
     constexpr int inset    = 6;
     constexpr int titleW   = 232;               // as seen by the inset bar
     constexpr int titleEnd = inset + titleW;    // as seen by paint()
+
+    // The company logo, painted by paint() and hit-tested by mouseUp(): one
+    // place for both, so the splash's hot spot cannot drift off the artwork.
+    constexpr int logoX = 8, logoY = 6, logoSize = 48;
+
+    inline juce::Rectangle<int> logoRect()  { return { logoX, logoY, logoSize, logoSize }; }
 }
 
 //==============================================================================
@@ -360,7 +366,10 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
         matrix.onFrameSelected (selIn, selOut);
     }
 
-    setView (static_cast<View> (juce::jlimit (0, 5, state.view)));
+    // Clamped against the enum's last value rather than a literal: the Target
+    // view was appended to it, and a hard 5 here would have silently refused
+    // to reopen on it.
+    setView (static_cast<View> (juce::jlimit (0, (int) View::targetCurve, state.view)));
 
     setResizable (true, true);
     setResizeLimits (1100, 720, 2400, 1600);
@@ -370,6 +379,22 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
 
     setTooltipsEnabled (smt::getUiTooltips());
     setCompactMode (static_cast<Compact> (juce::jlimit (0, 2, state.compactMode)));
+
+    // The splash, last: it goes over everything and sizes itself from bounds
+    // that setSize() has just settled. Once per plugin instance, so reopening
+    // the window does not replay it.
+    addChildComponent (splash);
+    splash.onFinished = [this] { splash.setVisible (false); };
+
+    // Only from the full layout, and only once: a compact window is smaller
+    // than the card, and the card is an opening, not a reminder.
+    if (! state.splashShown && compactMode == Compact::off)
+    {
+        state.splashShown = true;
+        splash.setBounds (getLocalBounds().withSizeKeepingCentre (SplashScreenComponent::designWidth,
+                                                                  SplashScreenComponent::designHeight));
+        splash.show (true);
+    }
 }
 
 SuperMoToAudioProcessorEditor::~SuperMoToAudioProcessorEditor()
@@ -750,6 +775,12 @@ void SuperMoToAudioProcessorEditor::setCompactMode (Compact m)
 
     compactMode = m;
     state.compactMode = static_cast<int> (m);
+
+    // The card is wider than either compact window; it does not follow the
+    // editor down there.
+    if (isCompact())
+        splash.dismiss();
+
     smt::setUiCompactMode (state.compactMode);      // the default for a new instance
 
     // The arrow points at what the next click does: shrink further, or — from
@@ -828,8 +859,7 @@ void SuperMoToAudioProcessorEditor::paint (juce::Graphics& g)
     // Title + logo
     auto top = getLocalBounds().removeFromTop (60);
     if (logo.isValid())
-        g.drawImage (logo, juce::Rectangle<float> (8.0f, 6.0f, 48.0f, 48.0f),
-                     juce::RectanglePlacement::centred);
+        g.drawImage (logo, topBar::logoRect().toFloat(), juce::RectanglePlacement::centred);
     const juce::Font titleFont (juce::FontOptions (24.0f, juce::Font::bold));
     g.setColour (SuperMoToTheme::text);
     g.setFont (titleFont);
@@ -846,6 +876,31 @@ void SuperMoToAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawText ("v" + juce::String (ProjectInfo::versionString),
                 versionX, 0, juce::jmax (0, topBar::titleEnd - versionX), top.getHeight(),
                 juce::Justification::centredLeft);
+}
+
+juce::Rectangle<int> SuperMoToAudioProcessorEditor::logoHitArea() const
+{
+    // Only the full layout: the strip paints the same logo, but a splash card
+    // wider than the window it covers is no way to show one.
+    return compactMode == Compact::off ? topBar::logoRect() : juce::Rectangle<int>();
+}
+
+void SuperMoToAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
+{
+    // Clicked on the logo — pressed and released on it — brings the card up
+    // and leaves it up: this one was asked for, so it goes when it is
+    // dismissed rather than on a timer.
+    const auto hit = logoHitArea();
+
+    if (hit.contains (e.getMouseDownPosition()) && hit.contains (e.getPosition()))
+        splash.show (false);
+}
+
+void SuperMoToAudioProcessorEditor::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (logoHitArea().contains (e.getPosition())
+                        ? juce::MouseCursor::PointingHandCursor
+                        : juce::MouseCursor::NormalCursor);
 }
 
 void SuperMoToAudioProcessorEditor::resized()
@@ -984,4 +1039,9 @@ void SuperMoToAudioProcessorEditor::resized()
     spectrum.setBounds (right);
 
     layoutInfoButton();
+
+    // The splash is a fixed-size card, centred over whatever the window is
+    // doing: it draws for its design size rather than stretching.
+    splash.setBounds (getLocalBounds().withSizeKeepingCentre (SplashScreenComponent::designWidth,
+                                                              SplashScreenComponent::designHeight));
 }

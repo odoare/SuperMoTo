@@ -35,6 +35,11 @@ struct EditorSettings
         from the machine-wide settings. */
     bool opened = false;
 
+    /** The startup splash has had its turn. Here rather than on the editor so
+        that it plays once per plugin instance, not every time the window is
+        reopened. */
+    bool splashShown = false;
+
     int view = 0;                       // SuperMoToAudioProcessorEditor::View
     int compactMode = 0;                // SuperMoToAudioProcessorEditor::Compact
     int expandedWidth = 1280;           // the window in the full layout

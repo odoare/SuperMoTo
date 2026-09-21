@@ -42,6 +42,7 @@
 #include "Components/FrameEditorComponent.h"
 #include "Components/OutputEditorComponent.h"
 #include "Components/SpectrumAnalyzerComponent.h"
+#include "Components/SplashScreenComponent.h"
 #include "Components/TargetCurveComponent.h"
 #include "Components/ConfigToolComponent.h"
 #include "Components/CalibrationComponent.h"
@@ -60,6 +61,11 @@ public:
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // The top bar's company logo is painted, not a child component, so the
+    // editor does its own hit test: a click brings the splash back up.
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
 
 private:
     // Appended rather than inserted in switcher order: the value is what
@@ -87,6 +93,11 @@ private:
     /** Fixed window size of the mini layout; depends on the output count,
         which sets how wide the meter strip has to be. */
     juce::Point<int> miniWindowSize() const;
+
+    /** Where the company logo is painted, and empty in every layout that has
+        no clickable one — the mini window draws it too, but the splash is a
+        full-layout affair. */
+    juce::Rectangle<int> logoHitArea() const;
 
     // The matrix view follows the engaged configuration (A..F buttons); the
     // Edit buttons still allow browsing a config without engaging it.
@@ -164,6 +175,11 @@ private:
     // ── Presets ──────────────────────────────────────────────────────────────
     fxme::PresetComponent presetPane;    // full browser (Presets page)
     fxme::PresetBarComponent presetBar;  // compact selector, top-right (expanded only)
+
+    // The splash: over everything, once per plugin instance at startup and
+    // again whenever the logo is clicked, hidden from its onFinished (see
+    // SplashScreenComponent.h).
+    SplashScreenComponent splash;
 
     // Reliable typing in every TextEditor under the editor (measurement folder
     // & comments, editable combos, right-click value entry) in hosted windows.

@@ -28,9 +28,10 @@
         drop between its pole and its zero. That is what makes the result a
         straight line in dB against log f: measured against a least-squares
         line it is straight to 0.011 dB at -3 dB of tilt, 0.022 dB at -6 and
-        0.036 dB at -10, and it delivers what it is asked for to 0.05 dB (a
-        turnover's knee is rounded rather than square, so the fall measured
-        from the turnover itself is 0.11 dB short of the figure asked for).
+        0.036 dB at -10. It delivers the fall it names to within about 1 % of
+        it, the residual being largest at the band edges: 0.05 dB short at
+        -6 dB, 0.09 at -10. A turnover's knee is rounded rather than square,
+        so a fall measured from the turnover itself is 0.11 dB short.
         Shelves were the obvious alternative and are not good enough: one RBJ
         shelf is 1.2 dB off a straight line at only 3 dB of tilt, two are
         0.26 dB off.
