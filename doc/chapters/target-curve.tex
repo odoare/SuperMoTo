@@ -2,43 +2,53 @@
 \chapter{The monitor target curve}\label{ch:target}
 %==============================================================================
 
-The correction SuperMoTo designs aims the loudspeaker at a target. Until now that target was flat: invert the measured response and the in-room magnitude comes out level. The Target view lets you aim at something else, and the something else is almost always a gentle downward tilt.
+The correction SuperMoTo designs aims the loudspeaker at a target. The ideal correction objective deigned in the analysis and group analysis panes correspond to a flat and horizontal frequency response curve. The Target view lets you aim at something else, which almost always looks like a gentle downward tilt.
 
 \section{Why a flat in-room response is the wrong target}\label{sec:whytilt}
-A loudspeaker whose direct sound is flat does not measure flat in a room. Its \gterm{di}{directivity index} rises with frequency --- ITU-R BS.1116-3 requires a monitor's to, smoothly, between \SI{6}{\dB} and \SI{12}{\dB} over \SIrange{500}{10000}{\hertz} \cite{ITU1116} --- so the reverberant share of a steady-state, spatially averaged measurement falls as frequency rises, and absorption in a treated room takes more off the top. The ear follows the direct sound and the first arrivals; the microphone average follows the steady state. Correct the steady state to flat and the direct sound has been lifted in the treble by the difference, which is what "harsh" sounds like.
+A loudspeaker whose direct sound is flat does not measure flat in a room. Its \gterm{di}{directivity index} rises with frequency (ITU-R BS.1116-3 requires a monitor's to, smoothly, between \SI{6}{\dB} and \SI{12}{\dB} over \SIrange{500}{10000}{\hertz} \cite{ITU1116}) so the reverberant share of a steady-state, spatially averaged measurement falls as frequency rises, and absorption in a treated room takes more off the top. The ear follows the direct sound plus the first arrivals and the microphone average follows the steady state. Correct the steady state to flat and the direct sound has been lifted in the treble by the difference. This results in a "harsh" sound.
 
-The listening standards make room for the tilt rather than asking for it to be removed. EBU Tech 3276's operational room response mask holds its upper limit flat at \SI{+3}{\dB} but lets the lower one fall at \SI{1}{\dB} per octave above \SI{2}{\kilo\hertz}, reaching \SI{-6}{\dB} at \SI{16}{\kilo\hertz} \cite{EBU3276}; ITU-R BS.1116-3's widens downwards at \SI{1.5}{\dB} per octave over the same range \cite{ITU1116}. Preference work puts the middle of the range lower still: the Harman in-room target falls about \SI{1}{\dB} per octave across the band with a low shelf under \SI{105}{\hertz} \cite{Olive2013}. Toole's survey of the whole question is the long version \cite{Toole2015}.
+EBU Tech 3276's operational room response mask holds its upper limit flat at \SI{+3}{\dB} but lets the lower one fall at \SI{1}{\dB} per octave above \SI{2}{\kilo\hertz}, reaching \SI{-6}{\dB} at \SI{16}{\kilo\hertz} \cite{EBU3276}. ITU-R BS.1116-3's widens downwards at \SI{1.5}{\dB} per octave over the same range \cite{ITU1116}. Preference work puts the middle of the range lower still: the Harman in-room target falls about \SI{1}{\dB} per octave across the band with a low shelf under \SI{105}{\hertz} \cite{Olive2013}. Toole's survey of the whole question is the long version \cite{Toole2015}.
 
 A total of \SIrange{-3}{-6}{\dB} from \SI{20}{\hertz} to \SI{20}{\kilo\hertz} is therefore a conservative reading of all three, and is where the factory curves sit.
 
-\paragraph{Not the cinema X-curve.} SMPTE ST 202 and ISO 2969 specify \SI{3}{\dB} per octave above \SI{2}{\kilo\hertz} for rooms over \SI{125}{\cubic\metre}. That is a different animal: Allen's account of where it came from also records what happened when small, dry mix rooms were tuned to it in the 1980s --- material sounded dull there, engineers compensated, and the mixes came out bright \cite{Allen2006}. A small room needs \emph{less} tilt than a cinema, and the useful idea to borrow is that the turnover frequency, not the slope, is what should move with room size and listening distance.
+\paragraph{Not the cinema X-curve.} SMPTE ST 202 and ISO 2969 specify \SI{3}{\dB} per octave above \SI{2}{\kilo\hertz} for rooms over \SI{125}{\cubic\metre}. That is a very different target. Allen's account of where it came from also records what happened when small, dry mix rooms were tuned to it in the 1980s, and material sounded dull there, engineers compensated, so the mixes came out bright \cite{Allen2006}. A small room needs less tilt than a cinema, and the useful idea to borrow is that the turnover frequency, not the slope, is what should move with room size and listening distance.
 
-\section{What the curve is}\label{sec:targetshape}
-Four values, and a plot of what they give:
-
+\section{Curve parameters}\label{sec:targetshape}
+The target curve is defined through four parameters:
 \begin{itemize}[nosep]
   \item \textbf{Tilt}: the total fall from \SI{20}{\hertz} to \SI{20}{\kilo\hertz}, in dB. Negative falls, which is the useful direction; 0 aims at a flat in-room response, as before.
   \item \textbf{Turnover}: keep the target flat below this frequency and spread the whole fall over what is left. "off" runs the tilt straight across the band, which is the Harman shape; a turnover gives the EBU one.
   \item \textbf{Bass} and \textbf{Bass freq}: an optional first-order low shelf under the tilt, for the bass lift the Harman target carries near \SI{105}{\hertz}.
 \end{itemize}
 
-\noindent The curve is normalised so that its mean over \SIrange{200}{2000}{\hertz} is \SI{0}{\dB} --- the same band the analysis normalises a measured response in (Section~\ref{sec:levelref}) --- so a target and a measurement are read against the same zero.
+\noindent The curve is normalised so that its mean over \SIrange{200}{2000}{\hertz} is \SI{0}{\dB} (the same band the analysis normalises a measured response in section~\ref{sec:levelref}) so a target and a measurement are read against the same zero.
 
-It is then applied as attenuation only. The whole curve is pulled down until its highest point reaches \SI{0}{\dB}, which is the dimmed second line on the plot, and the read-out next to the Engage switch says by how much. The layer can therefore never clip an output; make the loudness back up on the master level.
+It is then applied as attenuation only. The whole curve is pulled down until its highest point reaches \SI{0}{\dB}, which is the dimmed second line on the plot, and the read-out next to the Engage switch says by how much. The layer can therefore never clip an output.
 
-\section{Using it}\label{sec:targetuse}
-\textbf{The target curve corrects nothing by itself.} It shapes what a correction aims at. On a rig that has not been measured, corrected and time-aligned it is a tone control and nothing more. Measure (Chapter~\ref{ch:measure}), correct and align (Chapters~\ref{ch:analysis} and~\ref{ch:groupanalysis}), and then come here to decide how the corrected system should tilt.
+\section{Usage}\label{sec:targetuse}
+The target curve corrects nothing by itself. It shapes what a correction aims at. On a rig that has not been measured, corrected and time-aligned it is a tone control and nothing more. Measure (Chapter~\ref{ch:measure}), correct and align (Chapters~\ref{ch:analysis} and~\ref{ch:groupanalysis}), and then come here to decide how the corrected system should tilt.
 
-\textbf{Engage} is a plugin parameter rather than a setting, so a host can automate it and it can be bound to a key. That is deliberate: the only way to judge a target curve is to switch it in and out while listening to something familiar, and a curve that is obvious on paper is often inaudible in the room. The switch fades over \SI{50}{\milli\second}, so it does not click.
+The button "Engage" controls a plugin parameter, so a host can automate it and it can be bound to a key, because the way to judge a target curve is to switch it in and out while listening to something familiar, and a curve that is obvious on paper is often inaudible in the room. The switch fades over \SI{50}{\milli\second}, so it does not click.
 
-The curve is applied identically to every output, after that output's own EQ and before its delay. Applying it everywhere equally is what keeps it out of the main-to-subwoofer phase relationship: an identical minimum-phase filter on both sides of a crossover cancels out of the difference between them, where a tilt baked into the mains' correction filters alone would not. EBU Tech 3276 asks for the same thing in words --- "All channels should be adjusted in the same way" \cite{EBU3276}.
+The curve is applied identically to every output, after that output's own EQ and before its delay. Applying it everywhere equally is what keeps it out of the main-to-subwoofer phase relationship: an identical minimum-phase filter on both sides of a crossover cancels out of the difference between them, where a tilt baked into the mains' correction filters alone would not. EBU Tech 3276 asks for the same thing: "All channels should be adjusted in the same way" \cite{EBU3276}.
 
 A "Dry" measurement bypasses the target curve, as it bypasses everything else on the output; "Output + FIR" and "System" measurements include it (Section~\ref{sec:modes}). So a verification measurement shows the tilt, and a measurement made to design a new correction does not.
 
-\section{The curve bank}\label{sec:targetbank}
-Curves are files, one per curve, in a \texttt{target\_curves} folder beside the preset folder; the full path is shown under the buttons. Factory curves cannot be changed and are written again if the folder loses them; \textbf{Save as\ldots} writes your own beside them, and \textbf{Save}, \textbf{Rename} and \textbf{Delete} act on yours only. When the values match none of the stored curves the selector reads "(edited)".
+\screenshot{target-curves.png}{The factory target curves, all normalised to
+\SI{0}{\dB} on the \SIrange{200}{2000}{\hertz} band the analysis uses as its
+own reference. Flat is the behaviour before this view existed. The dotted line
+is EBU Tech 3276's lower tolerance limit for a measured room response,
+\SI{-3}{\dB} to \SI{2}{\kilo\hertz} then falling \SI{1}{\dB} per octave,
+drawn for scale: it is a tolerance on what a room does, not a rule about what
+to aim at, and only the steepest curve crosses it, by \SI{0.4}{\dB} in the
+last octave. Produced by \texttt{doc/figures/target\_curves.py}, which reads
+the factory set out of the source so the figure cannot disagree with what the
+plugin ships.}
 
-The shape in force is part of the configuration: it is saved with the session and with presets, like the matrix and the outputs. The bank is machine-wide, like the preset folder --- a curve you save is available to every session on that machine.
+\section{The curve bank}\label{sec:targetbank}
+Curves are files, one per curve, in a \texttt{target\_curves} folder beside the preset folder, whose full path is shown under the buttons. Factory curves cannot be changed and are written again if the folder loses them. "Save as..." writes your own beside them, and "Save", "Rename" and "Delete" act on yours only. When the values match none of the stored curves the selector reads "(edited)".
+
+The shape in force is part of the configuration: it is saved with the session and with presets, like the matrix and the outputs. The bank is machine-wide, like the preset folder.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.3}
@@ -46,7 +56,7 @@ The shape in force is part of the configuration: it is saved with the session an
 \toprule
 \textbf{Curve} & \textbf{Tilt} & \textbf{Where it comes from} \\
 \midrule
-Flat                 & \SI{0}{\dB}   & The behaviour before this view existed: aim at a flat in-room response. \\
+Flat                 & \SI{0}{\dB}   & A flat in-room response. \\
 Gentle               & \SI{-3}{\dB}  & The cautious end of the range the standards allow. \\
 Moderate             & \SI{-4}{\dB}  & The default. \\
 Strong               & \SI{-6}{\dB}  & About EBU Tech 3276's \SI{1}{\dB} per octave above \SI{2}{\kilo\hertz}, spread across the band. \\
@@ -56,9 +66,9 @@ Flat to \SI{1}{\kilo\hertz} & \SI{-6}{\dB} & The EBU shape: flat, then falling, 
 \end{tabularx}
 \end{center}
 
-\section{How it is built}\label{sec:targetfilter}
-The curve is a cascade of first-order pole/zero sections, and the filter is those same sections discretised, so what the plot shows and what the outputs apply cannot drift apart. Six sections carry the tilt, their poles spread geometrically over the band widened two octaves at each end, each losing an equal share of the fall between its pole and its zero; a seventh is the shelf. Two sections pack into one biquad, so a full curve costs four per output --- the same order as the output EQ that is already there.
+% \section{How it is built}\label{sec:targetfilter}
+% The curve is a cascade of first-order pole/zero sections, and the filter is those same sections discretised, so what the plot shows and what the outputs apply cannot drift apart. Six sections carry the tilt, their poles spread geometrically over the band widened two octaves at each end, each losing an equal share of the fall between its pole and its zero. A seventh filter is the shelf. Two sections pack into one biquad, so a full curve costs four per output.
 
-That construction is what makes the result a straight line in dB against log frequency: measured against a least-squares line it is straight to \SI{0.011}{\dB} at \SI{-3}{\dB} of tilt and \SI{0.036}{\dB} at \SI{-10}{\dB}, and it delivers the fall it is asked for to \SI{0.05}{\dB}. A turnover's knee is rounded rather than square --- six gentle sections cannot make a corner --- so with one set, the fall measured from the turnover itself comes out about \SI{0.1}{\dB} short. Shelving filters, the obvious alternative, are not good enough: one RBJ shelf is \SI{1.2}{\dB} off a straight line at only \SI{3}{\dB} of tilt.
+% That construction is what makes the result a straight line in dB against log frequency: measured against a least-squares line it is straight to \SI{0.011}{\dB} at \SI{-3}{\dB} of tilt and \SI{0.036}{\dB} at \SI{-10}{\dB}, and it delivers the fall it names to within about \SI{1}{\percent} of it --- \SI{0.05}{\dB} short at \SI{-6}{\dB}, \SI{0.09}{\dB} at \SI{-10}{\dB} --- the residual being largest at the edges of the band. A turnover's knee is rounded rather than square, six gentle sections being unable to make a corner, so with one set the fall measured from the turnover itself comes out about \SI{0.1}{\dB} short. Shelving filters, the obvious alternative, are not good enough: one RBJ shelf is \SI{1.2}{\dB} off a straight line at only \SI{3}{\dB} of tilt.
 
-The discretisation is the only place the plot and the filter differ, and only at the top, where the widened pole spread runs past Nyquist: \SI{0.00}{\dB} to \SI{1}{\kilo\hertz}, \SI{0.04}{\dB} at \SI{5}{\kilo\hertz} and \SI{0.18}{\dB} at \SI{20}{\kilo\hertz} for a \SI{-6}{\dB} tilt at \SI{44.1}{\kilo\hertz}. A turnover, whose slope is steeper, reaches \SI{0.37}{\dB} around \SI{14}{\kilo\hertz}. That is well under audibility, and nowhere near the several decibels the curve exists to put back.
+% The discretisation is the only place the plot and the filter differ, and only at the top, where the widened pole spread runs past Nyquist: \SI{0.00}{\dB} to \SI{1}{\kilo\hertz}, \SI{0.04}{\dB} at \SI{5}{\kilo\hertz} and \SI{0.18}{\dB} at \SI{20}{\kilo\hertz} for a \SI{-6}{\dB} tilt at \SI{44.1}{\kilo\hertz}. A turnover, whose slope is steeper, reaches \SI{0.37}{\dB} around \SI{14}{\kilo\hertz}. That is well under audibility, and nowhere near the several decibels the curve exists to put back.

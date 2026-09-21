@@ -1193,6 +1193,50 @@
     still optional: baking the target into an exported FIR for a rig that has
     no SuperMoTo.*
 
+- [x] Splash screen: check `Source/Components/SplashScreenComponent.h` and include it in the plugin project.
+
+    *A drawn card, 600x380, centred over the editor and holding the acoustic
+    blueprint grid, the product name and tagline, the mains-versus-sub wave
+    pair pulling into phase over two seconds, and the FX-Mechanics logo above
+    a link to fx-mechanics.com. The only artwork is `logo686.png`, the one
+    the top bar already draws.*
+
+    *Kept from the draft: the whole look. Fixed in it: a timer that never
+    stopped (it repainted at 60 Hz for the life of the editor once the card
+    had run), no way for the owner to learn that it had finished, a
+    hard-coded "v1.0.0 Pro" where the top bar reads `ProjectInfo`, that same
+    version tag drawn in the middle of the card because its strip was taken
+    after the footer had been removed, a silent font fallback (neither Space
+    Grotesk nor Inter is installed here, so the design was rendering in
+    whatever the system picked -- `styledFont()` now asks
+    `findAllTypefaceNames()` and falls back on purpose), polar grid lines
+    with a hard-coded 350 px reach, a zero-width rounded rectangle, a missing
+    licence header, and `juce::DegreesToRadians` for `degreesToRadians`. The
+    animation is driven from seconds since `show()` rather than from the
+    millisecond counter, which at that magnitude had no precision left for a
+    smooth wave.*
+
+    *The progress bar and its five invented loading steps are gone: nothing
+    in the startup takes 2.5 seconds and nothing the steps named was running
+    while they were shown. What is left is an opening, and it claims
+    nothing.*
+
+    *Visibility, all of it the editor's: at startup, once per plugin instance
+    (`smt::EditorSettings::splashShown`, which lives on the processor and is
+    not saved with the session) and only from the full layout, where it goes
+    by itself after three seconds; and on a click on the top bar's company
+    logo, where it stays until it is clicked. The logo is painted, not a
+    child component, so the editor hit-tests it itself -- `topBar::logoRect()`
+    is now the one place its rectangle is written, used by both `paint()` and
+    `logoHitArea()`. Collapsing to a compact layout takes the card down: it
+    is wider than either compact window. Clicking the card dismisses it,
+    except on the logo and the address, which open the site and leave it up.*
+
+    *One latent bug found on the way in: the constructor clamped the restored
+    page with `jlimit (0, 5, state.view)`, a literal left behind by the
+    Target view being appended to the enum, so the editor could never reopen
+    on Target. Clamped against `View::targetCurve` now.*
+
 ## To do
 
 - [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
