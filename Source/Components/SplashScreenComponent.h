@@ -189,7 +189,7 @@ private:
     {
         auto center = bounds.getCentre();
         const float reach = juce::jmax (bounds.getWidth(), bounds.getHeight());
-        g.setColour (juce::Colour::fromRGB (30, 36, 44).withAlpha (0.6f));
+        g.setColour (juce::Colour::fromRGB (50, 56, 64).withAlpha (0.6f));
 
         // Concentric acoustic diffusion circles
         for (float r = 40.0f; r < bounds.getWidth() * 0.6f; r += 35.0f)
@@ -221,7 +221,7 @@ private:
     {
         g.setFont (styledFont ("Inter", 14.0f, juce::Font::plain));
         g.setColour (juce::Colour::fromRGB (160, 166, 178));
-        g.drawText ("ROOM CORRECTION  \xe2\x80\xa2  SPEAKER MANAGER  \xe2\x80\xa2  PHASE ALIGNMENT",
+        g.drawText ("ROOM CORRECTION  /  SPEAKER MANAGER  /  PHASE ALIGNMENT",
                     area, juce::Justification::centred, false);
     }
 
