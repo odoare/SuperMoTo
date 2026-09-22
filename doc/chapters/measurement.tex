@@ -120,6 +120,8 @@ Two free-text fields let you record what a set of measurements actually was. Bot
 
 When measuring several channels in one run, the engine holds the monitor path silent while each finished capture is written to disk, so the speakers are not blasted between consecutive measurements.
 
+\paragraph{Stopping.} The button reads "Stop" while a run is going, and it cancels the run rather than merely ending it: the captures already written are deleted, and the status line says how many went. A run is all or nothing because half of one is worse than none --- a folder holding some channels of a position, with nothing in the manifest to say which, since that is only written when a run completes. Runs that finished are never touched, and neither is anything else in the folder: each run writes the next free position number per channel, so it can only ever delete its own files, and once they are gone the next run takes the numbers this one was using. A run that dies on a write error (a full disk, a folder that went away) cleans up the same way.
+
 \subsection{The SPL meter}\label{sec:splmeter}
 The right-hand SPL-meter section reuses the microphone / channel / measurement-type selections. It shows the microphone RMS on a dual dBFS / dB\,SPL bar and can emit a sine and/or white-noise test signal, routed exactly like the selected measurement mode. To calibrate the dB\,SPL scale, play a tone, read a real SPL meter at the listening position, and type that value into the plugin.
 

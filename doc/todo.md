@@ -1335,6 +1335,124 @@
     still says what is NOT measured for you there -- the room volume and the
     listening distance are a tape measure, and Q stays an assumption.*
 
+- [x] When hitting stop button during a measurement run, all the measurements
+  of this run should be cancelled. Currently, if stopping after a few channels
+  have been measured, they end in the data. They shouldn't.
+
+    *`MeasurementEngine::stop()` now deletes the captures the run had already
+    written, and the status line says how many went. The engine already kept
+    the list (`filesWrittenThisRun`, which the manifest is built from), so the
+    fix is mostly about knowing when it is safe to act on it.*
+
+    *It is safe because of how positions are numbered: `start()` scans the
+    folder and gives each channel `max + 1`, so a run never writes over an
+    earlier run's captures and that list can only ever hold its own. Deleting
+    them also puts the numbering back, so the next run takes the positions the
+    cancelled one was using. The manifest needs no repair either -- it is only
+    written when a run completes, so it still describes the folder exactly as
+    it now is.*
+
+    *Two guards were needed, both against deleting a run that had succeeded.
+    `prepare()` calls `stop()`, so a host changing the sample rate after a
+    finished run would have deleted it: the deletion is conditional on the
+    engine actually running. And `handleAsyncUpdate()` now clears the list once
+    it has written the manifest, so what the list holds is always an unfinished
+    run's. `cancelPendingUpdate()` in stop() handles a capture that completed in
+    the moment Stop was hit.*
+
+    *The write-failure path got the same treatment, not having been asked for
+    but being the same bug: a run that dies on a full disk left exactly the
+    half-set the item is about. It now discards the run too, including the file
+    it failed on, and says so.*
+
+    *Documented in the manual's measurement chapter and on the Run button's
+    tooltip, since deleting files on a button press should not be a surprise.*
+
+## Decided against
+
+- [~] Correction level as a function of frequency: stop inverting the
+  steady-state room curve above the transition frequency.
+
+    *Dropped before the first release, on the reasoning that the two things
+    it was for are now done by other means: the averaging fix removed the
+    treble lift that motivated it (most of the 4.8-5.6 dB it was written
+    about was the artefact, not the room), and the target curve decides the
+    high-frequency balance explicitly and audibly instead of by a correction
+    level nobody can hear the units of.*
+
+    *The detail that was here went with it, deliberately: its worked example
+    and its suggested starting values were computed BEFORE the averaging was
+    fixed, so every number in it described a measurement that no longer
+    exists. Keeping stale arithmetic around as a plan is worse than keeping
+    nothing. The standing argument is not stale and is where it belongs
+    anyway --- Chapter "The monitor target curve" of the manual, which cites
+    EBU 3276's "corrections below 300 Hz only" and the rest. If this comes
+    back, it wants re-deriving from a fresh measurement rather than
+    restoring.*
+
+    *The further-off idea it ended with is worth remembering on its own: to
+    correct the DIRECT sound at high frequency by gating the impulse response
+    with a frequency-dependent window before inverting it, short at HF and
+    long at LF. That is the thing the standards are really asking for, it is
+    a bigger job than a level curve, and nothing about it depended on the
+    numbers above.*
+
+    **Is that gating not just the frequency-dependent smoothing we already
+    do?** Asked 2026-09-22, and the answer is worth keeping because half of it
+    is yes.
+
+    *Yes, in mechanism, and exactly. Smoothing with a kernel of width `df` is
+    a convolution in frequency, so it is a multiplication in time by a window
+    of about `1/df`. Fractional-octave smoothing makes `df` proportional to
+    `f`, so the equivalent time window already scales as `1/f` -- long at LF,
+    short at HF, which is the very shape the gating idea asks for. 1/6 octave
+    is 43 ms at 200 Hz and 4.3 ms at 2 kHz (the same identity `ReverbTime.h`
+    rests on).*
+
+    *Yes, in practice too, for one of the two smoothings. Measured on a
+    synthetic room with a flat direct sound and a reverberant share that falls
+    with frequency, levels re the direct sound: the steady state sits at
+    +11.8 dB at 125 Hz and +6.9 dB at 8 kHz; per-curve COMPLEX smoothing pulls
+    that to +8.1 and +0.4 dB. It removed about 8 dB of reverberant energy at
+    HF against 3.7 at LF. That is gating, with the right frequency
+    dependence.*
+
+    *But no, where it would have to count. Two reasons, and the second is the
+    real one:*
+
+    - *`computeAverage()` accumulates `c.H`, the RAW per-curve spectra. The
+      complex-smoothed `c.Hs` are the thin lines on the plot and go nowhere
+      else -- they never reach the average, so they never reach the
+      correction.*
+    - *The average's magnitude is a power mean, and it is smoothed as a real
+      magnitude sequence: a weighted average of a magnitude curve removes
+      ripple, not energy. Measured, it lands within 0.2 dB of the unsmoothed
+      steady state (tilt -5.03 dB against -4.85). And it cannot be made to
+      gate, because a time window needs phase and the power mean discarded
+      it. That was the right call for the magnitude -- it IS the averaging
+      fix -- but it forecloses the gating reading of smoothing at exactly the
+      point where the correction is derived.*
+
+    *So the idea survives, and is cheaper than it looked: the gate has to
+    happen PER POSITION, BEFORE averaging, on the raw impulse responses, which
+    `AnalysisEngine::renderRawIR()` now hands over. Gate each position,
+    transform back, power-average as now.*
+
+    *One honest caveat from the experiment: the explicit-gate column overshot
+    BELOW the direct sound at HF (-8 to -9 dB at 4-8 kHz), which was a
+    brick-wall octave split ringing for longer than the window rather than a
+    result. The constraint it stumbled into is real though, and is the actual
+    difficulty of the whole approach: a gate shorter than about 1/bandwidth
+    eats the signal and not only the room. Any serious attempt needs proper
+    band filters and a window no shorter than they ring.*
+
+    *A shape difference worth noting too, since it is the other thing gating
+    buys: a smoothing kernel's time window is symmetric about t = 0 and is
+    whatever shape the frequency kernel implies (sinc-like, with negative
+    lobes for a rectangular one). A gate is shaped on purpose and can be
+    asymmetric -- short before the arrival, longer after -- which is how one
+    keeps specific early reflections and drops only the late field.*
+
 ## To do
 
 - [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
@@ -1367,40 +1485,3 @@
       the text could not be reproduced by either averaging, so it wants
       recomputing rather than editing — the claim it supports (neither 2048-tap
       rendering has room for the structure) is unaffected.
-
-- [ ] Correction level as a function of frequency: stop inverting the
-  steady-state room curve above the transition frequency.
-
-    Third in line, behind the averaging fix and the target curve, and no
-    longer urgent now that the first item accounts for most of the treble
-    boost — but still the standard practice, and still worth having. The
-    target curve decides *what* we aim at; this decides *how hard we chase it*,
-    and every source in the item above says the answer should depend on
-    frequency: below the transition frequency the spatially averaged steady
-    state is a fair description of what one hears and is worth inverting;
-    above it, the average is dominated by the reverberant field while the ear
-    follows the direct sound, so inverting it narrow-band is wrong regardless
-    of the target. EBU 3276 puts it bluntly — corrections below 300 Hz only.
-
-    `AnalysisEngine::recomputeCorrection()` already interpolates between bypass
-    and full correction in the log domain, but with a scalar
-    (`correctionLevel`). Make it a function of frequency: full level up to
-    `transitionHz`, a raised-cosine fall over a width in octaves, and `hfLevel`
-    above. Two new settings on `AnalysisSettings` and `GroupAnalysisSettings`,
-    reported in the markdown report; `transitionHz = 0` keeps today's
-    behaviour exactly, so nothing already measured changes meaning.
-
-    Starting point to try on the campaign-6 data, once the averaging fix is
-    in: 400 Hz, `hfLevel` 0.4, HF smoothing at 1 octave. Against the
-    power-averaged design, whose HF boost is +1.6 / +2.8 dB net rather than
-    +4.8 / +5.6, that leaves under a decibel of treble correction, and the
-    target curve then sets the balance on its own. The Analysis pane's
-    corrected curve shows the result before anything is exported, so this is
-    cheap to explore.
-
-    Related and further off: correcting the *direct* sound at HF instead, by
-    gating the impulse response with a frequency-dependent window before the
-    inversion (short at HF, long at LF), which is what the standards are really
-    asking for. Bigger job, and the two settings above get most of the way.
-
-- [ ] When hitting stop button during a measurement run, all the measurements of this run should be cancelled. Currently, if stopping after a few channels have been measured, they end in the data. They shouldn't.

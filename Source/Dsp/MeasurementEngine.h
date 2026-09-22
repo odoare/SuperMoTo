@@ -83,6 +83,13 @@ public:
 
     /** Message thread. Returns false if no output selected / invalid path. */
     bool start (const Settings& s);
+
+    /** Cancels the run and DELETES the captures it had already written: a run
+        is all or nothing, and half of one left in the folder is a set of
+        measurements with channels missing and no manifest entry to say which.
+        Only this run's files can go — each run takes the next free position
+        number per channel, so it never writes over an earlier one's. Harmless
+        when nothing is running. */
     void stop();
 
     bool isRunning() const noexcept     { return state.load() != State::idle; }
@@ -101,6 +108,7 @@ private:
     enum class State : int { idle = 0, playing, finishing };
 
     void handleAsyncUpdate() override;      // write file + advance
+    int discardRunFiles();                  // delete this run's captures; returns how many
     void startCurrentOutput();              // reset generators & capture
     void setStatus (const juce::String& s);
     juce::String channelStatus (int idx) const;
@@ -137,6 +145,9 @@ private:
     std::vector<int> channelList;           // outputs (or inputs) still to do
     std::vector<int> positions;             // per-channel position number for this run,
                                             // parallel to channelList
+    // The captures this run has written, and therefore the ones it would have
+    // to take back if it never finishes. Emptied when the run completes, so
+    // what it holds is always an unfinished run's (see stop()).
     juce::Array<juce::File> filesWrittenThisRun;
     int currentChannel = -1;
 

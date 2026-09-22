@@ -146,10 +146,47 @@ juce::File MeasurementEngine::captureFile (int ch) const
 
 void MeasurementEngine::stop()
 {
+    // A run is all or nothing. Stopping half way through used to leave the
+    // captures already written sitting in the folder, where the analysis finds
+    // them by name — a set of measurements missing the channels the run never
+    // reached, and with nothing in the manifest to say so, since that is only
+    // written when a run completes.
+    //
+    // Deleting them is safe, and only they can be deleted: start() gives each
+    // run the next free position number per channel (max + 1 over the files
+    // already there), so a run never writes over an earlier one's captures,
+    // and filesWrittenThisRun holds nothing else. With the files gone that
+    // same scan returns the folder to the numbering it had, so the next run
+    // takes the positions this one was using.
+    //
+    // Guarded on actually running, because prepare() calls this too: a host
+    // changing the sample rate after a completed run must not take the run
+    // with it. handleAsyncUpdate() clears the list on completion for the same
+    // reason.
+    const bool wasRunning = isRunning();
+
+    cancelPendingUpdate();      // a capture that finished as Stop was hit
     state.store (State::idle);
     progress.store (0.0f);
-    setStatus ("Stopped");
+
+    const int discarded = wasRunning ? discardRunFiles() : 0;
+
+    setStatus (discarded > 0
+                 ? "Stopped - " + juce::String (discarded) + " measurement"
+                       + (discarded == 1 ? "" : "s") + " from this run discarded"
+                 : juce::String ("Stopped"));
     sendChangeMessage();
+}
+
+int MeasurementEngine::discardRunFiles()
+{
+    int n = 0;
+    for (auto& f : filesWrittenThisRun)
+        if (f.deleteFile())
+            ++n;
+
+    filesWrittenThisRun.clear();
+    return n;
 }
 
 void MeasurementEngine::startCurrentOutput()
@@ -321,7 +358,16 @@ void MeasurementEngine::handleAsyncUpdate()
 
     if (! ok)
     {
-        setStatus ("ERROR writing " + file.getFullPathName());
+        // The same all-or-nothing rule as stop(): a run that cannot finish
+        // leaves no half a set behind. The writer is out of scope by now, so
+        // the file it failed on can go with the rest.
+        file.deleteFile();
+        const int discarded = discardRunFiles();
+
+        setStatus ("ERROR writing " + file.getFullPathName()
+                     + (discarded > 0 ? " - " + juce::String (discarded) + " earlier measurement"
+                                            + (discarded == 1 ? "" : "s") + " from this run discarded"
+                                      : juce::String()));
         state.store (State::idle);
         sendChangeMessage();
         return;
@@ -341,6 +387,7 @@ void MeasurementEngine::handleAsyncUpdate()
         setStatus ("Done (" + juce::String (channelList.size()) + " files written)");
         progress.store (1.0f);
         state.store (State::idle);
+        filesWrittenThisRun.clear();     // written and manifested: not ours to discard
     }
 
     sendChangeMessage();

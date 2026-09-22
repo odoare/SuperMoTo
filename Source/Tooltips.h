@@ -268,7 +268,9 @@ namespace cal
         "entry in the manifests.";
     inline constexpr auto run =
         "Play and record every selected output once, at the current microphone position. Move "
-        "the microphone and run again for each position you want to average.";
+        "the microphone and run again for each position you want to average.\n\n"
+        "Stop cancels the whole run: the captures it had already written are deleted, so a "
+        "folder never holds a set with channels missing. Runs that finished are untouched.";
 
     // -- SPL calibration ------------------------------------------------------
     inline constexpr auto meterOn =
