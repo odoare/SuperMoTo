@@ -274,6 +274,16 @@ juce_generate_juce_header(SuperMoToFolderTests)
 set_target_properties(SuperMoToFolderTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME folder COMMAND SuperMoToFolderTests)
 
+# ── Offline test of the reverberation-time estimator ─────────────────────────
+# A plain executable, not a JUCE console app: ReverbTime.h has no JUCE in it and
+# this is what keeps it that way. Rooms are synthesised with a decay the test
+# already knows, so the estimator is checked against an answer rather than
+# against itself.
+add_executable(SuperMoToReverbTests Tests/ReverbTimeTest.cpp)
+target_compile_features(SuperMoToReverbTests PRIVATE cxx_std_17)
+set_target_properties(SuperMoToReverbTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+add_test(NAME reverb COMMAND SuperMoToReverbTests)
+
 target_link_libraries(SuperMoTo
     PRIVATE
         juce::juce_audio_basics

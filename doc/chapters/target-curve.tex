@@ -13,6 +13,28 @@ A total of \SIrange{-3}{-6}{\dB} from \SI{20}{\hertz} to \SI{20}{\kilo\hertz} is
 
 \paragraph{Not the cinema X-curve.} SMPTE ST 202 and ISO 2969 specify \SI{3}{\dB} per octave above \SI{2}{\kilo\hertz} for rooms over \SI{125}{\cubic\metre}. That is a very different target. Allen's account of where it came from also records what happened when small, dry mix rooms were tuned to it in the 1980s, and material sounded dull there, engineers compensated, so the mixes came out bright \cite{Allen2006}. A small room needs less tilt than a cinema, and the useful idea to borrow is that the turnover frequency, not the slope, is what should move with room size and listening distance.
 
+\section{Choosing how much tilt}\label{sec:tiltchoice}
+Section~\ref{sec:whytilt}'s argument is about a room in general. In a particular room, how much of what a measurement picks up is reverberant rather than direct sets how much tilt is actually owed, and that balance is set by the room and by where the listening position sits in it, not by the loudspeaker.
+
+\paragraph{Rule of thumb.} The drier and closer, the flatter; the livelier and further, the steeper. A small, well-treated room with the listening position close to the speakers, as near-field monitoring intends, keeps the direct sound dominant well into the treble, and there is little for a room to add beyond what Section~\ref{sec:whytilt} already accounts for from \gterm{di}{directivity} alone. Flat or Gentle usually reads right. A larger or more reflective room, a listening position further back, or a wide correction area, lets the reverberant field's share grow, and its spectrum falls with frequency faster than the direct sound's, for the same reason. Strong or Harman-like tends to read right there. This is one reading of Olive, Welti and McMullin's finding that listeners preferred a downward-tilting in-room target to a flat one \cite{Olive2013}: the more of the room is in what they heard, the more welcome the tilt.
+
+\paragraph{A number to hang it on.} Room acoustics has a standard quantity for exactly this balance: the \emph{critical distance} $d_c$, the distance from the loudspeaker at which direct and reverberant sound pressure are equal. A common estimate, combining Sabine's reverberation-time formula with the classical room-constant approximation for a diffuse field, is
+\begin{equation}
+  d_c \;\approx\; 0.057\sqrt{\dfrac{Q\,V}{T_{60}}} \quad \text{(metres, $V$ in \si{\cubic\metre}, $T_{60}$ in seconds)},
+  \label{eq:criticaldistance}
+\end{equation}
+where $Q$ is the loudspeaker's directivity factor in the band of interest (roughly 2--4 for a small monitor's tweeter) and $T_{60}$ the room's reverberation time. At a listening distance $r$, the direct-to-reverberant ratio there is approximately $20\log_{10}(d_c/r)\,\si{\dB}$: well positive favours Flat or Gentle, well negative favours Strong or Harman-like, and close to \SI{0}{\dB} is squarely Moderate, the default.
+
+Two rooms of the same \SI{50}{\cubic\metre} and the same \SI{1.2}{\metre} listening distance, differing only in treatment, illustrate the swing. Well treated, $T_{60}=\SI{0.25}{\second}$, Equation~\ref{eq:criticaldistance} gives $d_c\approx\SI{1.4}{\metre}$, about \SI{+1.3}{\dB}: direct sound leads, mildly. Untreated, $T_{60}=\SI{0.6}{\second}$, $d_c\approx\SI{0.9}{\metre}$, about \SI{-2.5}{\dB}: the same chair, in the same room, is now on the reverberant side. Nothing else moved; only how much of the room was absorbed.
+
+The approximation folding the room constant into the Sabine absorption understates $d_c$ once the average absorption coefficient is no longer small, so it errs, if anything, towards recommending more tilt in a live room rather than less. $Q$ is frequency-dependent and hard to pin down without a polar measurement, and a small room's low end rarely reaches the diffuse-field assumption behind Equation~\ref{eq:criticaldistance} at all. So treat the result as an order of magnitude, one input among others, not a setting to compute and forget.
+
+$T_{60}$ is measured by SuperMoTo. Load a set of measurements in the Analysis pane with the swept-sine estimator, choose the raw impulse view, and the read-out beside it gives the room's reverberation time. You can get a tooltip showing the per octave band values by moving the mouse over it (Section~\ref{sec:rawir}). That is the number Equation~\ref{eq:criticaldistance} wants, from the room the correction was designed in, and the single figure it reports (the mean of the \SI{500}{\hertz} and \SI{1}{\kilo\hertz} octaves) is the one to put in it.
+
+What is not measured is $V$ and $r$: a tape measure settles both, and $Q$ stays an assumption unless the loudspeaker came with a polar plot. So the estimate is still an order of magnitude arrived at deliberately rather than a setting computed from data, which is the right status for it.
+
+\paragraph{What actually decides it.} None of the above replaces the switch. A curve chosen from the room's numbers is a starting point to load and then judge as Section~\ref{sec:targetuse} describes, on programme material you know well, with Engage flicked in and out.
+
 \section{Curve parameters}\label{sec:targetshape}
 The target curve is defined through four parameters:
 \begin{itemize}[nosep]

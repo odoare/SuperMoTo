@@ -418,15 +418,26 @@ namespace ana
         "the correction was designed for). Negative values clamp to 0.";
 
     inline constexpr auto display =
-        "Impulse response traces:\n"
+        "Impulse response: what the design predicts, rendered at the chosen FIR length.\n"
         "measured: the speaker as it is now.\n"
         "corrected: the speaker predicted with the exported FIR loaded, at the "
         "chosen length and Phase type.\n"
         "+ sub: the same, summed with the subwoofer at the Mains-delay offset "
-        "and at the level it was measured at (this pane does no level matching).\n\n"
+        "and at the level it was measured at (this pane does no level matching).\n"
         "The sum is for ONE main. Feeding a mono subwoofer from a stereo pair raises its "
         "share of the sum, so apply about 3 dB more attenuation to the sub in the real "
-        "system (up to 6 dB for content correlated between L and R).";
+        "system (up to 6 dB for content correlated between L and R).\n\n"
+        "Impulse response (raw): the measurements themselves instead, one trace per "
+        "microphone position, the whole analysis window long, with no smoothing and no "
+        "correction. The reverberation time is read from these, and they are the only "
+        "traces here whose tail is the room's: the rendered ones are rebuilt from the "
+        "smoothed average, which is a time window of a few milliseconds at the top of "
+        "the band.";
+
+    inline constexpr auto irDb =
+        "Amplitude axis of the impulse view: magnitude in dB below the peak, instead of "
+        "linear. A decay lives in the last 40 dB, which is a flat line against zero on a "
+        "linear axis. The mouse wheel moves the floor.";
 }
 
 //==============================================================================

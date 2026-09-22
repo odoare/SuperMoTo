@@ -9,10 +9,68 @@
 */
 
 #include "AnalysisEngine.h"
+#include "ReverbTime.h"
 #include <FxmeTools/dsp/SynchronizedSweep.h>
 
 namespace smt
 {
+
+namespace
+{
+    // ISO 266 octave centres. Below 125 Hz an octave is too narrow to hold a
+    // readable decay in a small room's measurement, and above 8 kHz the air
+    // and the microphone have taken most of it.
+    constexpr float octaveCentres[] = { 125.0f, 250.0f, 500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f };
+
+    /** An octave band with raised-cosine skirts, flat across the octave and
+        fading out over the half-octave beyond each edge. A brick wall would
+        ring on for as long as the decay it is supposed to be measuring. */
+    float octaveWeight (double f, double centreHz) noexcept
+    {
+        if (f <= 0.0 || centreHz <= 0.0)
+            return 0.0f;
+
+        const double a = std::abs (std::log2 (f / centreHz));
+        if (a <= 0.5) return 1.0f;
+        if (a >= 1.0) return 0.0f;
+        return (float) (0.5 * (1.0 + std::cos (juce::MathConstants<double>::pi * (a - 0.5) * 2.0)));
+    }
+
+    /** Back to the time domain from a half-spectrum, optionally through one
+        octave band. windowSize samples, the direct sound at 0 (the curves
+        carry no propagation delay by the time they are stored). */
+    juce::AudioBuffer<float> inverseTransform (const std::vector<std::complex<float>>& H,
+                                               int windowSize, double sampleRate,
+                                               double bandCentreHz = 0.0)
+    {
+        juce::AudioBuffer<float> out;
+        const int W = windowSize;
+        const int numBins = W / 2 + 1;
+
+        if (W < 64 || (int) H.size() < numBins || sampleRate <= 0.0)
+            return out;
+
+        // Only the first numBins complex values are read, but the buffer has to
+        // be 2 * W floats all the same (juce::dsp::FFT's contract).
+        std::vector<float> buf ((size_t) (2 * W), 0.0f);
+        for (int k = 0; k < numBins; ++k)
+        {
+            auto v = H[(size_t) k];
+            if (bandCentreHz > 0.0)
+                v *= octaveWeight ((double) k * sampleRate / (double) W, bandCentreHz);
+
+            buf[(size_t) (2 * k)]     = v.real();
+            buf[(size_t) (2 * k + 1)] = v.imag();
+        }
+
+        juce::dsp::FFT fft ((int) std::log2 ((double) W));
+        fft.performRealOnlyInverseTransform (buf.data());
+
+        out.setSize (1, W);
+        out.copyFrom (0, 0, buf.data(), W);
+        return out;
+    }
+}
 
 void AnalysisEngine::setWindowSize (int sizePow2)
 {
@@ -36,6 +94,7 @@ void AnalysisEngine::setTfMethod (TfMethod m)
 void AnalysisEngine::clear()
 {
     curves.clear();
+    reverbTime = {};
     average.clear();
     averageSmoothed.clear();
     correction.clear();
@@ -67,6 +126,7 @@ int AnalysisEngine::loadFiles (const juce::Array<juce::File>& files)
     computeAverage();
     applySmoothing();
     recomputeCorrection();
+    computeReverbTime();        // from the raw curves, so none of the above touches it
     return (int) curves.size();
 }
 
@@ -1211,6 +1271,99 @@ juce::AudioBuffer<float> AnalysisEngine::renderIR (const std::vector<std::comple
 juce::AudioBuffer<float> AnalysisEngine::renderCorrectionIR (int firLength) const
 {
     return renderIR (correction, firLength, phaseType == PhaseType::minimum);
+}
+
+juce::AudioBuffer<float> AnalysisEngine::renderRawIR (int curveIndex) const
+{
+    if (curveIndex < 0 || curveIndex >= (int) curves.size())
+        return {};
+
+    return inverseTransform (curves[(size_t) curveIndex].H, windowSize, sampleRate);
+}
+
+void AnalysisEngine::computeReverbTime()
+{
+    reverbTime = {};
+
+    if (curves.empty() || sampleRate <= 0.0)
+    {
+        reverbTime.note = "no measurements loaded";
+        return;
+    }
+
+    // Welch is refused rather than reported wrong. Its segmentation smears a
+    // swept measurement in time: on a synthetic 0.40 s room it reads 0.63 s,
+    // and a longer sweep does not improve it. See ReverbTime.h.
+    if (tfMethod != TfMethod::sweep)
+    {
+        reverbTime.note = "needs the sweep method: a Welch estimate of a swept "
+                          "measurement smears the decay and reads far too long";
+        return;
+    }
+
+    // The raw transfer function is the only one that still has the room's tail
+    // in it, and each position is estimated on its own: ISO 3382 averages
+    // positions by taking the mean of the times, not by averaging responses.
+    for (const float centre : octaveCentres)
+    {
+        if ((double) centre * 2.0 >= sampleRate * 0.5)
+            continue;                       // the band runs past Nyquist
+
+        ReverbTime::Band band;
+        band.centreHz = centre;
+
+        float sum = 0.0f, lo = 0.0f, hi = 0.0f;
+
+        for (const auto& c : curves)
+        {
+            const auto ir = inverseTransform (c.H, windowSize, sampleRate, (double) centre);
+            if (ir.getNumSamples() == 0)
+                continue;
+
+            const auto d = reverb::estimateDecay (ir.getReadPointer (0), ir.getNumSamples(), sampleRate);
+            if (! d.ok())
+                continue;
+
+            const float t = d.t60();
+            if (band.positions == 0)
+                lo = hi = t;
+            else
+            {
+                lo = juce::jmin (lo, t);
+                hi = juce::jmax (hi, t);
+            }
+
+            sum += t;
+            ++band.positions;
+        }
+
+        if (band.positions == 0)
+            continue;
+
+        band.t60 = sum / (float) band.positions;
+        band.spread = hi - lo;
+        reverbTime.bands.push_back (band);
+    }
+
+    // The headline figure is the usual mid-frequency one, the mean of the
+    // 500 Hz and 1 kHz octaves — the band the critical-distance estimate of
+    // the manual wants, and the band a room is normally described by.
+    float mid = 0.0f;
+    int midBands = 0;
+    for (const auto& b : reverbTime.bands)
+        if (juce::exactlyEqual (b.centreHz, 500.0f) || juce::exactlyEqual (b.centreHz, 1000.0f))
+        {
+            mid += b.t60;
+            reverbTime.positions = juce::jmax (reverbTime.positions, b.positions);
+            ++midBands;
+        }
+
+    if (midBands > 0)
+        reverbTime.midT60 = mid / (float) midBands;
+    else
+        reverbTime.note = reverbTime.bands.empty()
+                            ? "no band decayed far enough to fit a slope"
+                            : "the 500 Hz and 1 kHz octaves did not decay far enough to fit";
 }
 
 juce::AudioBuffer<float> AnalysisEngine::renderMeasuredIR (int firLength) const

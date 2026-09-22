@@ -95,7 +95,7 @@ The "Level" selector sets the vertical reference of the measured curves. It is a
 \end{itemize}
 
 \subsection{Frequency response or impulse response}\label{sec:irview}
-The "View" selector swaps the frequency plot for a time-domain view of the same speaker, at the current "\gterm{fir}{FIR} length":
+The "View" selector swaps the frequency plot for a time-domain view of the same speaker. "Impulse response" renders the design at the current "\gterm{fir}{FIR} length":
 
 \begin{itemize}[nosep]
   \item "measured" is the averaged response rendered back to the time domain;
@@ -104,6 +104,23 @@ The "View" selector swaps the frequency plot for a time-domain view of the same 
 \end{itemize}
 
 \noindent Time zero is placed at the centre of the buffer, where a \gterm{linphase}{linear-phase} correction puts its main peak. This is the quickest way to see what the length and phase settings are really doing. It shows how much the corrected response rings, whether the FIR is long enough for the correction to decay inside it rather than being truncated, and how much pre-ringing a linear-phase filter introduces. Changing "FIR length" or "Phase" updates it immediately.
+
+\subsection{The raw impulse view, and the reverberation time}\label{sec:rawir}
+"Impulse response (raw)" shows something else: the measurements themselves, one trace per microphone position, the whole analysis window long, with no smoothing, no band limiting and no correction. The direct sound sits at time zero, the propagation delay having been taken out when the files were loaded (Section~\ref{sec:spatialavg}).
+
+The "dB" button puts the amplitude on a decibel axis, which this view turns on for you, because what it is for is the part of the response a linear axis flattens against zero: the reverberant tail, the noise floor under it, and how far apart the positions drift once the room rather than the loudspeaker is doing the talking. The mouse wheel moves the floor.
+
+\paragraph{T60.} Beside the selector, the read-out gives the room's reverberation time, and hovering it lists the octave bands it was measured in. Each position is estimated on its own, from its own raw response band-limited to the octave, by Schroeder backward integration with the line fits of ISO 3382 (T30 where the decay reached \SI{-35}{\dB}, T20 where it only reached \SI{-25}{\dB}, both extrapolated to \SI{60}{\dB}); the positions are then averaged as ISO 3382 averages them, by taking the mean of the times. The single figure is the usual mid-frequency one, the mean of the \SI{500}{\hertz} and \SI{1}{\kilo\hertz} octaves. Section~\ref{sec:tiltchoice} is what it is there for.
+
+Three things it will not do, each for the same reason --- a decay can only be read from a response that still has one in it:
+
+\begin{itemize}[nosep]
+  \item It is not measured on the smoothed curves. Smoothing is a convolution in frequency, so it is a multiplication in time by a window of about $1/\Delta f$: 1/6 octave is \SI{43}{\milli\second} at \SI{200}{\hertz} and \SI{4.3}{\milli\second} at \SI{2}{\kilo\hertz}. On a synthetic \SI{0.40}{\second} room the smoothed response reads \SIrange{0.28}{0.30}{\second} broadband and gives no readable decay in any octave band at all. What would be left to measure is the smoothing.
+  \item It is not measured on the average. The average takes its magnitude from a power mean and its phase from a complex mean (Section~\ref{sec:spatialavg}), which is right for what it is for and means the two no longer describe one response: transformed back, its energy does not even fall monotonically. Averaging the \emph{times} instead is what the standard asks for anyway.
+  \item It needs the swept-sine estimator (Section~\ref{sec:sweep}). The Welch estimate of a swept measurement smears the response in time: the same \SI{0.40}{\second} room reads \SIrange{0.63}{0.66}{\second} that way, and a longer sweep does not improve it, where the sweep deconvolution reads \SI{0.399}{\second}. In Welch mode the read-out says so rather than reporting a number it cannot stand behind.
+\end{itemize}
+
+\noindent A last caveat that is the room's rather than the plugin's: the estimate is only as long as the analysis window lets it be. At \SI{48}{\kilo\hertz} a \num{65536}-sample window holds \SI{1.37}{\second}, which is ample for a control room and short for a church.
 
 \section{Fractional-octave smoothing}\label{sec:smoothing}
 \gterm{smoothing}{Smoothing} is applied both to the displayed curves and to the average the correction is derived from. It averages the complex response, magnitude and phase together, over a band a fixed fraction of an octave wide around each frequency, so it is narrow in the bass and wide in the treble. That matches the ear's roughly logarithmic frequency resolution and keeps the correction from chasing the dense, narrow interference structure of the room~\cite{Hatziantoniou2000}. The available fractions are Off, 1/24, 1/12, 1/6, 1/3, 1/2 and 1~octave.

@@ -58,7 +58,8 @@ struct AnalysisSettings
 
     // Display only.
     int levelRefId = 1;                 // Normalized, Absolute dB, dB SPL
-    bool showIr = false;                // View: impulse response
+    int displayId = 1;                  // View: 1 frequency, 2 impulse, 3 raw impulse
+    bool irInDb = false;                // that view's amplitude axis
     float viewLowHz = 0.0f;             // plot frequency window, 0 = its default
     float viewHighHz = 0.0f;
 };

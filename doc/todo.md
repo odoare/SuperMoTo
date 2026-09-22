@@ -1237,6 +1237,104 @@
     Target view being appended to the enum, so the editor could never reopen
     on Target. Clamped against `View::targetCurve` now.*
 
+- [x] Manual: give some guidance on choosing how much tilt, and check
+  whether a quantitative criterion exists (direct-to-reverberant level, or
+  similar).
+
+    *New section, `doc/chapters/target-curve.tex` §"Choosing how much
+    tilt", between the "why a flat response is wrong" argument and the
+    curve parameters. A qualitative rule (drier and closer favours Flat or
+    Gentle; livelier and further favours Strong or Harman-like), tied to
+    the same directivity-index mechanism as the rest of the chapter and to
+    Olive et al.'s preference finding, already cited there. Then the actual
+    quantitative handle: critical distance $d_c$, the distance at which
+    direct and reverberant levels are equal, estimated from room volume and
+    $T_{60}$ via the standard Sabine + room-constant approximation, giving a
+    direct-to-reverberant ratio in dB at the listening distance. Worked with
+    two rooms of the same volume and listening distance differing only in
+    $T_{60}$ (0.25 s vs 0.6 s), which flips the sign from +1.3 dB to
+    -2.5 dB -- the arithmetic checked in Python before it went in the
+    manual. Caveated: the room-constant approximation understates $d_c$ in
+    a live room, $Q$ is frequency-dependent, and a small room's low end
+    rarely reaches the diffuse-field assumption the formula needs, so it is
+    an order-of-magnitude starting point, not a setting to compute once.*
+
+    *Honest about what SuperMoTo does not do: it does not measure $T_{60}$
+    or apply the formula anywhere. Noted that Calibration's captured
+    impulse responses already hold the room's decay in their tail, which is
+    what a $T_{60}$ estimate would use, so a one-click suggested starting
+    curve is a plausible future addition -- not built, and not asked for
+    yet, just flagged as available if wanted.*
+
+- [x] Compute the T60 the target-curve chapter talks about. Is it meaningful
+  on a windowed/smoothed FRF, or on an averaged one? Wanted: a T60 read-out
+  on the IR plot, and an optional log-amplitude view of the IR.
+
+    *Both questions answered by measuring rather than reasoning: a synthetic
+    room built with a known T60 (decaying gaussian noise), put through each
+    path, to see what comes back. Scripts in the session scratchpad; the
+    numbers are in `Source/Dsp/ReverbTime.h` and in the manual.*
+
+    *Smoothed: no. Smoothing is a convolution in frequency, so it is a
+    multiplication in time by a window of about 1/(bandwidth) -- 1/6 octave
+    is 43 ms at 200 Hz and 4.3 ms at 2 kHz. A 0.40 s room reads 0.28-0.30 s
+    broadband through it, and no octave band gives a readable decay at all.
+    What is left to measure is the kernel.*
+
+    *Averaged: it depends which average. Averaging the decay TIMES per
+    position, which is what ISO 3382 asks for, reads 0.401 for 0.400 with a
+    0.002 spread. A plain complex average of the responses also survives
+    (0.398), because decorrelated tails shrink by 1/sqrt(N) without changing
+    slope -- that surprised me, I had expected the tail to cancel. But the
+    engine's own average cannot be used: magnitude from a power mean and
+    phase from a complex mean do not describe one response, and transformed
+    back its energy does not fall monotonically (-38 dB at 0.5 s, back to
+    -35 dB at 1.0 s). So: per position, then average the times.*
+
+    *A third finding nobody asked for: the Welch estimator cannot be used
+    either, when the excitation is a sweep. The segmentation smears the
+    response in time and the same 0.40 s room reads 0.63-0.66 s; a longer
+    sweep does not help (0.66 at 20 s). White noise through the same path
+    reads 0.377, which is the small window-autocorrelation bias one would
+    expect, so it is the non-stationary excitation that does the damage. The
+    sweep deconvolution reads 0.399. The estimate is therefore refused in
+    Welch mode, with the read-out saying why, rather than reported wrong.*
+
+    *`Source/Dsp/ReverbTime.h` is the estimator: Schroeder backward
+    integration, a compacted Lundeby for the truncation point (envelope ->
+    noise estimate -> line fit -> crossing, iterated), the fitted tail added
+    back so the curve does not bend into its own end, and the ISO 3382 fits
+    EDT / T20 / T30. No JUCE in it, which `Tests/ReverbTimeTest.cpp` and a
+    plain `add_executable` keep true. It recovers 0.250/0.400/0.600/0.895 for
+    0.25/0.40/0.60/0.90, still reads 0.418 with a -35 dB floor over the
+    decay, and refuses silence, a bare impulse and 40 ms of response.*
+
+    *`AnalysisEngine::getReverbTime()` drives it, per octave band 125 Hz to
+    8 kHz, from the RAW per-position `Curve::H` band-limited in the frequency
+    domain (raised-cosine skirts, not a brick wall, which would ring for as
+    long as the decay it is measuring -- with hard edges the 125 Hz band
+    failed outright). Derived by `loadFiles()` rather than lazily, following
+    the note on `effectiveCorrection()`: accessors on that class stay pure
+    reads because a background export job reads them while the message thread
+    plots. Validated per band in Python first: 250 Hz upwards recovers within
+    1-2 %, 125 Hz is noisier and is reported with its position count.*
+
+    *GUI: a third View entry, "Impulse response (raw)", showing the
+    measurements themselves -- one trace per position, the whole window long,
+    unsmoothed and uncorrected, direct sound at t = 0. A "dB" button puts the
+    amplitude on a log axis, which that view turns on for you since a decay
+    is the reason to open it. The T60 read-out sits beside the selector and
+    lists the octave bands on hover. The dB axis is a new mode on
+    `fxme::WaveformDisplay` (columns drawn as bars from the floor to their
+    peak, dB grid, wheel moves the floor, dB in the cursor read-out),
+    additive and recorded in FxmeTools' `doc/api-changes.md`.*
+
+    *Manual: a new subsection `sec:rawir` in the analysis chapter with all
+    three refusals and their numbers, and the target-curve chapter's "SuperMoTo
+    does not measure T60" paragraph replaced by how to read it. The manual
+    still says what is NOT measured for you there -- the room volume and the
+    listening distance are a tape measure, and Q stays an assumption.*
+
 ## To do
 
 - [ ] Regenerate Figure 2 of the paper, and re-check two numbers in

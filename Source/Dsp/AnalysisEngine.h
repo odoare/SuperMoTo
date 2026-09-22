@@ -179,6 +179,58 @@ public:
     std::vector<float> getSubPhaseDeg (const std::vector<float>& freqs) const;
 
     //==========================================================================
+    /** The reverberation time of the room the measurements were made in, per
+        octave band, derived from the loaded set and nothing else — no setting
+        on this class changes it, so it is computed once by loadFiles().
+
+        Each position is estimated on its own, from its RAW (unsmoothed)
+        transfer function band-limited to the octave and transformed back to
+        an impulse; the positions are then averaged as ISO 3382 averages them,
+        by taking the mean of the times rather than by averaging responses.
+        ReverbTime.h says why none of the other spectra in this class will do,
+        and why this is Welch-free: with a swept measurement the Welch estimate
+        smears the response in time badly enough to read half again too long,
+        so the whole estimate is refused in that mode rather than reported
+        wrong. `note` then says so. */
+    struct ReverbTime
+    {
+        struct Band
+        {
+            float centreHz = 0.0f;
+            float t60 = 0.0f;           ///< mean over the positions that fitted
+            float spread = 0.0f;        ///< max - min over those positions
+            int   positions = 0;        ///< how many of them there were
+        };
+
+        std::vector<Band> bands;        ///< octave centres, 125 Hz to 8 kHz
+
+        /** The single figure: the mean of the 500 Hz and 1 kHz octaves, which
+            is the usual "mid-frequency" reverberation time, and the one the
+            critical-distance estimate of the manual wants. 0 when neither
+            band could be fitted. */
+        float midT60 = 0.0f;
+
+        int positions = 0;              ///< positions contributing to midT60
+        juce::String note;              ///< why it is empty, when it is
+
+        bool ok() const noexcept        { return midT60 > 0.0f; }
+    };
+
+    const ReverbTime& getReverbTime() const noexcept    { return reverbTime; }
+
+    /** One position's measured impulse response as it was estimated, with no
+        smoothing, no band limiting and no correction: the inverse transform of
+        the raw transfer function, windowSize samples long, with the direct
+        sound at sample 0 (the propagation delay is taken out at load time).
+
+        This is the only impulse in this class that is a measurement rather
+        than a rendering — renderMeasuredIR() rebuilds one from the smoothed
+        average at the FIR length, which is the right thing for judging a
+        filter and the wrong thing for reading a decay. Empty for an index out
+        of range. */
+    juce::AudioBuffer<float> renderRawIR (int curveIndex) const;
+
+    //==========================================================================
     /** Correction level: 0 = no correction, 1 = flat (except LF slope). */
     void setCorrectionLevel (float level01);
     float getCorrectionLevel() const noexcept   { return correctionLevel; }
@@ -352,6 +404,7 @@ private:
 
     bool analyzeFile (const juce::File& file, Curve& out,
                       float forcedDelaySamples = std::numeric_limits<float>::quiet_NaN());
+    void computeReverbTime();           // from the raw curves; see ReverbTime.h
     bool estimateSweepTf (const float* recorded, int numSamples,
                           juce::dsp::FFT& fft, Curve& out);
     juce::AudioBuffer<float> renderIR (const std::vector<std::complex<float>>& spec,
@@ -413,6 +466,8 @@ private:
     // the main curves applies unchanged). Index 0 = order 2.
     std::vector<std::vector<std::complex<float>>> harmonicAvg;
     std::vector<std::vector<std::complex<float>>> harmonicAvgSmoothed;
+
+    ReverbTime reverbTime;                              // derived by loadFiles()
 
     std::vector<Curve> subCurves;                       // sub set, anchored on main
     std::vector<std::complex<float>> subAverage;

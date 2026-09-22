@@ -350,15 +350,43 @@ public:
         addLabel (displayLabel, "View");
         displayBox.addItem ("Frequency response", 1);
         displayBox.addItem ("Impulse response", 2);
+        displayBox.addItem ("Impulse response (raw)", 3);
         displayBox.setSelectedId (1, juce::dontSendNotification);
         displayBox.setTooltip (smt::tips::ana::display);
         SuperMoToTheme::accentComboBox (displayBox, SuperMoToTheme::spectrum);
         displayBox.onChange = [this]
         {
-            session.settings.showIr = displayBox.getSelectedId() == 2;
+            session.settings.displayId = displayBox.getSelectedId();
+
+            // Choosing the raw view turns the dB axis on, since a decay is
+            // the reason to open it and a linear axis hides one. Turning it
+            // back off sticks for as long as the view is up, and the session
+            // remembers whichever state it was left in.
+            if (showingRawIr())
+            {
+                dbButton.setToggleState (true, juce::dontSendNotification);
+                session.settings.irInDb = true;
+            }
+
             updateDisplayMode();
         };
         addAndMakeVisible (displayBox);
+
+        // The amplitude axis of whichever impulse view is up. A decay lives in
+        // the last 40 dB, which is a flat line on a linear axis.
+        dbButton.setButtonText ("dB");
+        SuperMoToTheme::accentToggleButton (dbButton, SuperMoToTheme::spectrum);
+        dbButton.setTooltip (smt::tips::ana::irDb);
+        dbButton.onClick = [this]
+        {
+            session.settings.irInDb = dbButton.getToggleState();
+            applyIrAmplitudeScale();
+        };
+        addChildComponent (dbButton);
+
+        reverbLabel.setColour (juce::Label::textColourId, SuperMoToTheme::curveAverage);
+        reverbLabel.setJustificationType (juce::Justification::centredRight);
+        addChildComponent (reverbLabel);
 
         irPlot.setColours (SuperMoToTheme::waveformColours());
         irPlot.setChannelColours ({ SuperMoToTheme::curveAverage, SuperMoToTheme::fir });
@@ -376,6 +404,7 @@ public:
         updateLevelRefChoices();
         updateAlignInfo();
         updateDisplayMode();
+        updateReverbInfo();
         updatePlotData();
     }
 
@@ -520,10 +549,13 @@ public:
         // What the plot below shows — kept directly above it.
         auto rD = area.removeFromTop (24);
         displayLabel.setBounds (rD.removeFromLeft (36));
-        displayBox.setBounds (rD.removeFromLeft (150));
+        displayBox.setBounds (rD.removeFromLeft (170));
+        rD.removeFromLeft (8);
+        dbButton.setBounds (rD.removeFromLeft (58));        // tick box + "dB"
         rD.removeFromLeft (16);
         levelRefLabel.setBounds (rD.removeFromLeft (40));
         levelRefBox.setBounds (rD.removeFromLeft (110));
+        reverbLabel.setBounds (rD.removeFromRight (120));   // impulse views only
 
         area.removeFromTop (6);
         plot.setBounds (area);
@@ -589,7 +621,8 @@ private:
         applyDelayToggle.setToggleState (st.applyBulkDelay, juce::dontSendNotification);
 
         levelRefBox.setSelectedId (st.levelRefId, juce::dontSendNotification);
-        displayBox.setSelectedId (st.showIr ? 2 : 1, juce::dontSendNotification);
+        displayBox.setSelectedId (juce::jlimit (1, 3, st.displayId), juce::dontSendNotification);
+        dbButton.setToggleState (st.irInDb, juce::dontSendNotification);
     }
 
     void loadFiles()
@@ -650,6 +683,7 @@ private:
         updateFirInfo();
         updateLevelRefChoices();
         updateAlignInfo();
+        updateReverbInfo();
         updatePlotData();
     }
 
@@ -782,15 +816,35 @@ private:
     //==========================================================================
     // Impulse-response view
 
-    bool showingIr() const          { return displayBox.getSelectedId() == 2; }
+    bool showingIr() const          { return displayBox.getSelectedId() >= 2; }
+
+    /** The raw view: the measurements themselves, one trace per microphone
+        position, rather than anything rendered from the smoothed average. */
+    bool showingRawIr() const       { return displayBox.getSelectedId() == 3; }
+
     void refreshIrIfVisible()       { if (showingIr()) updateIrPlot(); }
 
     void updateDisplayMode()
     {
         plot.setVisible (! showingIr());
         irPlot.setVisible (showingIr());
+        dbButton.setVisible (showingIr());
+        reverbLabel.setVisible (showingIr());
+
         if (showingIr())
+        {
+            applyIrAmplitudeScale();
             updateIrPlot();
+        }
+    }
+
+    void applyIrAmplitudeScale()
+    {
+        // One axis setting for both impulse views, remembered by the session.
+        const bool db = dbButton.getToggleState();
+        irPlot.setAmplitudeScale (db ? fxme::WaveformDisplay::AmplitudeScale::decibels
+                                     : fxme::WaveformDisplay::AmplitudeScale::linear,
+                                  -80.0f);
     }
 
     // Renders the measured average and the predictions (corrected, and the
@@ -812,6 +866,12 @@ private:
         if (! analysis.hasData())
         {
             irPlot.clear();
+            return;
+        }
+
+        if (showingRawIr())
+        {
+            updateRawIrPlot();
             return;
         }
 
@@ -858,6 +918,92 @@ private:
         if (resetView)
             irPlot.setTimeOffset ((double) (N / 2) / sr);   // t = 0 at the IR centre
         irPlot.setBuffer (both, sr, resetView);
+    }
+
+    // The measurements as they were estimated: one trace per microphone
+    // position, the whole analysis window long, unsmoothed, uncorrected, with
+    // the direct sound at t = 0 (the propagation delay comes out at load
+    // time). This is the view the reverberation time is read from, and the
+    // only one in this pane where the tail is the room's rather than a
+    // rendering's — see ReverbTime.h for why the other one cannot be used.
+    void updateRawIrPlot()
+    {
+        const int n = analysis.getNumCurves();
+        const double sr = analysis.getSampleRate();
+
+        std::vector<juce::AudioBuffer<float>> traces;
+        juce::StringArray names;
+        std::vector<juce::Colour> cols;
+        int longest = 0;
+
+        for (int i = 0; i < n; ++i)
+        {
+            auto b = analysis.renderRawIR (i);
+            if (b.getNumSamples() == 0)
+                continue;
+
+            longest = juce::jmax (longest, b.getNumSamples());
+            traces.push_back (std::move (b));
+            names.add (analysis.getCurveName (i));
+            // One colour for all of them: they are the same measurement from
+            // different places, and a legend of five position names in five
+            // colours says less than the spread between the traces does.
+            cols.push_back (SuperMoToTheme::curveMeasurement);
+        }
+
+        if (traces.empty())
+        {
+            irPlot.clear();
+            return;
+        }
+
+        juce::AudioBuffer<float> all ((int) traces.size(), longest);
+        all.clear();
+        for (int i = 0; i < (int) traces.size(); ++i)
+            all.copyFrom (i, 0, traces[(size_t) i], 0, 0, traces[(size_t) i].getNumSamples());
+
+        irPlot.setChannelNames (names);
+        irPlot.setChannelColours (cols);
+
+        const bool resetView = longest != lastIrLength || ! juce::exactlyEqual (sr, lastIrRate);
+        lastIrLength = longest;
+        lastIrRate = sr;
+        if (resetView)
+            irPlot.setTimeOffset (0.0);     // the direct sound is already at t = 0
+        irPlot.setBuffer (all, sr, resetView);
+    }
+
+    /** The room's reverberation time, beside the impulse views it is read
+        from. Empty when the measurement cannot support one, saying why. */
+    void updateReverbInfo()
+    {
+        const auto& rt = analysis.getReverbTime();
+
+        if (rt.ok())
+        {
+            juce::String bands;
+            for (const auto& b : rt.bands)
+                bands << (bands.isEmpty() ? "" : "   ")
+                      << (b.centreHz >= 1000.0f ? juce::String (b.centreHz / 1000.0f, 0) + "k"
+                                                : juce::String (b.centreHz, 0))
+                      << ": " << juce::String (b.t60, 2) << " s";
+
+            reverbLabel.setText ("T60 " + juce::String (rt.midT60, 2) + " s",
+                                 juce::dontSendNotification);
+            reverbLabel.setTooltip ("Reverberation time of the room, the mean of the 500 Hz and "
+                                    "1 kHz octaves over " + juce::String (rt.positions)
+                                    + " position" + (rt.positions == 1 ? "" : "s")
+                                    + ", each estimated from its own raw measurement by "
+                                    "Schroeder backward integration (ISO 3382).\n\nPer octave "
+                                    "band:\n" + bands);
+        }
+        else
+        {
+            reverbLabel.setText ("T60 --", juce::dontSendNotification);
+            reverbLabel.setTooltip (rt.note.isEmpty()
+                                      ? juce::String ("No reverberation time from this measurement.")
+                                      : "No reverberation time from this measurement: " + rt.note + ".");
+        }
     }
 
     void exportMeasuredIr()
@@ -968,7 +1114,8 @@ private:
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ComboBox micCalSourceBox, levelRefBox, displayBox, tfBox;
     juce::Label displayLabel, tfLabel;
-    juce::ToggleButton subInvertToggle, applyDelayToggle;
+    juce::ToggleButton subInvertToggle, applyDelayToggle, dbButton;
+    juce::Label reverbLabel;
     fxme::FxmeSlider levelSlider;
 
     std::vector<float> freqs;
