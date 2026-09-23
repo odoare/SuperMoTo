@@ -331,6 +331,19 @@ namespace shared
         "all-pass lives in the phase, which this mode discards. The bulk time alignment "
         "still happens, since that is an output delay rather than part of the filter.";
 
+    inline constexpr auto phaseLimit =
+        "Linear phase only. On (recommended): the phase is corrected only where the "
+        "subwoofer alignment needs it, fully up to twice the crossover and faded out by "
+        "four times it. Above that, the filter is the minimum-phase one.\n"
+        "Off: the phase is corrected at every frequency. Above the crossover region "
+        "this gives no audible timing improvement, and it puts energy ahead of the "
+        "direct sound: pre-echo, heard as a short pre-reverberation before impacts.\n"
+        "Without a subwoofer the band still follows the Crossover setting.";
+
+    inline constexpr auto phaseLimitWarning =
+        "Phase corrected at every frequency: expect pre-echo before transients. "
+        "Turn 'Limit phase' back on unless you are checking what it does.";
+
     inline constexpr auto windowWelch =
         "Length of the Welch analysis segments, in samples. Longer = finer frequency "
         "resolution and more of the room's decay, shorter = smoother and more anechoic.";

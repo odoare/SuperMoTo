@@ -249,7 +249,8 @@ public:
 
         linear  - mixed/linear-phase: the IR is centred at firLength/2, so it
                   corrects magnitude AND phase (including the subwoofer
-                  alignment) but adds ~firLength/2 samples of latency.
+                  alignment) but adds ~firLength/2 samples of latency. How far
+                  up the phase is corrected is setPhaseLimited().
         minimum - minimum-phase, built from the correction MAGNITUDE only: the
                   IR is causal and front-loaded, adding ~no latency, at the
                   cost of the phase correction and the subwoofer phase
@@ -257,6 +258,35 @@ public:
     enum class PhaseType { linear, minimum };
     void setPhaseType (PhaseType t);
     PhaseType getPhaseType() const noexcept     { return phaseType; }
+
+    /** Linear phase: correct the phase only where the subwoofer alignment
+        needs it. The designed phase -- the room's, inverted, and the
+        alignment all-pass -- is kept in full up to twice the crossover, where
+        the alignment's window ends, and released over the octave above to the
+        minimum-phase phase of the same correction. From four times the
+        crossover up, the two phase types therefore export the same filter.
+        Off, the designed phase is kept at every frequency. On by default.
+
+        Above the crossover region a linear-phase inversion of the average room
+        phase buys nothing audible and costs pre-echo. On a ten-position
+        campaign the mains were already time-coherent to 0.2 ms from 125 Hz up
+        with no correction at all, and linear phase moved no band there by more
+        than 0.1 ms; meanwhile each seat kept the part of the average phase it
+        did not share, and a linear-phase filter puts half of that ahead of the
+        direct sound -- 10 to 25 dB more energy there than minimum phase, from
+        125 Hz to 8 kHz (500 Hz: -21 dB in the last 3 ms, against -34), heard
+        as a short pre-reverberation on impacts. Limited, the summation through
+        the crossover moved by under 0.01 dB and every band from 500 Hz up came
+        back to minimum-phase level. Below the crossover the phase has to stay:
+        the all-pass steers the main onto the subwoofer on the assumption that
+        the main's own phase is flat there, and dropping the room phase
+        altogether cost 1 dB of summation.
+
+        Without a subwoofer the band still follows the crossover setting, which
+        then has no other effect on the design. The magnitude is untouched, so
+        minimum phase, which renders the magnitude alone, is not affected. */
+    void setPhaseLimited (bool limited);
+    bool isPhaseLimited() const noexcept        { return phaseLimited; }
 
     /** The correction as it will actually be REALISED, which under minimum
         phase is not the one that was designed.
@@ -411,6 +441,7 @@ private:
                                        int firLength, bool minimumPhase = false) const;
     float bandWeight (double freqHz) const;     // 1 in band, raised-cosine skirts
     float alignWeight (double freqHz) const;    // 1 at/below crossover, 0 above
+    float phaseLimitWeight (double freqHz) const; // 1 up to 2x crossover, 0 from 4x (when limited)
     void computeAverage();
     void computeSubAverage();
     void applySmoothing();
@@ -443,6 +474,7 @@ private:
     float analysisHighHz = 20000.0f;
     float crossoverHz    = 80.0f;               // main/sub crossover
     float alignWidthOct  = 1.0f;                // phase-align release width above it
+    bool  phaseLimited   = true;                // linear phase only through the crossover region
     bool  subInverted    = false;
     float timeAlignMs    = 0.0f;                // assumed physical main delay
 

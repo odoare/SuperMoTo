@@ -277,10 +277,23 @@ public:
         phaseBox.onChange = [this]
         {
             session.settings.minimumPhase = phaseBox.getSelectedId() == 2;
+            updatePhaseLimitToggle();
             updateFirInfo();
             settingChanged();
         };
         addAndMakeVisible (phaseBox);
+
+        phaseLimitToggle.setButtonText ("Limit phase");
+        SuperMoToTheme::accentToggleButton (phaseLimitToggle, SuperMoToTheme::fir);
+        phaseLimitToggle.setTooltip (smt::tips::shared::phaseLimit);
+        phaseLimitToggle.setToggleState (true, juce::dontSendNotification);
+        phaseLimitToggle.onClick = [this]
+        {
+            session.settings.phaseLimited = phaseLimitToggle.getToggleState();
+            updateFirInfo();
+            settingChanged();
+        };
+        addAndMakeVisible (phaseLimitToggle);
 
         addLabel (crossoverLabel, "Crossover");
         for (int f : { 40, 50, 60, 70, 80, 100, 120, 150 })
@@ -496,6 +509,8 @@ public:
         r2.removeFromLeft (12);
         phaseLabel.setBounds (r2.removeFromLeft (40));
         phaseBox.setBounds (r2.removeFromLeft (110));
+        r2.removeFromLeft (6);
+        phaseLimitToggle.setBounds (r2.removeFromLeft (100));
         r2.removeFromLeft (12);
         firLabel.setBounds (r2.removeFromLeft (64));
         firBox.setBounds (r2.removeFromLeft (90));
@@ -652,6 +667,7 @@ private:
         levelSlider.setValue (s.correctionLevel, juce::dontSendNotification);
         boostSlider.setValue (s.maxBoostDb, juce::dontSendNotification);
         phaseBox.setSelectedId (s.minimumPhase ? 2 : 1, juce::dontSendNotification);
+        phaseLimitToggle.setToggleState (s.phaseLimited, juce::dontSendNotification);
         firBox.setSelectedId (s.firLength, juce::dontSendNotification);
         crossoverBox.setText (s.crossoverText, juce::dontSendNotification);
         subInvertToggle.setToggleState (s.subInverted, juce::dontSendNotification);
@@ -1125,10 +1141,25 @@ private:
             fs = 48000.0;
 
         const double fMinHz = 2.0 * fs / (double) juce::jmax (1, N);
-        firInfo.setText (juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
+        const auto reach = juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
                              + juce::String (fMinHz, fMinHz < 100.0 ? 1 : 0) + " Hz"
-                             + (known ? juce::String() : juce::String (" (at 48 kHz)")),
+                             + (known ? juce::String() : juce::String (" (at 48 kHz)"));
+
+        // The one setting on this row known to make transients worse (see
+        // AnalysisEngine::setPhaseLimited), so the read-out that already
+        // speaks for the phase choice leads with it.
+        const bool warn = ! session.settings.minimumPhase && ! session.settings.phaseLimited;
+        firInfo.setColour (juce::Label::textColourId, warn ? SuperMoToTheme::dim : SuperMoToTheme::fir);
+        firInfo.setTooltip (warn ? smt::tips::shared::phaseLimitWarning : smt::tips::shared::firInfo);
+        firInfo.setText (warn ? "Phase not limited: pre-echo risk   " + reach : reach,
                          juce::dontSendNotification);
+    }
+
+    /** Limit phase means nothing in minimum phase, which keeps no phase of
+        its own; greyed out there, and while a batch owns the engines. */
+    void updatePhaseLimitToggle()
+    {
+        phaseLimitToggle.setEnabled (phaseBox.isEnabled() && phaseBox.getSelectedId() == 1);
     }
 
     /** Level of the subwoofer relative to speaker `i`, once both suggested
@@ -1322,6 +1353,7 @@ private:
         levelSlider.setEnabled (! busy);
         boostSlider.setEnabled (! busy);
         subInvertToggle.setEnabled (! busy);
+        updatePhaseLimitToggle();            // after phaseBox, whose state it follows
         for (auto* row : rows)
         {
             row->loadButton.setEnabled (! busy);
@@ -1353,7 +1385,7 @@ private:
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, lowFreqBox, highFreqBox, previewBox;
     juce::ComboBox firBox, phaseBox, crossoverBox, levelRefBox, displayBox, tfBox;
     juce::Label displayLabel, tfLabel, firInfo;
-    juce::ToggleButton subInvertToggle;
+    juce::ToggleButton subInvertToggle, phaseLimitToggle;
     fxme::FxmeSlider levelSlider, boostSlider;
 
     juce::OwnedArray<SpeakerRow> rows;

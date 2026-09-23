@@ -27,6 +27,7 @@ void AnalysisSession::applySettings()
     engine.setMaxBoostDb (settings.maxBoostDb);
     engine.setPhaseType (settings.minimumPhase ? AnalysisEngine::PhaseType::minimum
                                                : AnalysisEngine::PhaseType::linear);
+    engine.setPhaseLimited (settings.phaseLimited);
     engine.setCrossoverHz (settings.crossoverText.getFloatValue());
     engine.setSubPolarityInverted (settings.subInverted);
     engine.setTimeAlignMs (settings.mainsDelayMs);

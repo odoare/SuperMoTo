@@ -1477,11 +1477,12 @@
     `computeAverage()` and `computeSubAverage()`, mirrored in
     `sub_alignment_validation.py::position_average()`.*
 
-    *Measured on the campaign that showed the bug: notch -18.9 dB -> +1.7,
-    worst dip over 250-1000 Hz -18.9 -> -4.4, magnitude correction unchanged
-    to 0.000 dB RMS over 200 Hz - 10 kHz, crossover delay estimate moved
-    0.03 ms, summation efficiency 0.006 dB. The healthy left main did not move
-    on any measure. It is also right on its own terms: phase the positions do
+    *Measured on the campaign that showed the bug: notch -18.9 dB -> gone (no
+    bin from 650 to 750 Hz below -0.4 dB, as in the minimum-phase render),
+    magnitude correction unchanged to 0.000 dB RMS over 200 Hz - 10 kHz,
+    crossover delay estimate moved 0.02 ms, summation efficiency 0.02-0.04 dB.
+    (Corrected 23 Sep: the first figures here, 0.03 ms / 0.006 dB / +1.7, came
+    from a Python mirror whose weight was always 0 -- see the pre-echo entry.) It is also right on its own terms: phase the positions do
     not agree about is not a property of the listening area.*
 
     *Pinned by a new case in `Tests/AnalysisTest.cpp`, on the invariant the bug
@@ -1510,8 +1511,8 @@
     through the lower mids, 0.34-0.5 at the top), the 1/sqrt(N) floor for
     3/10/20 positions, and the before-and-after that makes the case: the worst
     phase step between neighbouring bins anywhere in band was 154.9 degrees at
-    697.8 Hz on the right main and 14.1 on the left, and is 6.6 on both now,
-    with nothing above 90. The defect occupied ONE of 29632 in-band bins.*
+    697.8 Hz on the right main and 11.9 on the left, and is 9.7 and 8.3 now,
+    both at the crossover, with nothing above 90. The defect occupied ONE of 29632 in-band bins.*
 
     *The boost ceiling also gained the paragraph it was missing: it bounds
     |1/h| and does nothing to arg(1/h), which turns fastest exactly where |h|
@@ -1617,3 +1618,84 @@
 
 ## To do
 
+- [ ] Pre-echo on impact sounds with the linear-phase correction ("a short
+  pre-reverberation before the impact"), heard on the 23 Sep re-export once
+  the 700 Hz ringing was gone; never in minimum phase.
+
+    *Measured, three ways that agree. (1) The full-system sweep runs, energy
+    arriving BEFORE the direct sound, causal octave filters so nothing can be
+    smeared earlier by the analysis: the fixed linear export sits 10-25 dB
+    above minimum phase in every band from 125 Hz to 8 kHz, 1-30 ms ahead --
+    500 Hz at -21 dB in the last 3 ms (min -34), 4 kHz at -44 dB 3-10 ms
+    ahead (min -65). (2) The dry captures convolved with the exported filter
+    give the same figures to 1-2 dB above 250 Hz. (3) The tick recordings,
+    four ticks synchronously averaged: +8 to +14 dB at 2-8 kHz, 5-20 ms
+    before the tick.*
+
+    *Same family as the 700 Hz ring, not the same defect: both are the part
+    of a linear-phase filter placed before its main peak that the room does
+    not cancel at the seat. The ring was one corrupt bin. This is the design
+    doing what it says, inverting the average room phase where the positions
+    agree only partly (R 0.8-0.9 at 250-1000 Hz, 26-38 degrees of scatter),
+    so each seat keeps a residual that lands ahead of the direct sound.*
+
+    *Coherence is the wrong knob. Raising the weight to w^4 still leaves
+    500 Hz 10 dB above minimum phase. Frequency is the right one: correcting
+    the room's phase only up to 2 fx and releasing it by 4 fx gives the SAME
+    summation through the crossover as the shipped design (-0.52 / -0.60 dB,
+    in-sample and leave-one-out alike), puts every band from 500 Hz up back on
+    minimum phase, and takes 3-9 dB off 250 Hz. Dropping the room phase
+    altogether is worse than useless (-1.6 dB): the all-pass assumes the
+    main's own low-frequency phase has been flattened.*
+
+    *What the phase correction buys, measured: above 125 Hz these mains are
+    time-coherent to 0.2 ms at every seat with no correction at all, and
+    linear phase moves no band by more than 0.1 ms there. At 63 Hz the
+    magnitude correction does the work (4.4 ms late uncorrected, 1.7 minimum
+    phase, 1.4 linear). Through the crossover the all-pass gains 0.2-0.3 dB of
+    summation at the delay used (28.8 ms); at 30 ms minimum phase alone sums
+    as well (-0.42 dB) -- the all-pass's real virtue is that it is flat
+    against the delay (within 0.6 dB of its best for any delay from 20 to
+    34 ms, where minimum phase falls as low as -7 dB).*
+
+    *What stays: 63-125 Hz pre-echo, -12 to -18 dB within 30 ms, which is the
+    all-pass itself (without it 63 Hz sits at minimum-phase level) and which
+    no choice of delay removes. Whether that is audible is a listening
+    question; under one period at 63 Hz is 16 ms.*
+
+    *Found on the way: `position_average()` in the Python mirror divided by N
+    twice, so its weight was 0 at every bin and the model ran minimum-phase
+    room phase since the averaging fix. The plugin was right. Fixed; the model
+    now reproduces the 23 Sep export to 3 degrees over 40-200 Hz. The paper's
+    figures predate the bug and are unaffected; three numbers in the theory
+    appendix were not, and are corrected (11.9 -> 8.3 / 154.9 -> 9.7 degrees;
+    0.02 ms; 0.02-0.04 dB).*
+
+    *Decided: Linear phase stays, with a "Limit phase" switch beside the Phase
+    selector, on by default, in both analysis panes
+    (`AnalysisEngine::setPhaseLimited`). On, the designed phase is kept in full
+    up to 2 fx and released over the octave above to the minimum-phase phase
+    of the FINISHED correction's own magnitude, so from 4 fx up the linear and
+    minimum-phase exports are the same filter. Off, the FIR read-out turns
+    amber with a pre-echo warning; the report's phase line says which. Without
+    a subwoofer the band still follows the Crossover setting. Mirrored in
+    `sub_alignment_validation.py` (`PHASE_LIMITED`, `limit_phase()`), so the
+    figure scripts now model the new default.*
+
+    *The first implementation limited the AVERAGE's phase instead, and the new
+    test caught it: the average's minimum phase carries what the correction
+    never inverts (the sweep's band edge, the roll-off below the analysis
+    range), so it left -5.7 dB of pre-echo, worse than no limit (-13). On the
+    finished correction: -38 dB, and 0.0004 degrees from minimum phase above
+    4 fx. On the campaign: summation unchanged (-0.52 / -0.60), every band from
+    500 Hz up identical to minimum phase on both mains, 250 Hz 2-12 dB better
+    than unlimited. Manual: Section 7.6 "Limit phase", theory Section B.8 with
+    the measured table, glossary "Pre-echo".*
+
+    *Without a subwoofer, linear phase bought 0.3 ms at 63 Hz on these mains
+    (1.7 -> 1.4) and nothing above, for pre-echo at 125 Hz -- kept because a
+    loudspeaker with a low, steep internal crossover has an all-pass that
+    minimum phase cannot touch, but there is no measured case for it yet.*
+
+    *Remaining: build, listen, and measure one run with the limited export.
+    Then the paper -- the method section describes the unlimited design.*

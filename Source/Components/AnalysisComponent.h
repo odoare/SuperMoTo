@@ -225,9 +225,24 @@ public:
         {
             session.settings.minimumPhase = phaseBox.getSelectedId() == 2;
             session.applySettings();
+            updatePhaseLimitToggle();
             updateFirInfo();
         };
         addAndMakeVisible (phaseBox);
+
+        // Linear phase only: correct the phase through the crossover region
+        // and no further (AnalysisEngine::setPhaseLimited).
+        phaseLimitToggle.setButtonText ("Limit phase");
+        SuperMoToTheme::accentToggleButton (phaseLimitToggle, SuperMoToTheme::fir);
+        phaseLimitToggle.setTooltip (smt::tips::shared::phaseLimit);
+        phaseLimitToggle.setToggleState (true, juce::dontSendNotification);
+        phaseLimitToggle.onClick = [this]
+        {
+            session.settings.phaseLimited = phaseLimitToggle.getToggleState();
+            settingChanged();
+            updateFirInfo();
+        };
+        addAndMakeVisible (phaseLimitToggle);
 
         firInfo.setFont (juce::Font (juce::FontOptions (12.0f)));
         firInfo.setColour (juce::Label::textColourId, SuperMoToTheme::fir);
@@ -501,7 +516,7 @@ public:
         exportButton.setBounds (r2.removeFromRight (exportW));
         r2.removeFromRight (16);
 
-        const int fixedW  = 100 + 64 + 40 + 110 + 64 + 90 + 58 + 110;
+        const int fixedW  = 100 + 64 + 40 + 110 + 6 + 100 + 64 + 90 + 58 + 110;
         const int sliderW = juce::jmax (96, (r2.getWidth() - fixedW - 12 * 4) / 2);
 
         levelLabel.setBounds (r2.removeFromLeft (100));
@@ -512,6 +527,8 @@ public:
         r2.removeFromLeft (12);
         phaseLabel.setBounds (r2.removeFromLeft (40));
         phaseBox.setBounds (r2.removeFromLeft (110));
+        r2.removeFromLeft (6);
+        phaseLimitToggle.setBounds (r2.removeFromLeft (100));
         r2.removeFromLeft (12);
         firLabel.setBounds (r2.removeFromLeft (64));
         firBox.setBounds (r2.removeFromLeft (90));
@@ -612,6 +629,8 @@ private:
         levelSlider.setValue (st.correctionLevel, juce::dontSendNotification);
         boostSlider.setValue (st.maxBoostDb, juce::dontSendNotification);
         phaseBox.setSelectedId (st.minimumPhase ? 2 : 1, juce::dontSendNotification);
+        phaseLimitToggle.setToggleState (st.phaseLimited, juce::dontSendNotification);
+        updatePhaseLimitToggle();
         firBox.setSelectedId (st.firLength, juce::dontSendNotification);
         assignBox.setSelectedId (st.assignOutputId, juce::dontSendNotification);
 
@@ -734,15 +753,29 @@ private:
         const double latMs  = 1000.0 * (double) (N / 2) / fs;
         const double fMinHz = 2.0 * fs / (double) N;
 
-        firInfo.setText (
+        const auto info =
             juce::String::fromUTF8 ("\xe2\x86\x92 corrects down to ~")
                 + juce::String (fMinHz, fMinHz < 100.0 ? 1 : 0) + " Hz   "
                 + juce::String::fromUTF8 ("\xc2\xb7  ") + juce::String (durMs, 0) + " ms long  "
                 + juce::String::fromUTF8 ("\xc2\xb7  ")
                 + (minPhase ? juce::String ("~0 ms latency (min phase)")
                             : juce::String (latMs, 0) + " ms latency")
-                + (known ? juce::String() : juce::String ("   (at 48 kHz)")),
-            juce::dontSendNotification);
+                + (known ? juce::String() : juce::String ("   (at 48 kHz)"));
+
+        // The one phase setting known to make transients worse (see
+        // AnalysisEngine::setPhaseLimited): the read-out leads with it.
+        const bool warn = ! minPhase && ! session.settings.phaseLimited;
+        firInfo.setColour (juce::Label::textColourId, warn ? SuperMoToTheme::dim : SuperMoToTheme::fir);
+        firInfo.setTooltip (warn ? smt::tips::shared::phaseLimitWarning : smt::tips::shared::firInfo);
+        firInfo.setText (warn ? "Phase not limited: pre-echo risk   " + info : info,
+                         juce::dontSendNotification);
+    }
+
+    /** Limit phase means nothing in minimum phase, which keeps no phase of
+        its own. */
+    void updatePhaseLimitToggle()
+    {
+        phaseLimitToggle.setEnabled (phaseBox.getSelectedId() == 1);
     }
 
     // Display offset for the measured curves per the Level selector. dB SPL:
@@ -1114,7 +1147,7 @@ private:
     juce::ComboBox windowBox, smoothLowBox, smoothHighBox, firBox, phaseBox, assignBox, lowFreqBox, highFreqBox, crossoverBox;
     juce::ComboBox micCalSourceBox, levelRefBox, displayBox, tfBox;
     juce::Label displayLabel, tfLabel;
-    juce::ToggleButton subInvertToggle, applyDelayToggle, dbButton;
+    juce::ToggleButton subInvertToggle, applyDelayToggle, dbButton, phaseLimitToggle;
     juce::Label reverbLabel;
     fxme::FxmeSlider levelSlider;
 

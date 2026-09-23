@@ -48,6 +48,7 @@ MAX_BOOST_DB = 12.0
 LF_CORNER = 30.0
 ANALYSIS_LO, ANALYSIS_HI = 20.0, 20000.0
 ALIGN_WIDTH_OCT = 1.0
+PHASE_LIMITED = True             # AnalysisEngine::phaseLimited, on by default
 
 
 # ------------------------------------------------------------------ analysis
@@ -133,7 +134,7 @@ def position_average(H):
     if N < 2:
         return np.where(a > 1e-30, c / np.maximum(a, 1e-300) * mag, mag)
 
-    coh = a / np.maximum(N * mag, 1e-300)                 # |mean H| / sqrt(mean |H|^2)
+    coh = a / np.maximum(mag, 1e-300)                     # |mean H| / sqrt(mean |H|^2)
     w = np.clip((N * coh ** 2 - 1.0) / (N - 1.0), 0.0, 1.0)
 
     measured = np.where(a > 1e-30, c / np.maximum(a, 1e-300), 1.0)
@@ -320,6 +321,42 @@ def align_weight(f, fx, width=ALIGN_WIDTH_OCT):
     return 0.5 + 0.5 * np.cos(np.pi * x)
 
 
+def phase_limit_weight(f, fx):
+    """AnalysisEngine::phaseLimitWeight: the share of the designed phase the
+    correction keeps -- all of it up to twice the crossover, where the
+    alignment window ends, released over the octave above to none."""
+    x = np.clip(np.log2(np.maximum(f, 1e-6) / (2.0 * fx)), 0, 1)
+    return 0.5 + 0.5 * np.cos(np.pi * x)
+
+
+def limit_phase(c, f, fx):
+    """The finished correction with its phase handed over, above the crossover
+    region, to the minimum-phase phase of its own magnitude, blended on the
+    short arc, as AnalysisEngine::recomputeCorrection() does when the phase is
+    limited. From four times the crossover up it is then the filter the
+    minimum-phase render exports; the magnitude does not move.
+
+    It has to be the finished correction, not the average: the average's
+    minimum phase also carries what the correction never inverts (the band
+    edges of the measurement, the roll-off below the analysis range), and
+    inverting their phase without their magnitude is a pre-echo of its own.
+
+    Above that region a linear-phase inversion of the average room phase buys
+    no timing anyone can hear and puts each seat's unshared part of it ahead of
+    the direct sound: on the September 2026 campaign 10 to 25 dB more energy
+    there than minimum phase, from 125 Hz to 8 kHz, heard as a short
+    pre-reverberation on impacts. Limited, the summation through the crossover
+    moves by under 0.01 dB."""
+    a = np.abs(c)
+    mp = min_phase(a.astype(complex))
+    mp = mp / np.maximum(np.abs(mp), 1e-300)
+    kept = np.where(a > 1e-30, c / np.maximum(a, 1e-300), mp)
+    w = phase_limit_weight(f, fx)
+    blend = w * kept + (1.0 - w) * mp
+    length = np.abs(blend)
+    return np.where(length > 1e-6, blend / np.maximum(length, 1e-300) * a, mp * a)
+
+
 def base_correction(Hsm, f):
     """Regularised complex inverse, soft-knee boost limit, LF slope."""
     ref = np.abs(Hsm[(f >= 200) & (f <= 2000)]).mean()
@@ -401,7 +438,9 @@ def design(Hsm, Ssm, f, fx, T_ms, invert, kind):
                              'unwrapped' if kind == 'mixed_unwrapped' else 'phasor')
     w = band_weight(f)
     c = (1 - w) + w * c
-    return min_phase(c) if kind in ('mag', 'min_export') else c
+    if kind in ('mag', 'min_export'):
+        return min_phase(c)
+    return limit_phase(c, f, fx) if PHASE_LIMITED else c
 
 
 def render_ir(C, f, sr, n=16384):

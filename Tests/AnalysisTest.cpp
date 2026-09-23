@@ -150,11 +150,19 @@ int main()
                * 180.0f / juce::MathConstants<float>::pi;
     };
 
+    // Checked with the phase unlimited: that is the full inversion. The
+    // default limits it to the crossover region, above which the filter is
+    // the minimum-phase one (tested at the end) and the corrected phase is
+    // therefore whatever minimum phase leaves: here the fraction of a sample
+    // the integer peak alignment left in the average, and the lag of the
+    // roll-off above 11 kHz that the boost ceiling does not correct.
     const std::vector<float> phBand { 300.0f, 1000.0f, 3000.0f, 6000.0f };
+    engine.setPhaseLimited (false);
     const auto corrPhase = engine.getCorrectedPhaseDeg (phBand);
     for (size_t i = 0; i < phBand.size(); ++i)
         ok &= approx (corrPhase[i], targetPhaseDeg (phBand[i]), 3.0f,
                       ("corrected phase = LF target @ " + juce::String (phBand[i]) + " Hz").toRawUTF8());
+    engine.setPhaseLimited (true);
 
     // With smoothing off the inverse is exact: corrected even flatter.
     engine.setSmoothing (0.0f, 0.0f);
@@ -316,6 +324,164 @@ int main()
         else if (ok)
         {
             std::cout << "  FAIL could not analyze the spread set\n";
+            ok = false;
+        }
+    }
+
+    // ── Linear phase limited to the crossover region ─────────────────────────
+    //
+    // Above the crossover region a linear-phase inversion of the room's phase
+    // buys no audible timing and puts each seat's unshared part of it ahead of
+    // the direct sound -- heard on a real campaign as a short pre-reverberation
+    // on impacts. So, limited, the linear design must BE the minimum-phase one
+    // above four times the crossover, and its render must hold no energy ahead
+    // of the peak there; unlimited, it inverts whatever the positions agree on.
+    //
+    // Three positions that agree exactly on a 2nd-order all-pass at 1 kHz
+    // (Q 2): the magnitude is flat, so the only thing a correction can do there
+    // is phase, and a linear-phase inverse of an all-pass rings BEFORE its
+    // peak. The crossover is the engine's 80 Hz, so the all-pass sits well
+    // above 320 Hz.
+    {
+        std::cout << "\nLinear phase limited to the crossover region\n";
+
+        juce::Array<juce::File> agree;
+        juce::OwnedArray<juce::TemporaryFile> keep;
+        juce::Random rng3 (11);
+        constexpr int numPos = 3;
+
+        for (int fileIdx = 0; fileIdx < numPos && ok; ++fileIdx)
+        {
+            auto* t = keep.add (new juce::TemporaryFile (".wav"));
+            agree.add (t->getFile());
+
+            juce::AudioBuffer<float> buf (2, n);
+            auto* x = buf.getWritePointer (0);
+            auto* y = buf.getWritePointer (1);
+
+            const double L = T / std::log (f2 / f1);
+            const double K = 2.0 * juce::MathConstants<double>::pi * f1 * L;
+            for (int i = 0; i < n; ++i)
+                x[i] = 0.25f * (float) std::sin (K * (std::exp (i / sr / L) - 1.0));
+
+            for (int i = n - 1; i >= 0; --i)
+                y[i] = i - delaySamples >= 0 ? x[i - delaySamples] : 0.0f;
+
+            // RBJ all-pass: unit magnitude, 360 degrees of phase across 1 kHz.
+            const double w0 = 2.0 * juce::MathConstants<double>::pi * 1000.0 / sr;
+            const double alpha = std::sin (w0) / (2.0 * 2.0);
+            const double a0 = 1.0 + alpha;
+            fxme::Biquad ap;
+            ap.c.b0 = (float) ((1.0 - alpha) / a0);
+            ap.c.b1 = (float) (-2.0 * std::cos (w0) / a0);
+            ap.c.b2 = 1.0f;
+            ap.c.a1 = ap.c.b1;
+            ap.c.a2 = ap.c.b0;
+            ap.processBlock (y, n);
+            for (int i = 0; i < n; ++i)
+                y[i] += 1.0e-5f * (rng3.nextFloat() * 2.0f - 1.0f);
+
+            juce::WavAudioFormat wav3;
+            std::unique_ptr<juce::OutputStream> os = agree[fileIdx].createOutputStream();
+            auto w3 = wav3.createWriterFor (os, juce::AudioFormatWriterOptions{}
+                                                    .withSampleRate    (sr)
+                                                    .withNumChannels   (2)
+                                                    .withBitsPerSample (32));
+            if (w3 == nullptr)
+            {
+                std::cout << "  FAIL cannot write test wav\n";
+                ok = false;
+                break;
+            }
+            w3->writeFromAudioSampleBuffer (buf, 0, n);
+        }
+
+        smt::AnalysisEngine e3;
+        e3.setWindowSize (16384);
+
+        if (ok && e3.loadFiles (agree) == numPos)
+        {
+            e3.setCorrectionLevel (1.0f);
+            const float fx = e3.getCrossoverHz();
+
+            // Worst disagreement between the linear design's phase and the
+            // phase the minimum-phase render realises, above 4 x crossover.
+            auto phaseGap = [&]
+            {
+                std::vector<float> fr;
+                for (float hz = 4.0f * fx; hz <= 3000.0f; hz *= 1.01f)
+                    fr.push_back (hz);
+                e3.setPhaseType (smt::AnalysisEngine::PhaseType::linear);
+                const auto lin = e3.getCorrectionPhaseDeg (fr);
+                e3.setPhaseType (smt::AnalysisEngine::PhaseType::minimum);
+                const auto mp = e3.getCorrectionPhaseDeg (fr);
+                e3.setPhaseType (smt::AnalysisEngine::PhaseType::linear);
+
+                float worst = 0.0f;
+                for (size_t i = 0; i < fr.size(); ++i)
+                {
+                    float d = std::fmod (std::abs (lin[i] - mp[i]), 360.0f);
+                    worst = std::max (worst, std::min (d, 360.0f - d));
+                }
+                return worst;
+            };
+
+            // Energy of the linear render ahead of its peak, 0.3 to 20 ms
+            // before it, relative to the whole render: the pre-echo itself.
+            auto preEcho = [&]
+            {
+                constexpr int len = 8192;
+                e3.setPhaseType (smt::AnalysisEngine::PhaseType::linear);
+                const auto ir = e3.renderCorrectionIR (len);
+                const float* d = ir.getReadPointer (0);
+                int peak = 0;
+                for (int i = 1; i < len; ++i)
+                    if (std::abs (d[i]) > std::abs (d[peak]))
+                        peak = i;
+
+                double pre = 0.0, all = 0.0;
+                const int from = juce::jmax (0, peak - (int) (0.020 * sr));
+                const int to   = peak - (int) (0.0003 * sr);
+                for (int i = 0; i < len; ++i)
+                {
+                    const double v = (double) d[i] * (double) d[i];
+                    all += v;
+                    if (i >= from && i < to)
+                        pre += v;
+                }
+                return (float) (10.0 * std::log10 (pre / juce::jmax (all, 1.0e-30) + 1.0e-30));
+            };
+
+            e3.setPhaseLimited (true);
+            const float gapOn = phaseGap(), preOn = preEcho();
+            e3.setPhaseLimited (false);
+            const float gapOff = phaseGap(), preOff = preEcho();
+            e3.setPhaseLimited (true);
+
+            std::cout << "  limited:   worst phase gap to minimum phase " << gapOn
+                      << " deg, pre-echo " << preOn << " dB\n"
+                      << "  unlimited: worst phase gap to minimum phase " << gapOff
+                      << " deg, pre-echo " << preOff << " dB\n";
+
+            // Limited, the design above 4 x crossover IS the minimum-phase one...
+            ok &= approx (gapOn, 0.0f, 3.0f, "limited: linear vs minimum phase above 4 x crossover (deg)");
+            // ...and unlimited it is not, which is what makes the check mean something.
+            if (gapOff < 90.0f)
+            {
+                std::cout << "  FAIL unlimited design did not invert the all-pass (" << gapOff << " deg)\n";
+                ok = false;
+            }
+            // The render follows: the ring ahead of the peak is gone.
+            if (preOn > preOff - 20.0f)
+            {
+                std::cout << "  FAIL pre-echo not reduced by 20 dB (" << preOn << " vs "
+                          << preOff << " dB)\n";
+                ok = false;
+            }
+        }
+        else if (ok)
+        {
+            std::cout << "  FAIL could not analyze the agreeing set\n";
             ok = false;
         }
     }

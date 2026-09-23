@@ -138,6 +138,7 @@ void GroupAnalysisSession::pushSettingsTo (AnalysisEngine& e, bool isSub) const
     e.setMaxBoostDb (settings.maxBoostDb);
     e.setPhaseType (settings.minimumPhase ? AnalysisEngine::PhaseType::minimum
                                           : AnalysisEngine::PhaseType::linear);
+    e.setPhaseLimited (settings.phaseLimited);
     const float lowHz  = settings.lowFreqText.getFloatValue();
     const float highHz = settings.highFreqText.getFloatValue();
     e.setAnalysisRange (lowHz, isSub ? juce::jmin (highHz, subMaxRangeHz) : highHz);

@@ -100,8 +100,9 @@ namespace
 
         Measured on the campaign above: the magnitude correction does not move
         at all (0.000 dB RMS over 200 Hz - 10 kHz), the crossover delay
-        estimate moves 0.03 ms and the summation efficiency 0.006 dB, while the
-        notch goes from -19 dB to +1.7. */
+        estimate moves 0.02 ms and the summation efficiency 0.02-0.04 dB, while
+        the notch goes from -19 dB to nothing: no bin from 650 to 750 Hz is
+        below -0.4 dB, as in the minimum-phase render. */
     void blendAveragePhase (const std::vector<std::complex<double>>& sum,
                             const std::vector<double>& power, int numPositions,
                             std::vector<std::complex<float>>& average)
@@ -668,7 +669,7 @@ void AnalysisEngine::computeSubAverage()
     // positions disagree. The subwoofer's own band is the coherent one (0.93
     // at 80 Hz on the set measured there), so the fade barely acts below the
     // crossover, which is the only place the alignment reads this phase: on
-    // the campaign it moved the crossover delay estimate by 0.03 ms. What the
+    // the campaign it moved the crossover delay estimate by 0.02 ms. What the
     // power magnitude stops is the sub's out-of-band reading collapsing to a
     // level no position shows.
     std::vector<std::complex<double>> sum (numBins, { 0.0, 0.0 });
@@ -818,6 +819,14 @@ void AnalysisEngine::setSubPolarityInverted (bool inverted)
     recomputeCorrection();
 }
 
+void AnalysisEngine::setPhaseLimited (bool limited)
+{
+    if (limited == phaseLimited)
+        return;
+    phaseLimited = limited;
+    recomputeCorrection();
+}
+
 void AnalysisEngine::setTimeAlignMs (float ms)
 {
     // maxTimeAlignMs, not the single-speaker pane's +/-40 ms slider range: in a
@@ -914,6 +923,19 @@ float AnalysisEngine::alignWeight (double f) const
         return 0.0f;
     const double d = std::log2 (f / (double) crossoverHz);       // 0 at crossover
     const double x = juce::jlimit (0.0, 1.0, d / (double) alignWidthOct);
+    return (float) (0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * x));
+}
+
+// Share of the designed phase the correction keeps: all of it up to twice the
+// crossover, where alignWeight() has finished steering the main onto the
+// subwoofer, released over the octave above to none, where the minimum-phase
+// phase takes over. 1 everywhere when the limit is off.
+float AnalysisEngine::phaseLimitWeight (double f) const
+{
+    if (! phaseLimited || f <= 0.0)
+        return 1.0f;
+    const double d = std::log2 (f / (2.0 * (double) crossoverHz));  // 0 at 2 x crossover
+    const double x = juce::jlimit (0.0, 1.0, d);                     // one octave
     return (float) (0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * x));
 }
 
@@ -1033,6 +1055,40 @@ void AnalysisEngine::recomputeCorrection()
         c = std::complex<double> (1.0 - w, 0.0) + c * w;
 
         correction[(size_t) k] = std::complex<float> (c);
+    }
+
+    // Above the crossover region, hand the phase over to the minimum-phase
+    // equivalent of the finished correction's own magnitude (setPhaseLimited):
+    // the same construction the minimum-phase render uses, so from four times
+    // the crossover up the two phase types export the same filter. Blended on
+    // the short arc, as blendAveragePhase() blends. It has to be the finished
+    // correction, not the average: the average's minimum phase also carries
+    // what the correction never inverts -- the measurement's own band edges,
+    // the loudspeaker's roll-off below the analysis range -- and inverting
+    // their phase without their magnitude is itself a pre-echo.
+    if (phaseLimited)
+    {
+        std::vector<double> mag ((size_t) numBins);
+        for (int k = 0; k < numBins; ++k)
+            mag[(size_t) k] = std::abs (correction[(size_t) k]);
+
+        std::vector<std::complex<double>> minPhase;
+        if (minimumPhaseDirections (mag, minPhase))
+        {
+            for (int k = 0; k < numBins; ++k)
+            {
+                const double wp = (double) phaseLimitWeight ((double) k * sampleRate / (double) W);
+                const auto c = std::complex<double> (correction[(size_t) k]);
+                const double a = std::abs (c);
+                if (wp >= 1.0 || a <= 1.0e-30)
+                    continue;
+
+                const auto blend = wp * (c / a) + (1.0 - wp) * minPhase[(size_t) k];
+                const double len = std::abs (blend);
+                correction[(size_t) k] = std::complex<float> (len > 1.0e-6 ? blend * (a / len)
+                                                                           : minPhase[(size_t) k] * a);
+            }
+        }
     }
 
     // Derive the realised spectrum now, while we are on a writing thread: the

@@ -59,6 +59,7 @@ struct GroupAnalysisSettings
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
     bool minimumPhase = false;
+    bool phaseLimited = true;           // linear phase: phase corrected through the crossover region only
     int firLength = 4096;
     juce::String crossoverText = "80 Hz";
     bool subInverted = false;

@@ -599,9 +599,7 @@ public:
                            << " ms (offset applied to the subwoofer against the group; "
                               "the correction assumes each speaker's delay measured "
                               "against the sub)\n"
-                       << "- Phase type: "
-                       << (sub.engine->getPhaseType() == AnalysisEngine::PhaseType::minimum
-                               ? "Minimum phase" : "Linear phase") << "\n"
+                       << "- Phase type: " << phaseTypeText (*sub.engine) << "\n"
                        << "- FIR length: " << firLengthSamples << " samples\n"
                        << "- Level-match band: " << juce::String (levelMatchLowHz, 0)
                        << " Hz - " << juce::String (levelMatchHighHz, 0)
@@ -779,6 +777,22 @@ private:
         if (octaveFraction <= 0.0f)
             return "off";
         return "1/" + juce::String (juce::roundToInt (1.0f / octaveFraction)) + " oct";
+    }
+
+    /** The report's phase line. In linear phase it says how far up the phase
+        was corrected, since that decides whether the exported filter can put
+        energy ahead of the direct sound (AnalysisEngine::setPhaseLimited). */
+    static juce::String phaseTypeText (const AnalysisEngine& e)
+    {
+        if (e.getPhaseType() == AnalysisEngine::PhaseType::minimum)
+            return "Minimum phase";
+        if (! e.isPhaseLimited())
+            return "Linear phase, phase corrected at every frequency (not limited: "
+                   "expect pre-echo before transients)";
+        const float fx = e.getCrossoverHz();
+        return "Linear phase, limited to the crossover region (in full up to "
+               + juce::String (2.0f * fx, 0) + " Hz, minimum phase from "
+               + juce::String (4.0f * fx, 0) + " Hz)";
     }
 
     std::vector<Entry> speakers;

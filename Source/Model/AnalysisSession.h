@@ -47,6 +47,7 @@ struct AnalysisSettings
     float correctionLevel = 1.0f;
     float maxBoostDb = 12.0f;
     bool minimumPhase = false;
+    bool phaseLimited = true;           // linear phase: phase corrected through the crossover region only
     int firLength = 4096;
     int assignOutputId = 1;             // 1 (none), output o is id o + 2
 

@@ -62,7 +62,7 @@ so $w=0$ reads "no better agreement than chance". The average is then the power-
 \end{equation}
 with $\varphi_{\min}$ the minimum-phase argument of $M$, obtained from the real cepstrum as in Section~\ref{sec:minphase}. The two are blended as phasors on the short arc, as the subwoofer alignment blends its own, so no phase is ever unwrapped and nothing can jump.
 
-\paragraph{Why the phase needs a weight at all.} Where the positions disagree, $S$ nearly cancels, and its argument is then the direction of a residual between near-random phasors. The phase can shift by \SI{180}{\degree} between adjacent frequency bins even as the magnitude $M$ varies smoothly. Because this abrupt phase flip leaves the magnitude unaffected, it cannot be detected by analyzing the magnitude spectrum alone. However, a \gterm{linphase}{linear-phase} rendering exposes this transition by forcing the complex trajectory to pass through a near-zero point on the unit circle. Measured on a ten-position campaign whose right loudspeaker had $R=0.07$ near \SI{670}{\hertz}, the exported filter carried a \SI{-25}{\dB} notch of $Q\approx500$ at \SI{697}{\hertz}, audible as a ringing tone, where the minimum-phase rendering of the same design (using the magnitude alone) was \SI{+2.3}{\dB} at that frequency and showed nothing. Applying~\eqref{eq:blendedaverage} leaves the magnitude correction completely unchanged at \SI{0.000}{\dB} RMS over the \SIrange{200}{10000}{\hertz} range. Meanwhile, the crossover delay estimate shifts by merely \SI{0.03}{\milli\second} and the summation efficiency by \SI{0.006}{\dB}, while the notch is entirely eliminated. This approach is also fundamentally justified: spatial variations in phase do not reflect the acoustic properties of the overall listening area. Attempting to correct these position-dependent phase differences might optimize the response for a single seat, but it will inevitably degrade performance for the rest of the audience.
+\paragraph{Why the phase needs a weight at all.} Where the positions disagree, $S$ nearly cancels, and its argument is then the direction of a residual between near-random phasors. The phase can shift by \SI{180}{\degree} between adjacent frequency bins even as the magnitude $M$ varies smoothly. Because this abrupt phase flip leaves the magnitude unaffected, it cannot be detected by analyzing the magnitude spectrum alone. However, a \gterm{linphase}{linear-phase} rendering exposes this transition by forcing the complex trajectory to pass through a near-zero point on the unit circle. Measured on a ten-position campaign whose right loudspeaker had $R=0.07$ near \SI{670}{\hertz}, the exported filter carried a \SI{-25}{\dB} notch of $Q\approx500$ at \SI{697}{\hertz}, audible as a ringing tone, where the minimum-phase rendering of the same design (using the magnitude alone) was \SI{+2.3}{\dB} at that frequency and showed nothing. Applying~\eqref{eq:blendedaverage} leaves the magnitude correction completely unchanged at \SI{0.000}{\dB} RMS over the \SIrange{200}{10000}{\hertz} range. Meanwhile, the crossover delay estimate shifts by merely \SI{0.02}{\milli\second} and the summation efficiency by \SIrange{0.02}{0.04}{\dB}, while the notch is entirely eliminated: no bin between \SI{650}{\hertz} and \SI{750}{\hertz} falls below \SI{-0.4}{\dB}, as in the minimum-phase rendering. This approach is also fundamentally justified: spatial variations in phase do not reflect the acoustic properties of the overall listening area. Attempting to correct these position-dependent phase differences might optimize the response for a single seat, but it will inevitably degrade performance for the rest of the audience.
 
 \paragraph{What a value of $R$ is worth.} $R$ is the mean resultant length of circular statistics, and for a wrapped-normal or von~Mises spread of phases it fixes the scatter directly: the circular standard deviation is $\sigma=\sqrt{-2\ln R}$. That is what Table~\ref{tab:coherence} reads out, beside the weight~\eqref{eq:phaseweight} gives at $N=10$. The two agree where they should: at $R=1/\sqrt{10}=0.316$, the value $N$ independent positions produce on their own, the scatter is \SI{87}{\degree} (phases spread almost uniformly around the circle) and the weight has fallen to $0.003$. The bias correction in~\eqref{eq:phaseweight} is the standard small-sample correction for the squared mean resultant length~\cite{Kutil2012}.
 
@@ -85,7 +85,7 @@ removes.}
 \label{tab:coherence}
 \end{table}
 
-\paragraph{What it looks like on a real set.} Table~\ref{tab:measuredcoherence} is $R$ measured per octave on a ten-position campaign, both main loudspeakers. It follows the shape Appendix~\ref{ch:spatial} predicts from the correlation length: near unity through the bass, where a \SI{30}{\centi\metre} cluster samples a single correlation cell, and falling through the midrange as the positions begin to sample independently. The phase correction therefore acts in full below a few hundred hertz and fades out above it, without anyone choosing a frequency at which it should.
+\paragraph{What it looks like on a real set.} Table~\ref{tab:measuredcoherence} is $R$ measured per octave on a ten-position campaign, both main loudspeakers. It follows the shape Appendix~\ref{ch:spatial} predicts from the correlation length: near unity through the bass, where a \SI{30}{\centi\metre} cluster samples a single correlation cell, and falling through the midrange as the positions begin to sample independently. The weight therefore lets the average's phase through in full below a few hundred hertz and fades it out above, without anyone choosing a frequency. That settles which phase is information. Whether inverting it is worth what it costs is a separate question, and Section~\ref{sec:thphaselimit} answers it with a frequency after all.
 
 \begin{table}[ht]
 \centering
@@ -106,7 +106,7 @@ positions is 0.32.}
 \label{tab:measuredcoherence}
 \end{table}
 
-\paragraph{How rare the failure is, and why that is the problem.} On that same campaign the defect occupied \emph{one bin}. Taking the largest phase step between neighbouring bins anywhere in the analysis band, the left loudspeaker reached \SI{14.1}{\degree} and the right \SI{154.9}{\degree}, the latter at \SI{697.8}{\hertz} and at exactly one of the \num{29632} bins in band. With~\eqref{eq:blendedaverage} in place both fall to \SI{6.6}{\degree}, and no bin anywhere exceeds \SI{90}{\degree}. A defect that occupies one bin in thirty thousand, leaves the magnitude untouched and is plainly audible is exactly the kind that a curve on a screen will not show and a listening test will.
+\paragraph{How rare the failure is, and why that is the problem.} On that same campaign the defect occupied \emph{one bin}. Taking the largest phase step between neighbouring bins anywhere in the analysis band, the left loudspeaker reached \SI{11.9}{\degree} and the right \SI{154.9}{\degree}, the latter at \SI{697.8}{\hertz} and at exactly one of the \num{29632} bins in band. With~\eqref{eq:blendedaverage} in place they fall to \SI{8.3}{\degree} and \SI{9.7}{\degree}, both at the crossover where the subwoofer alignment turns the phase on purpose, and no bin anywhere exceeds \SI{90}{\degree}. A defect that occupies one bin in thirty thousand, leaves the magnitude untouched and is plainly audible is exactly the kind that a curve on a screen will not show and a listening test will.
 
 \section{Synchronized swept-sine deconvolution}\label{sec:thsweep}
 With the sweep stimulus, the \gterm{tf}{transfer function} can be estimated by deconvolution instead of by \gterm{welch}{Welch} averaging. The implementation follows the synchronized swept-sine formulation of Novak, Lotton and Simon~\cite{Novak2015}.
@@ -260,9 +260,72 @@ evaluated on the \gterm{welch}{Welch} bin grid ($f_k = k\,f_s/W$). Section~\ref{
   w(f) &\in [0,1]
         && \text{analysis-band weight (raised-cosine skirts).}
 \end{align}
-Two boundary cases complete the definition. Where $|h(f)|$ is negligible, the inverse is replaced by the boost ceiling rather than diverging. Cuts ($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$, so only boosts are limited. Setting $\lambda=1$, no subwoofer ($A\equiv1$) and a fully open analysis band ($w\equiv1$) reduces~\eqref{eq:fullfilter} to the boost-limited, LF-sloped exact inverse $H_{\mathrm{hp}}\,\mathcal{B}[1/h]$.
+Two boundary cases complete the definition. Where $|h(f)|$ is negligible, the inverse is replaced by the boost ceiling rather than diverging. Cuts ($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$, so only boosts are limited. Setting $\lambda=1$, no subwoofer ($A\equiv1$) and a fully open analysis band ($w\equiv1$) reduces~\eqref{eq:fullfilter} to the boost-limited, LF-sloped exact inverse $H_{\mathrm{hp}}\,\mathcal{B}[1/h]$. The linear-phase export then applies one more operator to $C$, the phase limit of Section~\ref{sec:thphaselimit}.
 
-\paragraph{The ceiling limits a magnitude, and only a magnitude.} $\mathcal{B}$ bounds $|1/h|$. It does nothing to $\arg(1/h)=-\arg h$, which turns fastest exactly where $|h|$ is smallest. A capped magnitude carried by an uncapped phase is no longer the inverse of anything, and the mismatch grows with how hard the ceiling is working. Two things keep it in proportion. The phase weight of~\eqref{eq:phaseweight} has already dealt with the case that matters most, a null the positions disagree about, where the phase was never information to begin with, and a null they all agree about is a property of the listening area whose phase is worth inverting as far as the ceiling lets the magnitude follow it. In the specific configuration analyzed above, the boost ceiling is never reached. The unconstrained inverse filter requires a maximum boost of only \SI{5.1}{\dB} and \SI{6.4}{\dB} for the two main channels, well below the \SI{12}{\dB} limit. Consequently, the bounding operator $\mathcal{B}$ acts as an identity function across all in-band frequency bins. Conversely, when a system does encounter its boost ceiling, the calculated correction phase becomes increasingly unreliable inside deep notches where the filter declines to apply further boost. The appropriate remedy for such deep nulls is not to increase the filter length (which merely implements an unrealistic target with higher precision) but rather to apply broader frequency smoothing or to lower the boost ceiling itself.
+\paragraph{The ceiling limits a magnitude, and only a magnitude.} $\mathcal{B}$ bounds $|1/h|$. It does nothing to $\arg(1/h)=-\arg h$, which turns fastest exactly where $|h|$ is smallest. A capped magnitude carried by an uncapped phase is no longer the inverse of anything, and the mismatch grows with how hard the ceiling is working. Two things keep it in proportion. The phase weight of~\eqref{eq:phaseweight} has already dealt with the case that matters most, a null the positions disagree about, where the phase was never information to begin with, and a null they all agree about is a property of the listening area whose phase is worth inverting as far as the ceiling lets the magnitude follow it, within the crossover region where the phase is kept at all (Section~\ref{sec:thphaselimit}). In the specific configuration analyzed above, the boost ceiling is never reached. The unconstrained inverse filter requires a maximum boost of only \SI{5.1}{\dB} and \SI{6.4}{\dB} for the two main channels, well below the \SI{12}{\dB} limit. Consequently, the bounding operator $\mathcal{B}$ acts as an identity function across all in-band frequency bins. Conversely, when a system does encounter its boost ceiling, the calculated correction phase becomes increasingly unreliable inside deep notches where the filter declines to apply further boost. The appropriate remedy for such deep nulls is not to increase the filter length (which merely implements an unrealistic target with higher precision) but rather to apply broader frequency smoothing or to lower the boost ceiling itself.
+
+\section{Limiting the phase to the crossover region}\label{sec:thphaselimit}
+Equation~\eqref{eq:fullfilter} inverts the average's phase wherever the weight~\eqref{eq:phaseweight} lets it through. With "Limit phase" on, the default, the linear-phase export keeps that designed phase only where the subwoofer alignment needs it and hands it over to the minimum-phase phase of the same correction above,
+\begin{equation}
+  \Lambda[C](f) = |C(f)|\,
+     \frac{w_p(f)\,\hat c(f) + \bigl(1-w_p(f)\bigr)\,\hat m(f)}
+          {\bigl|\,w_p(f)\,\hat c(f) + \bigl(1-w_p(f)\bigr)\,\hat m(f)\,\bigr|},
+  \qquad \hat c = \frac{C}{|C|},
+  \label{eq:phaselimit}
+\end{equation}
+where $\hat m(f)$ is the unit phasor of the minimum-phase response with magnitude $|C|$, built by the cepstrum of Section~\ref{sec:minphase}, and
+\begin{equation}
+  w_p(f) = \begin{cases}
+             1, & f \le 2f_x,\\[2pt]
+             \tfrac12 + \tfrac12\cos\!\bigl(\pi\log_2\tfrac{f}{2f_x}\bigr), & 2f_x < f < 4f_x,\\[2pt]
+             0, & f \ge 4f_x,
+           \end{cases}
+  \label{eq:phaselimitweight}
+\end{equation}
+with $f_x$ the crossover. The magnitude does not move, and from $4f_x$ up $\Lambda[C]$ is exactly the filter the minimum-phase rendering exports. The blend runs on the short arc, like those of~\eqref{eq:blendedaverage} and the alignment term.
+
+\paragraph{Why stop at twice the crossover.} The alignment weight $w_x$ has fallen to zero at $2f_x$, so above it the all-pass $A$ is the identity and the only phase left to invert is the room's. Below it, the room's phase has to stay. $A$ steers the main onto the subwoofer on the assumption that the main's own phase is already flat there. Replacing the average's phase with minimum phase at every frequency cost \SI{1}{\dB} of summation efficiency on the campaign below ($-1.6$ against $-0.6$). Limiting it at $2f_x$ cost nothing measurable.
+
+\paragraph{Why above it at all.} Only the part of the average's phase that every seat shares can be inverted everywhere~\cite{NeelyAllen, Mourjopoulos1994}. The rest stays at each seat, and a linear-phase filter puts half of whatever it does not cancel \emph{ahead} of the direct sound, where the ear masks little of it: a \gterm{preecho}{pre-echo}. At $R\approx0.8$--$0.9$, the coherence of the \SIrange{250}{1000}{\hertz} octaves in Table~\ref{tab:measuredcoherence}, the weight still passes most of the phase while the positions scatter by \SIrange{26}{38}{\degree}. That residual is exactly what was heard, as a short pre-reverberation before impacts, on a campaign re-exported after the fix of Section~\ref{sec:thavg}. Making the weight stricter does not cure it: raising $w$ to the fourth power still leaves the \SI{500}{\hertz} band \SI{10}{\dB} above minimum phase. Positions that agree this well can still leave each seat enough to hear.
+
+Nor did the inversion buy anything there. With no correction at all, both mains were already time-coherent to within \SI{0.2}{\milli\second} in every octave from \SIrange{125}{4000}{\hertz}, the arrival time of each band's envelope measured against the direct sound at every seat. Linear phase moved none of those bands by more than \SI{0.1}{\milli\second}. The only band that moved is \SI{63}{\hertz}, where the magnitude correction does the work, since flattening a minimum-phase roll-off flattens its phase with it: \SI{4.4}{\milli\second} late uncorrected, \SI{1.7}{\milli\second} in minimum phase, \SI{1.4}{\milli\second} in linear phase.
+
+\begin{table}[ht]
+\centering
+\small
+\setlength{\tabcolsep}{4.5pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llrrrrrr}
+\toprule
+ & & \multicolumn{5}{c}{pre-echo, last \SI{3}{\milli\second} (dB)} & summation \\
+\cmidrule(lr){3-7}
+ & design & \SI{250}{\hertz} & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz} & (dB) \\
+\midrule
+left main  & minimum phase         & $-51$ & $-46$ & $-40$ & $-43$ & $-53$ & $-0.81$ \\
+           & linear, not limited   & $-36$ & $-28$ & $-36$ & $-40$ & $-39$ & $-0.52$ \\
+           & linear, limited       & $-46$ & $-46$ & $-40$ & $-43$ & $-53$ & $-0.52$ \\
+\midrule
+right main & minimum phase         & $-45$ & $-48$ & $-40$ & $-43$ & $-52$ & $-0.76$ \\
+           & linear, not limited   & $-28$ & $-29$ & $-33$ & $-42$ & $-40$ & $-0.60$ \\
+           & linear, limited       & $-40$ & $-48$ & $-40$ & $-43$ & $-52$ & $-0.60$ \\
+\bottomrule
+\end{tabular}
+\caption{What limiting the phase does, on a ten-position campaign crossed at
+\SI{70}{\hertz}. Energy arriving in the \SI{3}{\milli\second} before the
+direct sound, per octave, relative to that octave's energy after it, through
+causal band filters so the analysis cannot move anything earlier; mean over the
+positions. Summation efficiency through the crossover as in the paper,
+unchanged by the limit to \SI{0.01}{\dB}, in-sample and leave-one-out alike.
+The rows come from the dry captures convolved with each design. For the filter
+that was actually exported unlimited, they agree with the measured full-system
+run to \SIrange{1}{2}{\dB} above \SI{250}{\hertz}, and that run in turn agrees
+with a recording of ticks played through the system.}
+\label{tab:phaselimit}
+\end{table}
+
+\paragraph{Why the limit is applied to the finished correction.} The minimum-phase phasor $\hat m$ in~\eqref{eq:phaselimit} is that of $|C|$, not of the average. The average's minimum phase also carries what the correction never inverts: the band edges of the measurement, and the loudspeaker's roll-off below the analysis range, where $w$ returns $C$ to unity. Inverting their phase without their magnitude is a pre-echo of its own. On a synthetic set of three positions agreeing on a \SI{1}{\kilo\hertz} all-pass, a limit built from the average left \SI{-5.7}{\dB} of the render's energy ahead of its peak, more than no limit at all ($-13$). Built from $|C|$, as~\eqref{eq:phaselimit} does, it leaves \SI{-38}{\dB} and matches the minimum-phase design to \SI{0.001}{\degree} above $4f_x$. The test suite checks both: the match above $4f_x$, and a pre-echo at least \SI{20}{\dB} below the unlimited design's.
+
+\paragraph{What it leaves.} Below $2f_x$ the linear-phase filter still puts energy ahead of the direct sound, \SIrange{-12}{-20}{\dB} in the \SIrange{63}{125}{\hertz} octaves within \SI{30}{\milli\second}. That is the alignment itself: without $A$ the \SI{63}{\hertz} octave sits at minimum-phase level, and no choice of main delay removes it. It buys \SIrange{0.2}{0.3}{\dB} of summation at the delay that campaign used. Above all, it keeps the summation within \SI{0.6}{\dB} of its best for any main delay from \SIrange{20}{34}{\milli\second}, a range over which minimum phase falls as low as \SI{-7}{\dB}. Whether that low-frequency pre-echo is audible is a listening question. \SI{30}{\milli\second} is less than two periods at \SI{63}{\hertz}.
 
 \section{Rendering the FIR}\label{sec:threnders}
 Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} on the \gterm{fir}{FIR}'s frequency grid, with $N=\text{nextPow2}(\text{firLength})$ bins.
