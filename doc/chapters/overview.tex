@@ -74,7 +74,7 @@ Electronic correction should not be considered as a substitute for acoustics. It
 A well-treated room makes the residual error smoother, more minimum-phase and more uniform across positions, which is exactly the kind of error a filter can fix. Room treatment and software correction are complementary, in that order.
 
 \section{Signal flow at a glance}
-Figure~\ref{fig:signalflow} shows the per-block processing performed by the matrix engine. Audio enters on the discrete input channels, is summed through the active matrix configuration(s), passes the per-output trim and \gterm{fir}{FIR} correction, is time-aligned across outputs, and finally the master section (Level / Mute / Dim / Mono) is applied before the discrete outputs. The plugin's bus is a fixed 32-in/32-out discrete layout (no host negotiation involved); the active matrix size (2 in / 8 out by default, up to 32 each) is a separate, independent setting made with the Inputs/Outputs selectors, and channels beyond it are simply left unrouted.
+Figure~\ref{fig:signalflow} shows the per-block processing performed by the matrix engine (see chapter~\ref{ch:matrix}). Audio enters on the discrete input channels, is summed through the active matrix configuration(s), passes the per-output trim and \gterm{fir}{FIR} correction, is time-aligned across outputs, and finally the master section (Level / Mute / Dim / Mono) is applied before the discrete outputs. The plugin's bus is a fixed 32-in/32-out discrete layout (no host negotiation involved); the active matrix size (2 in / 8 out by default, up to 32 each) is a separate, independent setting made with the Inputs/Outputs selectors, and channels beyond it are simply left unrouted.
 
 \begin{figure}[ht]
 \centering

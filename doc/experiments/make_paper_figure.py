@@ -53,28 +53,36 @@ FX_BM = 85.0         # bass-management crossover, 4th order, from the matrix
 SUB_ROUTE_DB = -4.8  # subwoofer routing level relative to the mains
 T_REPORT = {1: 29.73, 2: 29.41}
 FIR_TAPS = 0         # the length the measured run's filter was rendered at
+EXCLUDED = set()     # positions the group analysis was told to leave out
 RUNS = {}            # display name -> the folder holding that system run
 EXPORTS = {}         # display name -> the folder holding that export
 
 
 def discover(system):
-    """The three system runs and the two exports of one campaign, by name. A
-    run folder ends in _test and says which of the three it is; an export
-    folder holds the analysis report and the correction files."""
+    """The three system runs and the two exports of one campaign, by name.
+
+    A folder says which of the three it belongs to somewhere in its name, and
+    is an export if it holds an analysis report -- `Mirage_minimum` and
+    `Minimum correction` both work, as do `Mirage_nofir_test` and
+    `nofir test`. Matching is case-insensitive and does not depend on the
+    separator, because campaigns have been named both ways and neither is
+    wrong. The report is what tells an export from a run: a run folder holds
+    captures and a readme_measurement.md, never a report."""
     runs, exports = {}, {}
     for name in sorted(os.listdir(system)):
         path = os.path.join(system, name)
         if not os.path.isdir(path):
             continue
-        which = ('minimum' if 'minimum' in name else
-                 'linear' if 'linear' in name else
-                 'no FIR' if 'nofir' in name else None)
+        low = name.lower()
+        which = ('minimum' if 'minimum' in low else
+                 'linear' if 'linear' in low else
+                 'no FIR' if ('nofir' in low or 'no fir' in low) else None)
         if which is None:
             continue
-        if name.endswith('_test'):
-            runs[which] = path
-        elif os.path.exists(os.path.join(path, 'Mirage_panneaux_paper_report.md')):
+        if report_path(path):
             exports[which] = path
+        elif 'test' in low:
+            runs[which] = path
     missing = {'minimum', 'linear', 'no FIR'} - set(runs)
     if missing:
         raise SystemExit(f'{system}: no system run for {sorted(missing)}')
@@ -83,19 +91,35 @@ def discover(system):
     return runs, exports
 
 
+def report_path(folder):
+    """The group analysis report in an export folder, whatever the campaign
+    called its files. Returns None when there is none, which is how discover()
+    tells an export folder from a run folder."""
+    hits = sorted(glob.glob(os.path.join(folder, '*_report.md')))
+    return hits[0] if hits else None
+
+
 def read_report(folder):
     """The group settings the analysis wrote next to its exports. The paper's
     numbers depend on the crossover and on the delay each main was given, and
     those belong to the campaign rather than to this script."""
-    txt = open(os.path.join(folder, 'Mirage_panneaux_paper_report.md'),
-               encoding='utf-8', errors='replace').read()
+    txt = open(report_path(folder), encoding='utf-8', errors='replace').read()
 
     def one(pattern, cast=float):
         m = re.search(pattern, txt)
         return cast(m.group(1)) if m else None
 
     delays = [float(v) for v in re.findall(r'- Applied \(aligned\) delay: ([\d.]+) ms', txt)]
-    return dict(crossover=one(r'- Crossover: ([\d.]+) Hz'),
+
+    # Runs the analysis was told to leave out. A campaign can hold a position
+    # measured twice -- once with the room as it is normally and once with
+    # something moved -- and designing offline from a set the plugin did not
+    # use would compare two different designs. The report names them:
+    #     - Run 11, 22 Sep 2026 14:06, Dry, sweep, channels 3, 4, sub: "5b"
+    excluded = set(re.findall(r'- Run \d+,[^\n]*?: "([^"]*)"', txt))
+
+    return dict(excluded=excluded,
+                crossover=one(r'- Crossover: ([\d.]+) Hz'),
                 analysis_lo=one(r'- Analysis range: ([\d.]+) Hz'),
                 max_boost=one(r'- Max boost: ([\d.]+) dB'),
                 fir_length=one(r'- FIR length: (\d+) samples', int),
@@ -200,7 +224,7 @@ class Main:
         # Every dry position, and the subset the two sessions share. The
         # strategy comparison is a property of the design set and uses all of
         # them; anything checked against a measured run uses the shared ones.
-        idx = dry_index(a.dry)
+        idx = {n: k for n, k in dry_index(a.dry).items() if n not in EXCLUDED}
         self.dry_all, self.arrivals = {}, {}
         for name, k in idx.items():
             A = tf(os.path.join(a.dry, f'ch{CH_OF[si]:02d}_pos{k:03d}.wav'))
@@ -397,9 +421,10 @@ def main():
                     help='where to write the filter-length figure')
     a = ap.parse_args()
 
-    global FX, FX_BM, SUB_ROUTE_DB, T_REPORT, RUNS, EXPORTS, FIR_TAPS
+    global FX, FX_BM, SUB_ROUTE_DB, T_REPORT, RUNS, EXPORTS, FIR_TAPS, EXCLUDED
     RUNS, EXPORTS = discover(a.system)
     rep = read_report(EXPORTS['linear'])
+    EXCLUDED = rep['excluded']
     FX = rep['crossover']
     FX_BM = a.bm_crossover if a.bm_crossover is not None else FX
     T_REPORT = rep['delays']
@@ -411,6 +436,9 @@ def main():
           f"max boost {V.MAX_BOOST_DB:g} dB, FIR {rep['fir_length']} taps, "
           f"sub trim {rep['sub_trim']:g} ms, delays " +
           ', '.join(f'{k}: {v:g} ms' for k, v in T_REPORT.items()))
+    if EXCLUDED:
+        print('left out of the analysis, and so out of the design set here: '
+              + ', '.join(sorted(EXCLUDED)))
 
     f = np.arange(W // 2 + 1) * SR / W
     cal = mic_cal_gain(load_mic_cal(a.dry), f)

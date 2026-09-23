@@ -35,11 +35,78 @@ Each microphone position is at a different distance from the speaker, so each $\
 \end{equation}
 which time-shifts every measurement so its main arrival sits at $t=0$. This is the excess-delay normalisation used in swept-sine room measurement practice~\cite{MullerMassarani}. Appendix~\ref{ch:delays} discusses what this arrival-time estimate measures, and where it fails.
 
-The delay-aligned responses of all $N$ positions are then averaged as complex quantities,
+The delay-aligned responses of all $N$ positions are then averaged, and the magnitude and the phase of that average come from different means, for reasons that are worth separating.
+
+The \textbf{magnitude} is a power mean,
 \begin{equation}
-  \bar H(f) = \frac{1}{N}\sum_{n=1}^{N} \hat H'_n(f).
+  M(f) = \sqrt{\frac{1}{N}\sum_{n=1}^{N} \bigl|\hat H'_n(f)\bigr|^2 },
+  \label{eq:powermean}
 \end{equation}
-Complex (vector) averaging preserves phase and, more importantly, averages out the position-dependent \gterm{comb}{comb filtering} caused by reflections, which is the approach advocated for room and loudspeaker correction in~\cite{Toole,Mourjopoulos1994}.
+because $|\overline{H}|$ is not $\overline{|H|}$. Above the room's transition frequency the positions no longer agree on phase, and the modulus of a complex mean of $N$ near-random phasors reads about $1/\sqrt N$ low. For instance, on a ten-position set, one gets \SI{0.2}{\dB} at \SI{200}{\hertz} but \SI{12}{\dB} at \SI{13}{\kilo\hertz}, at bins where every individual curve is flat. Inverting that would boost a cancellation that exists at no microphone position. Equation~\ref{eq:powermean} is the spatial average of the sound field, and averaging out the position-dependent \gterm{comb}{comb filtering} caused by reflections is what makes several positions worthwhile in the first place~\cite{Toole,Mourjopoulos1994}.
+
+The \textbf{phase} comes from the complex sum $S(f)=\sum_n \hat H'_n(f)$, provided that this sum is statistically meaningful. The validity and reliability of this sum are quantified by the vector coherence:
+\begin{equation}
+  R(f) = \frac{|S(f)|}{N\,M(f)} \in [0,1],
+  \label{eq:veccoherence}
+\end{equation}
+which is unity where every position agrees and zero where they are independent. $N$ unit phasors that agree on nothing still sum to $\sqrt N$, so $R$ has a floor of $1/\sqrt N$ that means nothing. Removing it gives the weight actually used,
+\begin{equation}
+  w(f) = \operatorname{clamp}\!\left( \frac{N R^2(f) - 1}{N-1},\, 0,\, 1 \right),
+  \label{eq:phaseweight}
+\end{equation}
+so $w=0$ reads "no better agreement than chance". The average is then the power-mean magnitude carried by a direction blended between the one the positions voted for and the minimum-phase direction of that same magnitude,
+\begin{equation}
+  \bar H(f) = M(f)\,\frac{b(f)}{|b(f)|},\qquad
+  b(f) = w\,\frac{S}{|S|} + (1-w)\,e^{\,j\varphi_{\min}(f)},
+  \label{eq:blendedaverage}
+\end{equation}
+with $\varphi_{\min}$ the minimum-phase argument of $M$, obtained from the real cepstrum as in Section~\ref{sec:minphase}. The two are blended as phasors on the short arc, as the subwoofer alignment blends its own, so no phase is ever unwrapped and nothing can jump.
+
+\paragraph{Why the phase needs a weight at all.} Where the positions disagree, $S$ nearly cancels, and its argument is then the direction of a residual between near-random phasors. The phase can shift by \SI{180}{\degree} between adjacent frequency bins even as the magnitude $M$ varies smoothly. Because this abrupt phase flip leaves the magnitude unaffected, it cannot be detected by analyzing the magnitude spectrum alone. However, a \gterm{linphase}{linear-phase} rendering exposes this transition by forcing the complex trajectory to pass through a near-zero point on the unit circle. Measured on a ten-position campaign whose right loudspeaker had $R=0.07$ near \SI{670}{\hertz}, the exported filter carried a \SI{-25}{\dB} notch of $Q\approx500$ at \SI{697}{\hertz}, audible as a ringing tone, where the minimum-phase rendering of the same design (using the magnitude alone) was \SI{+2.3}{\dB} at that frequency and showed nothing. Applying~\eqref{eq:blendedaverage} leaves the magnitude correction completely unchanged at \SI{0.000}{\dB} RMS over the \SIrange{200}{10000}{\hertz} range. Meanwhile, the crossover delay estimate shifts by merely \SI{0.03}{\milli\second} and the summation efficiency by \SI{0.006}{\dB}, while the notch is entirely eliminated. This approach is also fundamentally justified: spatial variations in phase do not reflect the acoustic properties of the overall listening area. Attempting to correct these position-dependent phase differences might optimize the response for a single seat, but it will inevitably degrade performance for the rest of the audience.
+
+\paragraph{What a value of $R$ is worth.} $R$ is the mean resultant length of circular statistics, and for a wrapped-normal or von~Mises spread of phases it fixes the scatter directly: the circular standard deviation is $\sigma=\sqrt{-2\ln R}$. That is what Table~\ref{tab:coherence} reads out, beside the weight~\eqref{eq:phaseweight} gives at $N=10$. The two agree where they should: at $R=1/\sqrt{10}=0.316$, the value $N$ independent positions produce on their own, the scatter is \SI{87}{\degree} (phases spread almost uniformly around the circle) and the weight has fallen to $0.003$. The bias correction in~\eqref{eq:phaseweight} is the standard small-sample correction for the squared mean resultant length~\cite{Kutil2012}.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lrrrrrrr}
+\toprule
+$R$                        & 0.99 & 0.95 & 0.90 & 0.80 & 0.70 & 0.50 & 0.32\\
+circular sd $\sigma$ (deg) &    8 &   18 &   26 &   38 &   48 &   68 &   87\\
+weight $w$, $N=10$         & 0.98 & 0.89 & 0.79 & 0.60 & 0.43 & 0.17 & 0.00\\
+\bottomrule
+\end{tabular}
+\caption{What the positions' agreement is worth. $R$ is the vector coherence
+of~\eqref{eq:veccoherence}, $\sigma=\sqrt{-2\ln R}$ the phase scatter it
+implies, and $w$ the weight~\eqref{eq:phaseweight} gives that phase in the
+average. Independent positions put a floor of $1/\sqrt N$ under $R$ --- 0.58 at
+three positions, 0.32 at ten, 0.22 at twenty --- which is what the correction
+removes.}
+\label{tab:coherence}
+\end{table}
+
+\paragraph{What it looks like on a real set.} Table~\ref{tab:measuredcoherence} is $R$ measured per octave on a ten-position campaign, both main loudspeakers. It follows the shape Appendix~\ref{ch:spatial} predicts from the correlation length: near unity through the bass, where a \SI{30}{\centi\metre} cluster samples a single correlation cell, and falling through the midrange as the positions begin to sample independently. The phase correction therefore acts in full below a few hundred hertz and fades out above it, without anyone choosing a frequency at which it should.
+
+\begin{table}[ht]
+\centering
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+octave from (Hz) & 31 & 63 & 125 & 250 & 500 & 1k & 2k & 4k & 8k\\
+\midrule
+left main   & 0.98 & 0.99 & 0.90 & 0.89 & 0.79 & 0.67 & 0.50 & 0.67 & 0.46\\
+right main  & 0.97 & 0.99 & 0.90 & 0.88 & 0.78 & 0.68 & 0.59 & 0.59 & 0.34\\
+\bottomrule
+\end{tabular}
+\caption{Vector coherence per octave band, labelled by the band's lower edge,
+on ten positions spanning \SI{45}{\centi\metre} by \SI{34}{\centi\metre}
+with four of them \SI{6}{\centi\metre} higher. The floor for ten independent
+positions is 0.32.}
+\label{tab:measuredcoherence}
+\end{table}
+
+\paragraph{How rare the failure is, and why that is the problem.} On that same campaign the defect occupied \emph{one bin}. Taking the largest phase step between neighbouring bins anywhere in the analysis band, the left loudspeaker reached \SI{14.1}{\degree} and the right \SI{154.9}{\degree}, the latter at \SI{697.8}{\hertz} and at exactly one of the \num{29632} bins in band. With~\eqref{eq:blendedaverage} in place both fall to \SI{6.6}{\degree}, and no bin anywhere exceeds \SI{90}{\degree}. A defect that occupies one bin in thirty thousand, leaves the magnitude untouched and is plainly audible is exactly the kind that a curve on a screen will not show and a listening test will.
 
 \section{Synchronized swept-sine deconvolution}\label{sec:thsweep}
 With the sweep stimulus, the \gterm{tf}{transfer function} can be estimated by deconvolution instead of by \gterm{welch}{Welch} averaging. The implementation follows the synchronized swept-sine formulation of Novak, Lotton and Simon~\cite{Novak2015}.
@@ -194,6 +261,8 @@ evaluated on the \gterm{welch}{Welch} bin grid ($f_k = k\,f_s/W$). Section~\ref{
         && \text{analysis-band weight (raised-cosine skirts).}
 \end{align}
 Two boundary cases complete the definition. Where $|h(f)|$ is negligible, the inverse is replaced by the boost ceiling rather than diverging. Cuts ($z_{\mathrm{dB}}\le 0$) pass $\mathcal{B}$ unchanged since $L-\kappa\ge 0$, so only boosts are limited. Setting $\lambda=1$, no subwoofer ($A\equiv1$) and a fully open analysis band ($w\equiv1$) reduces~\eqref{eq:fullfilter} to the boost-limited, LF-sloped exact inverse $H_{\mathrm{hp}}\,\mathcal{B}[1/h]$.
+
+\paragraph{The ceiling limits a magnitude, and only a magnitude.} $\mathcal{B}$ bounds $|1/h|$. It does nothing to $\arg(1/h)=-\arg h$, which turns fastest exactly where $|h|$ is smallest. A capped magnitude carried by an uncapped phase is no longer the inverse of anything, and the mismatch grows with how hard the ceiling is working. Two things keep it in proportion. The phase weight of~\eqref{eq:phaseweight} has already dealt with the case that matters most, a null the positions disagree about, where the phase was never information to begin with, and a null they all agree about is a property of the listening area whose phase is worth inverting as far as the ceiling lets the magnitude follow it. In the specific configuration analyzed above, the boost ceiling is never reached. The unconstrained inverse filter requires a maximum boost of only \SI{5.1}{\dB} and \SI{6.4}{\dB} for the two main channels, well below the \SI{12}{\dB} limit. Consequently, the bounding operator $\mathcal{B}$ acts as an identity function across all in-band frequency bins. Conversely, when a system does encounter its boost ceiling, the calculated correction phase becomes increasingly unreliable inside deep notches where the filter declines to apply further boost. The appropriate remedy for such deep nulls is not to increase the filter length (which merely implements an unrealistic target with higher precision) but rather to apply broader frequency smoothing or to lower the boost ceiling itself.
 
 \section{Rendering the FIR}\label{sec:threnders}
 Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} on the \gterm{fir}{FIR}'s frequency grid, with $N=\text{nextPow2}(\text{firLength})$ bins.

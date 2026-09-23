@@ -103,19 +103,48 @@ def smooth_var_octave(H, sr, lo=None, hi=None, w=W):
 
 def position_average(H):
     """The average across microphone positions, as AnalysisEngine::computeAverage()
-    builds it: magnitude from the power mean, phase from the complex mean.
+    builds it: magnitude from the power mean, phase from the complex mean, and
+    the phase faded toward minimum phase where the positions disagree.
 
     |mean H| is not mean |H|. Above the room's transition frequency the
     positions no longer agree on phase, and a plain complex mean of ten
     near-random phasors reads about 1/sqrt(10) low -- 0.2 dB at 200 Hz but
     12 dB at 13 kHz on the campaign-6 set, at bins where every individual
-    curve is flat. The power mean is the spatial average of the field; the
-    complex mean still supplies the phase, which is meaningful exactly where
-    the positions agree about it."""
+    curve is flat. The power mean is the spatial average of the field.
+
+    The complex mean still supplies the phase, but only as far as it is worth
+    anything. Where the positions disagree it nearly cancels, and its ARGUMENT
+    is then the direction of a residual between near-random phasors: it can
+    turn 180 degrees between neighbouring bins while the power-mean magnitude
+    walks smoothly through, so nothing in the magnitude shows it up. A
+    linear-phase render turns that step into a near-zero on the unit circle --
+    Q 518 and -25 dB at 697 Hz on the September 2026 campaign's right main,
+    which rings audibly on an F; minimum phase, using the magnitude alone,
+    never sees it. So the measured direction is blended on the short arc
+    toward the minimum-phase equivalent of the same magnitude, weighted by the
+    agreement between positions, debiased: N unit phasors agreeing on nothing
+    still sum to 1/sqrt(N), and w = 0 means no better than chance. No phase is
+    unwrapped anywhere, so nothing can jump."""
+    N = len(H)
     mag = np.sqrt((np.abs(H) ** 2).mean(axis=0))
     c = H.mean(axis=0)
     a = np.abs(c)
-    return np.where(a > 1e-30, c / np.maximum(a, 1e-300) * mag, mag)
+
+    if N < 2:
+        return np.where(a > 1e-30, c / np.maximum(a, 1e-300) * mag, mag)
+
+    coh = a / np.maximum(N * mag, 1e-300)                 # |mean H| / sqrt(mean |H|^2)
+    w = np.clip((N * coh ** 2 - 1.0) / (N - 1.0), 0.0, 1.0)
+
+    measured = np.where(a > 1e-30, c / np.maximum(a, 1e-300), 1.0)
+    mp = min_phase(mag.astype(complex))
+    mp = mp / np.maximum(np.abs(mp), 1e-300)
+
+    blend = w * measured + (1.0 - w) * mp
+    length = np.abs(blend)
+    # Opposed directions at w = 1/2 leave nothing to normalise; the
+    # minimum-phase one is the safe half of that pair.
+    return np.where(length > 1e-6, blend / np.maximum(length, 1e-300) * mag, mp * mag)
 
 
 def smooth_average(H, sr, lo=None, hi=None, w=W):
@@ -181,16 +210,34 @@ def mic_cal_gain(cal, f):
     return 10.0 ** (np.interp(f, fc, dc, left=dc[0], right=dc[-1]) / 20.0)
 
 
-def load_manifest(data, positions=None):
+def load_manifest(data, positions=None, exclude=()):
     """Read a measurement folder the plugin wrote. Returns the main channel
-    numbers, the subwoofer channel (0 = none) and the position list."""
+    numbers, the subwoofer channel (0 = none) and the position list.
+
+    `exclude` names runs by the comment they carry, and drops the positions
+    they wrote. A folder can hold a position measured twice -- the same place
+    with something in the room moved -- and the group analysis is then told to
+    leave one of them out; designing here from a set the plugin did not use
+    compares two different designs."""
     import re
     xml = io.open(os.path.join(data, 'measurement.xml'), encoding='utf-8').read()
     sub = int(re.search(r'subChannel="(\d+)"', xml).group(1))
     npos = int(re.search(r'positions="(\d+)"', xml).group(1))
     chans = [int(c) for c in re.findall(r'<Channel number="(\d+)"', xml)]
     mains = [c for c in chans if c != sub]
-    return mains, sub, positions or list(range(1, npos + 1))
+    pos = positions or list(range(1, npos + 1))
+
+    if exclude:
+        drop = set()
+        for m in re.finditer(r'<Run [^>]*comment="([^"]*)"[^>]*>(.*?)</Run>', xml, re.S):
+            if m.group(1) in exclude:
+                for name in re.findall(r'name="([^"]+)"', m.group(2)):
+                    k = re.search(r'_pos(\d+)\.wav$', name)
+                    if k:
+                        drop.add(int(k.group(1)))
+        pos = [p for p in pos if p not in drop]
+
+    return mains, sub, pos
 
 
 def load_folder(data, mains, sub, positions, mic_cal=True):
@@ -371,6 +418,32 @@ def render_ir(C, f, sr, n=16384):
     return ir * win
 
 
+def render_min_ir(C, f, sr, n=16384):
+    """Minimum-phase render at n taps, as AnalysisEngine::renderIR does it with
+    minimumPhase = true.
+
+    The cepstrum runs on the FIR grid rather than at full resolution, which is
+    the whole point when the question is what a short filter can hold: n taps
+    span n/sr seconds, and the minimum-phase reconstruction of a magnitude the
+    grid cannot resolve is not the reconstruction of the one it was asked for.
+    The taper is one-sided for the same reason the plugin's is -- the impulse
+    is front-loaded, so fading its head would remove the filter."""
+    fg = np.arange(n // 2 + 1) * sr / n
+    mag = np.abs(np.interp(fg, f, C.real) + 1j * np.interp(fg, f, C.imag))
+
+    lm = np.log(np.maximum(mag, 1e-6))              # the plugin's -120 dB floor
+    cep = np.real(np.fft.ifft(np.concatenate([lm, lm[-2:0:-1]])))
+    lift = np.zeros(n)
+    lift[0] = lift[n // 2] = 1.0
+    lift[1:n // 2] = 2.0
+    ir = np.real(np.fft.ifft(np.exp(np.fft.fft(cep * lift))))
+
+    taper = max(1, int(0.1 * n))
+    win = np.ones(n)
+    win[-taper:] = 0.5 * (1 + np.cos(np.pi * np.arange(taper) / taper))
+    return ir * win
+
+
 def ir_span_ms(ir, sr, frac=0.99):
     """Smallest window around the peak holding `frac` of the energy."""
     e = ir ** 2
@@ -543,6 +616,11 @@ def main():
     ap.add_argument('--sub-gain', type=float, default=0.0,
                     help="subwoofer routing level relative to the mains, in dB, "
                          "as set in the matrix (the dry captures carry neither)")
+    ap.add_argument('--exclude', default='',
+                    help='run comments to leave out of the design set, comma '
+                         'separated: a position measured twice, once with the room '
+                         'changed, is in the folder but not in the analysis (the '
+                         'group report lists what it was told to leave out)')
     ap.add_argument('--no-mic-cal', action='store_true',
                     help='ignore the microphone calibration embedded in the folder '
                          '(the plugin always applies it)')
@@ -562,9 +640,12 @@ def main():
 
     print('loading and estimating transfer functions ...', flush=True)
     if args.manifest:
+        drop = [c.strip() for c in args.exclude.split(',') if c.strip()]
         mn, sb, positions = load_manifest(args.data,
-                                          None if args.positions == '1,2,3,4,5' else positions)
-        print(f'manifest: mains {mn}, sub channel {sb}, {len(positions)} positions')
+                                          None if args.positions == '1,2,3,4,5' else positions,
+                                          exclude=drop)
+        print(f'manifest: mains {mn}, sub channel {sb}, {len(positions)} positions'
+              + (f' (left out: {", ".join(drop)})' if drop else ''))
         cal = None if args.no_mic_cal else load_mic_cal(args.data)
         print('mic calibration: ' + ('none' if cal is None else
                                      f'{len(cal[0])} points, {cal[0][0]:g}-{cal[0][-1]:g} Hz'))

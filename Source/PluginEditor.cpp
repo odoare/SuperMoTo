@@ -179,7 +179,7 @@ SuperMoToAudioProcessorEditor::SuperMoToAudioProcessorEditor (SuperMoToAudioProc
     initViewButton (matrixViewButton, "Matrix", View::matrix, smt::tips::bar::viewMatrix);
     initViewButton (targetCurveButton, "Target", View::targetCurve, smt::tips::bar::viewTarget);
     initViewButton (configToolButton, "Config tool", View::configTool, smt::tips::bar::viewConfig);
-    initViewButton (calibrationButton, "Calibration", View::calibration, smt::tips::bar::viewCal);
+    initViewButton (calibrationButton, "Measurement", View::calibration, smt::tips::bar::viewCal);
     initViewButton (analysisButton, "Analysis", View::analysis, smt::tips::bar::viewAnalysis);
     initViewButton (groupAnalysisButton, "Group", View::groupAnalysis, smt::tips::bar::viewGroup);
     initViewButton (presetsViewButton, "Presets", View::presets, smt::tips::bar::viewPresets);

@@ -1368,6 +1368,168 @@
     *Documented in the manual's measurement chapter and on the Run button's
     tooltip, since deleting files on a button press should not be a surprise.*
 
+- [x] Regenerate Figure 2 of the paper, and re-check two numbers in
+  Section 5, once the correction FIRs have been re-exported from the
+  fixed engine and the system measured again with them.
+
+    *Done on the campaign of 22 September 2026
+    (`New_measurements_20260922`): ten positions, crossover 70 Hz, analysis
+    from 40 Hz, max boost 12 dB, 8192 taps, one group analysis exported
+    twice, and the system re-measured at the same ten positions in three
+    states. Everything in Section 5 now comes from it, so the section was
+    rewritten rather than patched -- it described the old campaign in its
+    first two paragraphs and every number after them.*
+
+    *The item asked for two numbers. Both are recomputed, and both moved:
+    the offline chain against the plugin's exports is now 0.04-0.20 dB RMS
+    per band from 40 Hz to 16 kHz (it was quoted as 0.06-0.13 from 40 Hz to
+    8 kHz), and the 2048-tap self-difference is 2.3 dB on the left main and
+    1.2 on the right (it was quoted as 1.63, and could not be reproduced by
+    either averaging, which is why it wanted recomputing rather than
+    editing). Neither is computed ad hoc any more: the scripts print them,
+    so the next re-check is one command.*
+
+    *The same comparison run against the OLD campaign now reads 1.0-6.6 dB
+    RMS, worst in the 10-16 kHz band. That is the averaging fix measured
+    against a real export rather than estimated, and it is a much bigger
+    number than the 0.6 dB this item guessed at.*
+
+    *Two script changes were needed, both general rather than
+    campaign-specific. Folder discovery no longer depends on the old naming
+    (`Minimum correction` and `Mirage_minimum` both work; an export is told
+    from a run by holding a `*_report.md`). And the design set now honours
+    the exclusion list in the group report -- this campaign has an eleventh
+    capture, a position remeasured with a chair taken out of the room, which
+    the analysis left out and the offline chain was silently designing from.
+    `sub_alignment_validation.py` gained `--exclude` for the same reason.
+    `render_min_ir()` is new: the minimum-phase render at a given tap count,
+    mirroring `AnalysisEngine::renderIR`, without which the 2048-tap number
+    cannot be computed at all. It reproduces the plugin's own minimum-phase
+    export to 0.04-0.17 dB per band, including through the deep notch where
+    the two renderings genuinely differ.*
+
+    *What changed in the claims, beyond arithmetic: the all-pass summation
+    efficiency is -0.55/-0.57 dB where it was -0.42/-0.44, so "within 0.4 dB
+    of coherent addition" in the conclusion became 0.6 dB. The ranking is
+    unchanged -- a magnitude correction given the arrival-time delay still
+    edges it on the average (-0.42 against -0.55) while the all-pass keeps
+    the best notch and ripple and the polarity immunity -- and the old
+    campaign re-scored with today's code shows the same ordering, so nothing
+    is a regression. The all-pass is now the better of the two at four of
+    ten positions rather than five.*
+
+    *Added afterwards, from the same captures and at no measurement cost: a
+    crossover sweep, `doc/experiments/make_crossover_figure.py` and
+    `figures/crossover-sweep.png`. The question behind it was why the all-pass
+    is not a clear winner, and the answer is that the rig leaves almost nothing
+    to win -- uncorrected it already sums at -0.74 dB, and a filter designed
+    from the very seat it is scored at does no better than one designed from
+    the ten-position average (-0.60 against -0.54), so the whole experiment has
+    about 0.2 dB of discriminating power on that metric. The crossover, not the
+    room, is what separates the strategies: 70 Hz is close to the least
+    favourable setting for the all-pass, it leads from 80 Hz up, and inverted it
+    moves 0.22 dB over 60-150 Hz where the delay-based alignment ranges from
+    -0.52 to -11.07 dB. Labelled predicted rather than measured, in the text and
+    in the caption.*
+
+    *One claim had to be withdrawn rather than updated. The paper explained
+    the gap between the linear- and minimum-phase states (0.6 against
+    0.3 dB RMS) by a fractional-delay interpolator, since replaced by
+    whole-sample rounding. This campaign was measured with the repaired code
+    and still shows the gap, with a different shape: the linear state sits
+    0.3-0.5 dB below the design from 1 kHz up, deepest over 2-4 kHz, where
+    the old defect rose monotonically (-1.5 dB at 8 kHz, -7.6 at 16 kHz).
+    The section now reports the observation and says the cause is not
+    established. Worth a look before the paper goes out; it is a secondary
+    claim and the figure shows it plainly.*
+
+- [x] Audible ringing on the right main with a linear-phase correction, an F
+  around 350/700 Hz, on every new alignment but not on the campaign-6 ones,
+  and never in minimum phase.
+
+    *Real, found, fixed. The exported linear-phase filter carried a -24.6 dB
+    notch of Q 518 at 697.1 Hz -- F5 is 698.46, so the ear had it to the
+    semitone. The same design rendered minimum phase reads +2.31 dB there.
+    Nothing with a Q of 518 survives 1/6-octave smoothing, so it was never a
+    room feature.*
+
+    *Cause, and it is a consequence of the averaging fix. `computeAverage()`
+    takes the magnitude from a power mean and the phase from the complex mean.
+    Where the positions disagree the complex sum nearly cancels -- on that
+    loudspeaker |R| = 0.32 at 690-700 Hz and 0.071 at 668.9 Hz, the complex
+    mean sitting 10 dB below the magnitude in use -- and its ARGUMENT is then
+    the direction of a residual between near-random phasors. It steps 180
+    degrees between neighbouring bins (measured: +113 deg at 697.8 Hz, -62.9 at
+    699.8) while the magnitude walks smoothly through, so nothing in the
+    magnitude flags it. A linear-phase render realises that step as a near-zero
+    on the unit circle. Minimum phase, using the magnitude alone, never sees
+    it. Before the averaging fix the same near-null showed up as a magnitude
+    dip instead -- visible, and capped by max boost -- which is why campaign 6
+    never rang.*
+
+    *Fix: the phase is faded toward the minimum-phase equivalent of the same
+    magnitude, weighted by how much the positions agree. The weight is the
+    vector coherence debiased for N (N unit phasors agreeing on nothing still
+    sum to 1/sqrt(N), so w = 0 means no better than chance), and the two
+    directions are blended as phasors on the short arc, the way the subwoofer
+    alignment already blends its own -- no unwrapping anywhere, so nothing can
+    jump. `blendAveragePhase()` in AnalysisEngine.cpp, used by both
+    `computeAverage()` and `computeSubAverage()`, mirrored in
+    `sub_alignment_validation.py::position_average()`.*
+
+    *Measured on the campaign that showed the bug: notch -18.9 dB -> +1.7,
+    worst dip over 250-1000 Hz -18.9 -> -4.4, magnitude correction unchanged
+    to 0.000 dB RMS over 200 Hz - 10 kHz, crossover delay estimate moved
+    0.03 ms, summation efficiency 0.006 dB. The healthy left main did not move
+    on any measure. It is also right on its own terms: phase the positions do
+    not agree about is not a property of the listening area.*
+
+    *Pinned by a new case in `Tests/AnalysisTest.cpp`, on the invariant the bug
+    broke -- one design rendered two ways must have one magnitude. Six
+    synthetic positions spread over 2.6 ms decorrelate well inside the band;
+    the test asserts the linear and minimum renderings agree within 3 dB over
+    200 Hz - 6 kHz. Before the fix that reached 27 dB; it now reports
+    0.004 dB. Built and run: all analysis tests pass.*
+
+    *Documented in the theory appendix (the power mean, the vector coherence,
+    the weight and the blend, with equations), in the analysis chapter, and in
+    the experiments README. The paper's Section 5 had a sentence explaining the
+    1.4 dB linear-vs-minimum difference on the right main as the two renderings
+    "placing their residual differently" -- that was rationalising this bug,
+    and now says what it was, that the measured filters predate the repair, and
+    that nothing else in the section depends on it.*
+
+    *The theory appendix was then made quantitative, on the observation that
+    it documented one near-zero case and not the other: the boost ceiling is
+    the near-zero MAGNITUDE of the response being inverted, while the
+    coherence weight is the near-zero COMPLEX MEAN across positions, and the
+    two live in different sections. It now carries a table of what a coherence
+    value is worth (circular sd = sqrt(-2 ln R) against the weight at N = 10,
+    agreeing at R = 1/sqrt(10): 87 degrees of scatter, weight 0.003), the
+    measured coherence per octave on the campaign (0.99 in the bass, 0.9
+    through the lower mids, 0.34-0.5 at the top), the 1/sqrt(N) floor for
+    3/10/20 positions, and the before-and-after that makes the case: the worst
+    phase step between neighbouring bins anywhere in band was 154.9 degrees at
+    697.8 Hz on the right main and 14.1 on the left, and is 6.6 on both now,
+    with nothing above 90. The defect occupied ONE of 29632 in-band bins.*
+
+    *The boost ceiling also gained the paragraph it was missing: it bounds
+    |1/h| and does nothing to arg(1/h), which turns fastest exactly where |h|
+    is smallest, so a capped magnitude carried by an uncapped phase is no
+    longer the inverse of anything. Checked rather than asserted -- on this
+    campaign the ceiling never binds at all (the raw inverse asks for 5.1 and
+    6.4 dB against a 12 dB setting), so B is the identity at every in-band bin
+    and the question is academic here; a rig that does reach its ceiling wants
+    broader smoothing or a lower ceiling, not a longer filter. Kutil 2012
+    added to the bibliography for the bias correction.*
+
+    *Still open: the campaign's exports were made with the defect, so
+    re-exporting the filters from the fixed engine would change the right
+    main's correction near 700 Hz and, with it, a few of Section 5's numbers.
+    The dry captures are unaffected, so this is a re-export and a re-run of the
+    two figure scripts, not a re-measurement -- except panel (a), which
+    compares against a system measured with the old filters.*
+
 ## Decided against
 
 - [~] Correction level as a function of frequency: stop inverting the
@@ -1455,33 +1617,3 @@
 
 ## To do
 
-- [ ] Regenerate Figure 2 of the paper, and re-check two numbers in
-  Section 5, once the correction FIRs have been re-exported from the
-  fixed engine and the system measured again with them.
-
-    Figure 2 (`fir-length.png`) compares a *measurement* against renderings of
-    a *re-derived* design. Those were the same design until the averaging fix;
-    they are not any more, because the campaign-6 filters were exported by the
-    old averaging and the current code designs about 1.8 dB more level through
-    the crossover region. Regenerated with the fixed code, the measured curve
-    no longer follows the 8192-tap rendering, which is an artefact of mixing
-    two engine versions rather than a result — so the committed figure is
-    deliberately still the one made before the change, and the file was
-    reverted to it. Regenerating it honestly needs the correction re-exported
-    from the fixed engine *and* the system measured again.
-
-    Two other numbers wait on the same re-export:
-
-    - Section 5's "that chain reproduces the plugin's own exported filters to
-      between 0.06 and 0.13 dB RMS from 40 Hz to 8 kHz". It is a claim about
-      two implementations of the same arithmetic agreeing, and it will hold
-      again once the exports come from the fixed engine; right now it cannot
-      be checked, because the chain and the exported filters are two different
-      designs (they differ by about 0.6 dB RMS over 200 Hz - 10 kHz, which is
-      the size of the fix rather than an error).
-    - Section 5's "the same pair rendered at 2048 taps differs from itself by
-      1.63 dB RMS across the crossover region". Re-deriving it with the new
-      averaging gives about 1.5 dB on the left main, but the exact figure in
-      the text could not be reproduced by either averaging, so it wants
-      recomputing rather than editing — the claim it supports (neither 2048-tap
-      rendering has room for the structure) is unaffected.

@@ -36,6 +36,118 @@ namespace
         return (float) (0.5 * (1.0 + std::cos (juce::MathConstants<double>::pi * (a - 0.5) * 2.0)));
     }
 
+    /** The minimum-phase unit phasors of a magnitude spectrum, by the real
+        cepstrum -- the same construction renderIR() uses, returned as bare
+        directions because that is all the caller does with them. False, and
+        `out` left alone, when the grid is not one an FFT can take. */
+    bool minimumPhaseDirections (const std::vector<double>& mag,
+                                 std::vector<std::complex<double>>& out)
+    {
+        const int numBins = (int) mag.size();
+        if (numBins < 2)
+            return false;
+
+        const int N = 2 * (numBins - 1);
+        if (! juce::isPowerOfTwo (N))
+            return false;
+
+        using Cplx = std::complex<float>;
+        juce::dsp::FFT fft ((int) std::log2 ((double) N));
+        std::vector<Cplx> a ((size_t) N), b ((size_t) N);
+        constexpr float floorMag = 1.0e-6f;         // -120 dB: avoids log(0)
+
+        for (int k = 0; k < numBins; ++k)
+            a[(size_t) k] = Cplx (std::log (juce::jmax (floorMag, (float) mag[(size_t) k])), 0.0f);
+        for (int k = 1; k < N / 2; ++k)             // real, even spectrum: mirror
+            a[(size_t) (N - k)] = a[(size_t) k];
+
+        fft.perform (a.data(), b.data(), true);      // b = real cepstrum
+
+        for (int n = 1; n < N / 2; ++n)      b[(size_t) n] *= 2.0f;
+        for (int n = N / 2 + 1; n < N; ++n)  b[(size_t) n]  = Cplx();
+
+        fft.perform (b.data(), a.data(), false);     // a = minimum-phase log spectrum
+
+        out.resize ((size_t) numBins);
+        for (int k = 0; k < numBins; ++k)
+        {
+            const auto z = std::exp (std::complex<double> (0.0, a[(size_t) k].imag()));
+            out[(size_t) k] = z;                     // unit modulus by construction
+        }
+        return true;
+    }
+
+    /** Magnitude from the power mean, phase from the complex mean, and the
+        phase faded toward the minimum-phase equivalent of that same magnitude
+        by how much the positions actually agree about it.
+
+        The fade is the part that is not obvious. Where the positions disagree
+        the complex sum nearly cancels, and its ARGUMENT is then the direction
+        of a residual between near-random phasors: it can turn 180 degrees
+        between neighbouring bins while the power-mean magnitude walks smoothly
+        through, so nothing in the magnitude shows it up. A linear-phase render
+        realises that step as a near-zero on the unit circle -- measured at
+        Q 518, -25 dB at 697 Hz on a real ten-position campaign, which rings
+        audibly on an F. A minimum-phase render, using the magnitude alone,
+        never sees it.
+
+        `w` is the agreement, debiased: N unit phasors that agree on nothing
+        still sum to 1/sqrt(N), so that much is taken out first and w = 0 means
+        "no better than chance". The two directions are blended as phasors on
+        the short arc, as the subwoofer alignment blends its own, so there is
+        no unwrapping anywhere and nothing can jump. At w = 0 what is left is
+        the minimum-phase response of a magnitude that is still exactly right.
+
+        Measured on the campaign above: the magnitude correction does not move
+        at all (0.000 dB RMS over 200 Hz - 10 kHz), the crossover delay
+        estimate moves 0.03 ms and the summation efficiency 0.006 dB, while the
+        notch goes from -19 dB to +1.7. */
+    void blendAveragePhase (const std::vector<std::complex<double>>& sum,
+                            const std::vector<double>& power, int numPositions,
+                            std::vector<std::complex<float>>& average)
+    {
+        const size_t numBins = power.size();
+        const double inv = 1.0 / (double) juce::jmax (1, numPositions);
+
+        std::vector<double> mag (numBins);
+        for (size_t k = 0; k < numBins; ++k)
+            mag[k] = std::sqrt (power[k] * inv);
+
+        std::vector<std::complex<double>> minPhase;
+        const bool haveMinPhase = numPositions > 1 && minimumPhaseDirections (mag, minPhase);
+
+        for (size_t k = 0; k < numBins; ++k)
+        {
+            const double a = std::abs (sum[k]);
+
+            if (a <= 1.0e-30 || mag[k] <= 1.0e-30)
+            {
+                average[k] = std::complex<float> ((float) mag[k], 0.0f);
+                continue;
+            }
+
+            const auto measured = sum[k] / a;       // the direction the positions voted for
+
+            if (! haveMinPhase)
+            {
+                average[k] = std::complex<float> (measured * mag[k]);
+                continue;
+            }
+
+            const double coh = a * inv / mag[k];    // |mean H| / sqrt(mean |H|^2)
+            const double n = (double) numPositions;
+            const double w = juce::jlimit (0.0, 1.0, (n * coh * coh - 1.0) / (n - 1.0));
+
+            auto blend = w * measured + (1.0 - w) * minPhase[k];
+            const double len = std::abs (blend);
+
+            // Opposed directions at w = 1/2 leave nothing to normalise; the
+            // minimum-phase one is the safe half of that pair.
+            average[k] = std::complex<float> (len > 1.0e-6 ? blend * (mag[k] / len)
+                                                           : minPhase[k] * mag[k]);
+        }
+    }
+
     /** Back to the time domain from a half-spectrum, optionally through one
         octave band. windowSize samples, the direct sound at 0 (the curves
         carry no propagation delay by the time they are stored). */
@@ -500,7 +612,8 @@ void AnalysisEngine::computeAverage()
     // for the harmonic curves below, for the same reason); the complex average
     // still supplies the phase, which stays meaningful exactly where the
     // positions agree about it -- the bass, where the phase correction and the
-    // subwoofer alignment do their work.
+    // subwoofer alignment do their work. Where they do not agree, that phase
+    // is faded out rather than trusted: see blendAveragePhase().
     std::vector<std::complex<double>> sum (numBins, { 0.0, 0.0 });
     std::vector<double> power (numBins, 0.0);
 
@@ -512,14 +625,7 @@ void AnalysisEngine::computeAverage()
             power[k] += std::norm (h);
         }
 
-    const double inv = 1.0 / (double) curves.size();
-    for (size_t k = 0; k < numBins; ++k)
-    {
-        const double mag = std::sqrt (power[k] * inv);
-        const double a = std::abs (sum[k]);
-        average[k] = std::complex<float> (a > 1.0e-30 ? sum[k] * (mag / a)
-                                                      : std::complex<double> (mag, 0.0));
-    }
+    blendAveragePhase (sum, power, (int) curves.size(), average);
 
     // Harmonic magnitudes: POWER average across mic positions (distortion
     // phase is not coherent between positions, so a complex average would
@@ -558,11 +664,13 @@ void AnalysisEngine::computeSubAverage()
     subAverage.assign (numBins, { 0.0f, 0.0f });
 
     // Power magnitude, complex phase, as computeAverage() — see the comment
-    // there. The subwoofer's own band is the coherent one (0.93 at 80 Hz on
-    // the set measured there), so this changes little below the crossover;
-    // what it stops is the sub's out-of-band reading collapsing to a level no
-    // position shows. The phase is untouched, which is what the crossover
-    // alignment reads.
+    // there, and blendAveragePhase() for what happens to the phase where the
+    // positions disagree. The subwoofer's own band is the coherent one (0.93
+    // at 80 Hz on the set measured there), so the fade barely acts below the
+    // crossover, which is the only place the alignment reads this phase: on
+    // the campaign it moved the crossover delay estimate by 0.03 ms. What the
+    // power magnitude stops is the sub's out-of-band reading collapsing to a
+    // level no position shows.
     std::vector<std::complex<double>> sum (numBins, { 0.0, 0.0 });
     std::vector<double> power (numBins, 0.0);
 
@@ -574,14 +682,7 @@ void AnalysisEngine::computeSubAverage()
             power[k] += std::norm (h);
         }
 
-    const double inv = 1.0 / (double) subCurves.size();
-    for (size_t k = 0; k < numBins; ++k)
-    {
-        const double mag = std::sqrt (power[k] * inv);
-        const double a = std::abs (sum[k]);
-        subAverage[k] = std::complex<float> (a > 1.0e-30 ? sum[k] * (mag / a)
-                                                         : std::complex<double> (mag, 0.0));
-    }
+    blendAveragePhase (sum, power, (int) subCurves.size(), subAverage);
 }
 
 std::vector<std::complex<float>> AnalysisEngine::smoothVariableOctave (

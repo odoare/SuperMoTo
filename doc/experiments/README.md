@@ -29,16 +29,20 @@ would itself apply.
 On a measurement folder the plugin wrote, `--manifest` reads `measurement.xml`
 for the channels, the subwoofer, the positions and the microphone calibration:
 
-    python3 sub_alignment_validation.py --manifest \
-        --data ~/Documents/supermoto/supermoto_paper6/Mirage_panneaux_paper \
-        --crossover 80 --sub-gain -7.4 --analysis-low 40 \
-        --smooth-lo 0.1667 --smooth-hi 0.3333 --max-boost 10
+    python3 sub_alignment_validation.py --manifest --exclude 5b \
+        --data ~/Documents/supermoto/New_measurements_20260922/Measurements \
+        --crossover 70 --sub-gain -4.5 --analysis-low 40 \
+        --smooth-lo 0.1667 --smooth-hi 0.3333 --max-boost 12
 
 The design settings should match the group analysis that produced the
 corrections (they are printed at the top of its report). `--sub-gain` is the
 subwoofer's routing level relative to the mains as set in the matrix, which the
 dry captures do not carry, and `--bm-crossover` the bass-management crossover
-if it differs from the one the analysis was run at. `--no-mic-cal` drops the
+if it differs from the one the analysis was run at. `--exclude` names runs the
+group analysis was told to leave out, by the comment they carry: a folder can
+hold a position measured twice, once with the room changed, and designing here
+from a set the plugin did not use compares two different designs. The group
+report lists them under "Measurement runs left out of the analysis". `--no-mic-cal` drops the
 calibration the plugin always applies; it is there to show what that costs, not
 to be used.
 
@@ -55,9 +59,15 @@ channel 2 the microphone). Needs numpy, scipy and, for `--figure`, matplotlib.
 prints every number the paper's Section "Validation" quotes:
 
     python3 make_paper_figure.py --check-polarity \
-        --positions "1=h1,4=h4,5=h5,6=h6,b6=6,b1=1" \
-        --dry    ~/Documents/supermoto/supermoto_paper6/Mirage_panneaux_paper \
-        --system ~/Documents/supermoto/supermoto_paper6
+        --dry    ~/Documents/supermoto/New_measurements_20260922/Measurements \
+        --system ~/Documents/supermoto/New_measurements_20260922
+
+The campaign of September 2026 needs no `--positions`: both of its sessions
+name the ten positions the same way, so they pair by name. It does not need
+`--exclude` either -- the figure script reads the exclusion list out of the
+group report itself. The folder names are read loosely enough that
+`Minimum correction` and `Mirage_minimum` both work, an export being told from
+a run by holding a `*_report.md`.
 
 `--dry` is the folder the group analysis was run on; `--system` the folder
 holding the three system runs and the two exports; everything else -- the
@@ -65,6 +75,21 @@ crossover, the analysis edge, the max boost, the FIR length and the delay each
 main was given -- is read from the group report next to the exports, and
 `--sub-gain fit` (the default) recovers the subwoofer's routing level from the
 no-FIR run.
+
+`make_crossover_figure.py` builds the crossover-sweep figure from the same
+captures, and takes the same two folders:
+
+    python3 make_crossover_figure.py \
+        --dry    ~/Documents/supermoto/New_measurements_20260922/Measurements \
+        --system ~/Documents/supermoto/New_measurements_20260922
+
+It re-scores the dry captures at a range of crossovers. That is possible
+because the bass management, the bulk delay and the correction are all
+modelled: only the crossover moves, everything else stays as the campaign set
+it. **Every point of it is a prediction, not a measurement** — one crossover
+was measured, and panel (b) of the validation figure is what says the model can
+be trusted there. It is a map of where the differences between strategies live,
+and so of where to point the next campaign.
 
 **`--positions` matters.** Without it the two sessions are paired by the
 comment each run carries, which is right only while they name the positions the
@@ -92,6 +117,17 @@ the scores by more than the effect being measured:
   here by `position_average()` and `smooth_average()`; use them instead of
   `smooth_var_octave(H.mean(axis=0), ...)`.
 
+- **The phase of that average is only kept where the positions agree.** Where
+  they do not, the complex sum nearly cancels and its *argument* is the
+  direction of a residual between near-random phasors: it can turn 180 degrees
+  between neighbouring bins while the power-mean magnitude walks smoothly
+  through. A linear-phase render turns that into a near-zero on the unit
+  circle — Q 518 at −25 dB, 697 Hz, on the September 2026 right main, audible
+  as a ringing F. `position_average()` therefore blends the measured direction
+  toward the minimum-phase one by the debiased vector coherence, as
+  `AnalysisEngine::computeAverage()` does. Skipping that reproduces the notch
+  exactly.
+
 - **The microphone calibration is part of the design.** The plugin divides the
   mic response out of every spectrum before it inverts anything, so a chain
   that skips it designs a different filter. Applying it took the agreement with
@@ -113,11 +149,15 @@ the scores by more than the effect being measured:
   hundred hertz.
 
 With all five right, the offline chain reproduces the plugin's exported filters
-to **0.02-0.13 dB RMS in every band from 60 Hz to 8 kHz**, for both renderings
-and both mains — measured before the averaging changed, against exports the
-old engine wrote. Until the filters are exported again from the fixed engine,
-that comparison is between two different designs and will read about 0.6 dB
-RMS over 200 Hz - 10 kHz; that is the size of the fix, not an error.
+to **0.04-0.20 dB RMS in every band from 40 Hz to 16 kHz**, for both renderings
+and both mains, on the September 2026 campaign — the first whose exports came
+from the engine with the averaging fix in it.
+
+That check is also the sharpest measurement of the fix there is. Run the same
+comparison against `supermoto_paper6`, whose exports the old engine wrote, and
+it reads **1.0-6.6 dB RMS**, worst (6.5 dB) in the 10-16 kHz band where the
+complex mean used to collapse. The two campaigns differ by a great deal less
+than that; what the number measures is one engine against another.
 
 ## What it reports
 

@@ -198,6 +198,128 @@ int main()
         }
     }
 
+    // ── Positions that disagree must not produce a phase the render cannot
+    //    realise ───────────────────────────────────────────────────────────
+    //
+    // The average takes its magnitude from a power mean and its phase from the
+    // complex one. Where the positions disagree, that complex sum nearly
+    // cancels and its argument becomes the direction of a residual between
+    // near-random phasors: it can turn 180 degrees between neighbouring bins
+    // while the magnitude walks smoothly through. A linear-phase render turns
+    // such a step into a near-zero on the unit circle -- on a real campaign,
+    // Q 518 and -25 dB at 697 Hz, which rings audibly on an F, and which the
+    // minimum-phase render never showed because it uses the magnitude alone.
+    //
+    // So the invariant is exactly that: ONE design rendered two ways must have
+    // ONE magnitude. Six positions spread over 2.6 ms decorrelate above a few
+    // hundred hertz, which is what makes the average's phase worth testing.
+    {
+        std::cout << "\nPhase renderings of one design, positions that disagree\n";
+
+        juce::Array<juce::File> spread;
+        juce::OwnedArray<juce::TemporaryFile> keep;
+        juce::Random rng2 (7);
+        constexpr int numPos = 6;
+
+        for (int fileIdx = 0; fileIdx < numPos; ++fileIdx)
+        {
+            auto* t = keep.add (new juce::TemporaryFile (".wav"));
+            spread.add (t->getFile());
+
+            juce::AudioBuffer<float> buf (2, n);
+            auto* x = buf.getWritePointer (0);
+            auto* y = buf.getWritePointer (1);
+
+            const double L = T / std::log (f2 / f1);
+            const double K = 2.0 * juce::MathConstants<double>::pi * f1 * L;
+            for (int i = 0; i < n; ++i)
+                x[i] = 0.25f * (float) std::sin (K * (std::exp (i / sr / L) - 1.0));
+
+            // 23 samples apart: far enough that the positions stop agreeing on
+            // phase well inside the band, which is the condition being tested.
+            const int d = delaySamples + 23 * fileIdx;
+            for (int i = n - 1; i >= 0; --i)
+                y[i] = i - d >= 0 ? x[i - d] : 0.0f;
+
+            fxme::Biquad lp2;
+            lp2.c = fxme::BiquadCoeffs::lowpass (sr, lpFreq, 0.707f);
+            lp2.processBlock (y, n);
+            for (int i = 0; i < n; ++i)
+                y[i] += 1.0e-5f * (rng2.nextFloat() * 2.0f - 1.0f);
+
+            juce::WavAudioFormat wav2;
+            std::unique_ptr<juce::OutputStream> os = spread[fileIdx].createOutputStream();
+            auto w2 = wav2.createWriterFor (os, juce::AudioFormatWriterOptions{}
+                                                    .withSampleRate    (sr)
+                                                    .withNumChannels   (2)
+                                                    .withBitsPerSample (32));
+            if (w2 == nullptr)
+            {
+                std::cout << "  FAIL cannot write test wav\n";
+                ok = false;
+                break;
+            }
+            w2->writeFromAudioSampleBuffer (buf, 0, n);
+        }
+
+        smt::AnalysisEngine e2;
+        e2.setWindowSize (16384);
+
+        if (ok && e2.loadFiles (spread) == numPos)
+        {
+            e2.setCorrectionLevel (1.0f);
+            constexpr int len = 8192;
+
+            auto magnitudes = [&] (smt::AnalysisEngine::PhaseType pt)
+            {
+                e2.setPhaseType (pt);
+                auto rendered = e2.renderCorrectionIR (len);
+                juce::dsp::FFT fft2 ((int) std::log2 ((double) len));
+                std::vector<float> sp ((size_t) (2 * len), 0.0f);
+                std::copy (rendered.getReadPointer (0),
+                           rendered.getReadPointer (0) + len, sp.begin());
+                fft2.performRealOnlyForwardTransform (sp.data(), true);
+
+                std::vector<float> db ((size_t) (len / 2 + 1));
+                for (size_t k = 0; k < db.size(); ++k)
+                    db[k] = juce::Decibels::gainToDecibels (
+                                std::hypot (sp[2 * k], sp[2 * k + 1]), -120.0f);
+                return db;
+            };
+
+            const auto linear = magnitudes (smt::AnalysisEngine::PhaseType::linear);
+            const auto minimum = magnitudes (smt::AnalysisEngine::PhaseType::minimum);
+
+            float worst = 0.0f;
+            double worstHz = 0.0;
+            for (size_t k = 0; k < linear.size(); ++k)
+            {
+                const double hz = (double) k * sr / len;
+                if (hz < 200.0 || hz > 6000.0)
+                    continue;
+
+                const float d = std::abs (linear[k] - minimum[k]);
+                if (d > worst)
+                {
+                    worst = d;
+                    worstHz = hz;
+                }
+            }
+
+            // Both renderings carry the same magnitude by construction, so the
+            // tolerance is for the rendering, not for the design: before the
+            // phase was faded by the positions' agreement this reached 27 dB.
+            ok &= approx (worst, 0.0f, 3.0f,
+                          ("linear vs minimum |H|, worst over 200 Hz - 6 kHz (at "
+                           + juce::String (worstHz, 0) + " Hz)").toRawUTF8());
+        }
+        else if (ok)
+        {
+            std::cout << "  FAIL could not analyze the spread set\n";
+            ok = false;
+        }
+    }
+
     std::cout << (ok ? "ALL TESTS PASSED\n" : "TESTS FAILED\n");
     return ok ? 0 : 1;
 }
