@@ -9,7 +9,9 @@ doc/**/*.fls
 doc/**/*.pdf
 !doc/SuperMoTo.pdf
 !doc/paper.pdf
+!doc/quickstart.pdf
 doc/**/*.synctex.gz
+SuperMoTo.code-workspace
 
 # Python bytecode from the doc/experiments scripts
 __pycache__/
