@@ -1,5 +1,7 @@
 # SuperMoTo
 
+**The Super Monitoring Tool**
+
 ![SuperMoTo matrix view](doc/figures/SuperMoTo_matrix_view.png)
 
 SuperMoTo is an open-source audio plugin (VST3, AU and Standalone) that puts a
