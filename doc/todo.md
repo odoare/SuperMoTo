@@ -1618,7 +1618,7 @@
 
 ## To do
 
-- [ ] Pre-echo on impact sounds with the linear-phase correction ("a short
+- [x] Pre-echo on impact sounds with the linear-phase correction ("a short
   pre-reverberation before the impact"), heard on the 23 Sep re-export once
   the 700 Hz ringing was gone; never in minimum phase.
 
@@ -1648,9 +1648,11 @@
     altogether is worse than useless (-1.6 dB): the all-pass assumes the
     main's own low-frequency phase has been flattened.*
 
-    *What the phase correction buys, measured: above 125 Hz these mains are
-    time-coherent to 0.2 ms at every seat with no correction at all, and
-    linear phase moves no band by more than 0.1 ms there. At 63 Hz the
+    *What the phase correction buys, measured: from 250 Hz up the MEDIAN seat
+    is time-coherent to 0.2 ms with no correction at all (0.4 ms at 125 Hz;
+    single seats reach 2-8 ms uncorrected at 125-500 Hz, 0.3-1.0 ms after a
+    minimum-phase correction), and against minimum phase linear moves no
+    band from 250 Hz up by more than 0.1 ms, 125 Hz by 0.3 ms. At 63 Hz the
     magnitude correction does the work (4.4 ms late uncorrected, 1.7 minimum
     phase, 1.4 linear). Through the crossover the all-pass gains 0.2-0.3 dB of
     summation at the delay used (28.8 ms); at 30 ms minimum phase alone sums
@@ -1697,5 +1699,60 @@
     loudspeaker with a low, steep internal crossover has an all-pass that
     minimum phase cannot touch, but there is no measured case for it yet.*
 
-    *Remaining: build, listen, and measure one run with the limited export.
-    Then the paper -- the method section describes the unlimited design.*
+    *Measured, 24 Sep 2026 (`Measurements_20260924`, eight exports played
+    side by side, ten positions; `doc/experiments/make_campaign_figures.py`):
+    from 500 Hz to 8 kHz the unlimited export carries 14-24 dB more energy
+    than the limited one 30-3 ms ahead of the direct sound and 14-30 dB more
+    in the last 3 ms; the limited one is within 2 dB of minimum phase there.
+    From 500 Hz to 4 kHz every octave peaks within 0.2 ms of the direct sound
+    at the median seat in every variant, and the unlimited export moves none
+    from 250 Hz up by more than 0.11 ms. The earlier "10-25 dB from 125 Hz"
+    figures above came from Welch estimates, which inflate everything ahead
+    of the direct sound (see the Welch item below); the differences survive,
+    the absolute levels do not. The paper and manual Section B.8 now carry
+    the measured numbers.*
+
+- [x] "Linear 70Hz 8192 Limit" (outputs 1-3) fed the subwoofer through a path
+  that differs from the three other 70 Hz variants in the 24 Sep campaign.
+
+    *Cause: a left-main correction (4096 taps, from the "withCoherence
+    withLimit" export) left active on output 3, the subwoofer, found in the
+    saved state `Mesures 20260924.xml`. The data showed it first: the
+    difference with "NoLimit", whose mains are the same filter below 2 fx, is
+    identical on both mains (correlation 0.999). With that filter in the
+    model's subwoofer term the difference is predicted to 0.08-0.10 dB RMS over
+    30-150 Hz (-0.85 against -0.81 dB through the crossover band) and the
+    63 Hz early energy to 0.4 dB (-7.1 against -7.5). The corrected capture,
+    Y - (F - 1) S with S from the model, lands on "NoLimit" to 0.1 dB, but it
+    is a model correction, so the paper keeps the variant out below 250 Hz.
+    `make_campaign_figures.py --preset` reads the state and models any FIR
+    left on a subwoofer output. A warning in the plugin when a subwoofer
+    output (one the group analysis wrote a sub delay/polarity to) carries a
+    FIR would have caught it.*
+
+- [ ] Welch H1 on a swept sine through a long system delay.
+
+    *The segment that holds a frequency on the way in no longer holds it
+    whole on the way out, so the magnitude carries a ripple with the hop's
+    period in sweep time: 0.81 octave for a 10 s sweep at W = 65536, a few dB
+    deep through the 120 ms of a linear-phase system run. In the impulse
+    response it reads as echoes on both sides of the direct sound, ~20 dB
+    above the real ones at 250 Hz - 1 kHz. Deconvolution (the default for a
+    synchronized sweep) does not have it. Worth a note in the manual, or a
+    warning when Welch is chosen for a sweep.*
+
+- [ ] Choosing the design delay for the time response.
+
+    *With the all-pass the summation no longer depends on T (0.03 dB over a
+    14.3 ms change at 100 Hz, measured), but the time response does: at
+    100 Hz the 125 Hz octave carried -4 dB of early energy with the estimated
+    T (32.2 ms) and -13 to -16 dB with the hand-set one (17.9 ms), while the
+    63 Hz octave peaks 3.5 ms vs 17 ms after the direct sound. The hand-set T
+    was found by minimising the all-pass rotation on the phase plot, which
+    could be automated. Which of the two is better is a listening question.*
+
+- [ ] The 22 Sep campaign's linear-phase export sat 0.3-0.5 dB below its
+  design above 1 kHz, unexplained. Not reproduced on 24 Sep: linear and
+  minimum-phase exports of one design give the same treble to 0.02-0.05 dB
+  RMS in the same session. Dropped from the paper; nothing to do unless it
+  comes back.

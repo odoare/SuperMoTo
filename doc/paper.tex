@@ -15,17 +15,18 @@
 \usepackage{xfrac}
 \usepackage{hyperref}
 \usepackage{parskip}
+\usepackage[section]{placeins}
 
 \title{\textbf{SuperMoTo: an integrated monitoring matrix, room correction
        and Ambisonics decoding plugin for audio production and immersive
        listening rooms}}
 
 \author{Olivier Doaré\\
-  \small ENSTA Paris, Institut Polytechnique de Paris\\
+  \small LMI, ENSTA Paris, Institut Polytechnique de Paris\\
   \small \texttt{olivier.doare@ensta.fr}
 }
 
-\date{}
+% \date{}
 
 \begin{document}
 \maketitle
@@ -34,7 +35,7 @@
 \section*{Abstract}
 %----------------------------------------------------------------------
 
-SuperMoTo is an open-source audio plugin (VST3, AU and Standalone) that puts a studio's monitoring signal chain into one plugin instance. From that instance it routes up to 32 inputs to 32 outputs through a configurable gain-and-EQ matrix, applies per-loudspeaker FIR correction filters derived from in-room acoustic measurements, time-aligns the loudspeakers of a rig and phase-aligns a subwoofer to the corrected main speakers, and generates periphonic Ambisonics decoders up to third order for immersive listening rooms. Acoustic measurement tools and a transfer-function analysis and correction design engine are built in, so the whole calibration workflow happens inside the plugin, one loudspeaker at a time or for a whole rig in a single pass. It is implemented in C++ using the JUCE framework and is licensed under the AGPL~3.0, or under commercial terms for holders of a commercial JUCE licence.
+SuperMoTo is an open-source audio plugin (VST3, AU and Standalone) that puts a studio's monitoring signal chain into one plugin instance. From that instance it routes up to 32 inputs to 32 outputs through a configurable gain-and-EQ matrix, applies per-loudspeaker FIR correction filters derived from in-room acoustic measurements, time-aligns the loudspeakers of a rig and phase-aligns a subwoofer to the corrected main speakers, and generates periphonic Ambisonics decoders up to third order for immersive listening rooms. Acoustic measurement tools and a transfer-function analysis and correction design engine are built in, so the whole calibration workflow happens inside the plugin, one loudspeaker at a time or for a whole rig in a single pass. Measured on a stereo rig with one subwoofer at ten listening positions, through eight filter variants played side by side, the subwoofer alignment held the level through the crossover to within \SI{0.03}{\dB} when its design delay was shortened by \SI{14}{\milli\second}, where a minimum-phase correction lost \SIrange{2.2}{2.3}{\dB}, and confining the phase correction to the crossover region removed \SIrange{14}{24}{\dB} of pre-echo from \SI{500}{\hertz} to \SI{8}{\kilo\hertz} without changing the summation. It is implemented in C++ using the JUCE framework and is licensed under the AGPL~3.0, or under commercial terms for holders of a commercial JUCE licence.
 
 %----------------------------------------------------------------------
 \section{Introduction}\label{sec:intro}
@@ -48,10 +49,10 @@ Aligning a subwoofer's phase to the mains is itself established practice rather 
 
 \begin{itemize}
   \item A monitoring chain that carries routing, per-loudspeaker EQ, time alignment, FIR correction and Ambisonics decoding in one plugin instance, with a latency budget that keeps a rig aligned exactly as the user set it for the least added latency (Section~\ref{sec:latency}).
-  \item A closed-form subwoofer phase alignment, read directly off the measured phase and carried by the correction filter that is already there, in place of a parametric all-pass fitted by an optimiser, as done by other solutions (Section~\ref{sec:subalign}).
+  \item A closed-form subwoofer phase alignment, read directly off the measured phase and carried by the correction filter that is already there, in place of a parametric all-pass fitted by an optimiser, as done by other solutions (Section~\ref{sec:subalign}). Measured, it makes the main-to-subwoofer summation independent of the delay it is given (Section~\ref{sec:validation}).
   \item A power-weighted crossover-band group-delay estimator for the main-to-subwoofer offset, and the identity that makes one such offset per loudspeaker correct across a whole rig sharing a single subwoofer (Sections~\ref{sec:subalign} and~\ref{sec:group}).
+  \item A linear-phase correction whose phase is kept only through the crossover region, where the alignment needs it, and is minimum-phase above; measured, this removes the pre-echo a full phase inversion puts ahead of transients and costs the summation nothing (Sections~\ref{sec:correction} and~\ref{sec:validation}).
   \item An all-in-one open-source implementation in which the measurement, the analysis, the filter design and the playback chain are the same instance, so a rig can be calibrated without leaving it (Section~\ref{sec:impl}).
-  \item A selectable monitor target curve, either a factory curve informed by EBU Tech 3276, ITU-R BS.1116-3 and preference studies or a user-defined tilt, applied identically on every output so that it cancels out of the main-to-subwoofer phase relationship (Section~\ref{sec:chain}).
 \end{itemize}
 
 %----------------------------------------------------------------------
@@ -73,7 +74,7 @@ A crosspoint contributes a gain and polarity $\gamma_{cio}$, ramped linearly ove
 
 The FIR correction $C_o$ is designed to flatten the measured response, which is a target in itself: a loudspeaker corrected flat at the listening position sounds harsh, because its directivity index rises with frequency \cite{ITU1116} and the flattened measurement has therefore lifted the direct sound in the treble by the amount the room's reverberant field would otherwise have rolled off. $T$ is where that is put right: a gentle downward tilt from \SI{0}{\dB} at \SI{20}{\hertz} to a user-chosen fall (typically \SIrange{-3}{-6}{\dB}) at \SI{20}{\kilo\hertz}, picked from factory curves informed by EBU Tech 3276's operational room response mask \cite{EBU3276}, ITU-R BS.1116-3 \cite{ITU1116} and the Harman in-room preference target \cite{Olive2013,Toole2015}, or defined by the user as a straight tilt, an EBU-like turnover, or a low-shelf bass lift. Because $T$ carries no output index $o$, it is identical on the mains and the subwoofer, so it cancels out of the phase relationship the alignment of Section~\ref{sec:subalign} depends on, where a tilt folded into each output's own correction filter $C_o$ instead would not.
 
-The delay is rounded to a whole number of samples and read from a ring buffer at one tap, so that it is a pure sample shift and the same operation on every output. The half sample given up is \SI{11}{\micro\second} at \SI{44.1}{\kilo\hertz}, \SI{4}{\milli\metre} of path, and one sample of relative error between two outputs places its first cancellation notch at $f_s/2$, so it cannot comb inside the band. Interpolating between two taps instead, as this did until the measurements of Section~\ref{sec:validation} showed it up, colours the treble by where the delay falls between samples --- \SI{1.5}{\dB} at \SI{8}{\kilo\hertz} and \SI{7.6}{\dB} at \SI{16}{\kilo\hertz} for half a sample, and differently on each output. A windowed-sinc interpolator removes that colouration at about ten times the arithmetic and is kept in the source for a rig that needs the resolution; for a listening room, rounding removes it at none.
+The delay is rounded to a whole number of samples and read from a ring buffer at one tap, so that it is a pure sample shift and the same operation on every output. The half sample given up is \SI{11}{\micro\second} at \SI{44.1}{\kilo\hertz}, \SI{4}{\milli\metre} of path, and one sample of relative error between two outputs places its first cancellation notch at $f_s/2$, so it cannot comb inside the band, where interpolating between two taps would colour the treble by where the delay falls between samples.
 
 Everything that describes a physical loudspeaker therefore multiplies once, after the sum, and is shared by every configuration (A...F) that drives it, while the routing and its per-route tweaks belong to one configuration. When filters of different lengths are loaded on different outputs, automatic inter-output latency compensation keeps every speaker time-aligned at the listening position for the least added latency (Section~\ref{sec:latency}).
 
@@ -126,13 +127,22 @@ For each set of measurements (one speaker, multiple microphone positions), the p
 \end{equation}
 with Hann-windowed 50\,\%-overlapped segments and a user-selectable window length of 16\,384 to 262\,144 samples, and it applies to any stimulus. The second, available and selected by default when the run's manifest identifies it as a synchronized sweep, deconvolves the recording by the analytic spectral inverse of the sweep \cite{Novak2015}, which yields the full-band response from a single sweep and requires no regularised division by a measured spectrum. Because a distortion product of order $m$ is emitted $L\ln m$ seconds earlier than the linear response at the same frequency ($L$ being the sweep rate), the deconvolved response separates the orders along the time axis. The linear impulse response is windowed out for the estimate, and orders 2 to 5 are retained as distortion curves, power-averaged across positions. Under the Welch estimator those same products are instead folded into the linear estimate. The two methods share the entire downstream chain, so a set can be re-analysed either way for comparison.
 
-Before averaging across positions, the bulk propagation delay of each measurement is estimated from the impulse response peak and removed, so position-dependent phase ramps do not cancel in the spatial average. The resulting complex spatial average follows the practice of correcting the broad trend common to the listening area rather than a single-seat interference pattern \cite{Toole, Mourjopoulos1994}.
+Before averaging across positions, the bulk propagation delay of each measurement is estimated from the impulse response peak and removed, so position-dependent phase ramps do not cancel in the spatial average. The spatial average follows the practice of correcting the broad trend common to the listening area rather than a single-seat interference pattern \cite{Toole, Mourjopoulos1994}. Its magnitude is the power mean over the positions, and its phase the argument of their complex mean, blended towards the minimum phase of that magnitude as the positions stop agreeing: the weight is the debiased vector coherence $\bigl(N R^2-1\bigr)/(N-1)$, clipped to $[0,1]$, of the $N$ positions, $R$ being the modulus of their complex mean over their RMS modulus.
 
 The correction filter is the regularised complex inverse of the frequency-dependent-smoothed average. A variable fractional-octave smoothing is applied, where the octave fraction interpolates log-linearly from an independent low-frequency setting to a high-frequency setting, allowing the correction to track room modes finely at low frequencies while responding only to broad trends above a few kilohertz \cite{Hatziantoniou2000}. Boosts are limited by a smooth $\tanh$ soft-knee ceiling to avoid ringing and headroom loss at room cancellation notches \cite{Kirkeby1999}, and the correction fades back to unity outside a user-set analysis range, where neither the loudspeaker nor the measurement carries usable information.
 
 For subwoofer-equipped systems, a second set of measurements (the sub at the same microphone positions) is loaded, and the phase of the main's correction is steered onto the subwoofer's across the crossover region by an all-pass factor, so that the two sum coherently there. That design is developed in Section~\ref{sec:subalign}.
 
-The final correction spectrum is exported as a mono 32-bit float impulse-response wav file in either \emph{linear-phase} (energy centred at $N/2$, enabling full phase and subwoofer alignment at the cost of $N/2$ samples of latency) or \emph{minimum-phase} (real-cepstrum method, magnitude-only correction with essentially zero bulk latency, suited to tracking sessions) form \cite{OppenheimSchafer}.
+The final correction spectrum is exported as a mono 32-bit float impulse-response wav file in either \emph{linear-phase} (energy centred at $N/2$, enabling phase correction and subwoofer alignment at the cost of $N/2$ samples of latency) or \emph{minimum-phase} (real-cepstrum method, magnitude-only correction with essentially zero bulk latency, suited to tracking sessions) form \cite{OppenheimSchafer}.
+
+By default the linear-phase export keeps its designed phase only through the crossover region. With $\hat c = C/|C|$ and $\hat m$ the unit phasor of the minimum-phase response of magnitude $|C|$, it exports
+\begin{equation}
+  C_{\mathrm{lin}}(f) = |C(f)|\,
+     \frac{w_p(f)\,\hat c(f) + \bigl(1-w_p(f)\bigr)\,\hat m(f)}
+          {\bigl|\,w_p(f)\,\hat c(f) + \bigl(1-w_p(f)\bigr)\,\hat m(f)\,\bigr|},
+  \label{eq:phaselimit}
+\end{equation}
+where $w_p=1$ up to $2f_x$, falls as a raised cosine in $\log_2 f$ to $0$ at $4f_x$ and stays there, $f_x$ being the crossover. The magnitude is untouched, and from $4f_x$ up the export is the minimum-phase one. Only the part of the average's phase that every seat shares can be inverted everywhere \cite{NeelyAllen, Mourjopoulos1994}; a linear-phase filter puts the part a seat does not share \emph{ahead} of the direct sound, as a pre-echo. Above the crossover region nothing needs that phase, since the subwoofer alignment of Section~\ref{sec:subalign} is confined to it. The limit was added after an unlimited export, heard on impact sounds, produced a short pre-reverberation that its minimum-phase twin did not, and Section~\ref{sec:validation} measures both effects: what the limit removes and what it leaves unchanged.
 
 %----------------------------------------------------------------------
 \section{Subwoofer phase alignment}\label{sec:subalign}
@@ -170,7 +180,7 @@ The group-alignment mode designs each speaker's correction with exactly its own 
 
 $T$ is estimated from the measurements themselves, and the estimator has to be chosen with care, because the two available measures of lateness are not measuring the same quantity. An arrival time read from an impulse-response peak is accurate to about the inverse of the measured bandwidth \cite{Knapp1976}, some \SI{50}{\micro\second} for a full-range loudspeaker but \SI{10}{\milli\second} for a subwoofer that passes nothing above \SI{100}{\hertz}, so it is weakest exactly where it is wanted. The plugin instead fits the slope of the anchored subwoofer's unwrapped phase over $[\,f_x/2,\,2f_x\,]$ by least squares weighted by the measured power $|\bar S|^2$, which returns the effective group delay of the subwoofer in the crossover region, geometry and filtering together, and that is what decides whether the two sources add or cancel. Weighting each point of that fit by $|\bar S|^2$ lets the part of the band where the subwoofer actually has output decide the slope, which is what makes the estimate stable.
 
-Because $A$ carries phase, the correction is a mixed-phase filter and is not causal on its own, which is why the exported impulse response is centred at $N/2$ and why it brings the bulk latency the compensation of Section~\ref{sec:latency} then absorbs. A minimum-phase export rebuilds the filter from $|C|$ alone and $A$ has unit magnitude, so the subwoofer alignment disappears from it entirely. The loudspeakers still arrive together in that mode, since the delays are written to the outputs regardless, but there is no phase steering through the crossover.
+Because $A$ carries phase, the correction is a mixed-phase filter and is not causal on its own, which is why the exported impulse response is centred at $N/2$ and why it brings the bulk latency the compensation of Section~\ref{sec:latency} then absorbs. $A$ is the identity from $2f_x$ up, so the phase limit~\eqref{eq:phaselimit}, which starts at $2f_x$, leaves it whole. A minimum-phase export rebuilds the filter from $|C|$ alone and $A$ has unit magnitude, so the subwoofer alignment disappears from it entirely. The loudspeakers still arrive together in that mode, since the delays are written to the outputs regardless, but there is no phase steering through the crossover.
 
 %----------------------------------------------------------------------
 \section{Multi-speaker group alignment}\label{sec:group}
@@ -188,115 +198,122 @@ Applying the result exports every speaker's correction impulse response, writes 
 \section{Validation}\label{sec:validation}
 %----------------------------------------------------------------------
 
-The alignment was evaluated on a two-way stereo rig with one subwoofer in a treated studio, crossed over at \SI{70}{\hertz}, the analysis running from \SI{40}{\hertz} and the correction rendered at 8192 taps. The loudspeakers and the reference position form a triangle with \SI{1.70}{\metre} sides and a \SI{2.55}{\metre} base, so the pair is wide and subtends nearly \SI{100}{\degree}, and the subwoofer stands on the floor between them, \SI{1.64}{\metre} from the reference position. Each main and the subwoofer were first measured on their own, with the correction bypassed, at ten microphone positions over the listening area: six spanning \SI{45}{\centi\metre} along the axis and \SI{34}{\centi\metre} across it, and four of them repeated \SI{6}{\centi\metre} higher, each with one \SI{20}{\second} synchronized sweep per channel. One group analysis was run on those captures and exported twice, linear phase and minimum phase, everything but the phase type identical between the two. The system was then measured through the matrix at the same ten positions in three states, visited one after another at each position without moving the microphone: with no correction, with the linear-phase correction, and with the minimum-phase one.
+\paragraph{Rig and campaign.} The rig is a two-way stereo pair with one subwoofer in a treated studio. The loudspeakers and the reference position form a triangle with \SI{1.70}{\metre} sides and a \SI{2.55}{\metre} base, and the subwoofer stands on the floor between the loudspeakers, \SI{1.64}{\metre} from the reference position. Each main and the subwoofer were first measured on their own, correction bypassed, at ten microphone positions over the listening area (six spanning \SI{45}{\centi\metre} along the axis and \SI{34}{\centi\metre} across it, four of them repeated \SI{6}{\centi\metre} higher) and once more at one of them with a chair taken out of the room, with one \SI{20}{\second} synchronized sweep per channel. Two group analyses were run on these eleven captures, one crossed over at \SI{70}{\hertz} with the analysis range starting at \SI{40}{\hertz} and one at \SI{100}{\hertz} from \SI{60}{\hertz}, both smoothed from 1/6 octave in the bass to 1/3 in the treble under a \SI{12}{\dB} boost ceiling. They were exported as eight variants. At \SI{70}{\hertz}, with the design delay the estimator of Section~\ref{sec:subalign} returned, $T=\SI{28.8}{\milli\second}$: the linear-phase export at 8192 taps with and without the phase limit~\eqref{eq:phaselimit}, the limited one at 4096 taps, and the minimum-phase export. At \SI{100}{\hertz}: the limited linear-phase and the minimum-phase exports at 8192 taps, each with the estimated $T=\SI{32.2}{\milli\second}$ and with $T=\SI{17.9}{\milli\second}$, set by hand \SI{14.3}{\milli\second} shorter because it made the all-pass rotation smallest on the plugin's phase plots.
 
-Both sessions name their positions the same way, so all ten pair without ambiguity. An eleventh capture was taken at one of them with a chair removed from the room; it is in the folder, the analysis was told to leave it out, and so is everything below. The subwoofer's routing level, recovered from the uncorrected run, was \SI{-4.50}{\dB}, and its polarity normal in all three states, which the captures confirm against both alternatives.
+All eight were loaded side by side in one matrix, each on three outputs of its own fed from two inputs of its own, and the whole system was measured at the ten positions, the sixteen inputs in turn at each position with \SI{10}{\second} sweeps. Any two variants are therefore compared at the same placement of the microphone, minutes apart. The subwoofer's routing level, fitted on these runs, is \SI{-2.6}{\dB} at \SI{70}{\hertz} and \SI{-0.25}{\dB} at \SI{100}{\hertz}, and its polarity is normal in every variant, the inverted fit being \SI{2}{\dB} RMS worse. One variant, the limited 8192-tap one at \SI{70}{\hertz}, was measured with a main's correction filter left active by mistake on its subwoofer output from an earlier session. The captures showed it before the saved plugin state did: the difference between that variant and the unlimited export, whose mains are the same filter below $2f_x$, is identical on both mains (correlation 0.999 over \SIrange{30}{120}{\hertz}) and worth \SI{-0.8}{\dB} through the crossover band. With the stray filter, read back from the saved state, in the subwoofer's term,~\eqref{eq:predsum} predicts \SI{-0.85}{\dB}. The variant is used as measured above \SI{250}{\hertz}, where the subwoofer plays no part. Below, the unlimited export stands in for it.
 
-Each alignment strategy is computed from a single set of recordings, the one in which each main and the subwoofer were measured on their own, and the summation it would produce is predicted from them. Every strategy is then scored on exactly the same data, and whatever separates two of them comes from the strategy rather than from the session. Because each subwoofer capture is delay-anchored on the main capture of the same position, the same propagation delay $d_p$ has been removed from both, and the acoustic sum at position $p$ is exactly
+By default, the plugin processes the entire sweep at once to get each response. Using Welch averaging on the same sweeps instead creates a wavy pattern (ripple) in the volume. This ripple repeats every 0.81 octaves (which matches the segment hop time) and gets worse as the system's delay increases. In the impulse response it reads as echoes on both sides of the direct sound, some \SI{20}{\dB} above the real ones in the \SIrange{250}{1000}{\hertz} octaves, in every variant alike.
+
+\paragraph{The model.} Each dry subwoofer capture is delay-anchored on the main capture of the same position, so the same propagation delay $d_p$ has been removed from both, and the acoustic sum at position $p$ is exactly
 \begin{equation}
   Y_p(\omega) = e^{-j\omega T}\,H_{\mathrm{hp}}(\omega)\,C(\omega)\,H_p(\omega)
-              \;\pm\; H_{\mathrm{lp}}(\omega)\,S_p(\omega)
+              \;\pm\; g\,H_{\mathrm{lp}}(\omega)\,S_p(\omega)
   \label{eq:predsum}
 \end{equation}
-up to the common factor $e^{-j\omega d_p}$ that the anchoring took off both terms, which is a pure delay and changes no magnitude. Here $H_p$ and $S_p$ are the measured responses of the main and of the subwoofer at that position, and $H_{\mathrm{hp}}$, $H_{\mathrm{lp}}$ the bass-management filters. Nothing is simulated except the filters the plugin would itself apply. Every number reported below comes from a leave-one-position-out design, {\it i.e.} to score position $p$, the correction is derived from the nine other positions only and then evaluated at $p$, and this is repeated with each of the ten positions held out in turn, so no filter is ever scored on a measurement that helped shape it.
+up to the common factor $e^{-j\omega d_p}$, which changes no magnitude. $H_p$ and $S_p$ are the measured responses of the main and of the subwoofer, $H_{\mathrm{hp}}$ and $H_{\mathrm{lp}}$ the bass-management filters, $C$ the exported correction and $g$ the subwoofer's routing level. Nothing else is modelled. Against all sixteen measured cases (eight variants, two mains, the unwanted stray filter included) the prediction is within \SIrange{0.84}{1.00}{\dB} RMS over \SIrange{35}{250}{\hertz} (Figure~\ref{fig:crossover}), although the dry captures were taken two days before the system runs, and with positionning error of the order of the centimeter. A difference between two variants, which is what the comparisons below are made of, it predicts better still. An offline re-implementation of the analysis reproduces the plugin's sixteen exported filters to \SI{0.02}{\dB} RMS in magnitude from \SI{40}{\hertz} to \SI{16}{\kilo\hertz}. It is used where the campaign could not measure, {\it i.e.} between and beyond the measured delays, with the subwoofer inverted, and with a position left out of the design.
 
-Figure~\ref{fig:validation}(a) compares the corrected measurement divided by the uncorrected one taken at the same position with the applied filter magnitude. The minimum-phase export follows the filter it was designed from to \SI{0.31}{\dB} and \SI{0.33}{\dB} RMS over \SIrange{200}{10000}{\hertz} on the two channels; the linear-phase export follows it to \SI{0.57}{\dB} and \SI{0.63}{\dB}. The gap between the two renderings is not random: averaged over the positions, the linear-phase state sits \SIrange{0.3}{0.5}{\dB} below the design from \SI{1}{\kilo\hertz} upwards, deepest over \SIrange{2}{4}{\kilo\hertz}, where the minimum-phase state is within \SI{0.1}{\dB}. An earlier campaign showed the same sign and was traced to a fractional-delay interpolator that has since been replaced by whole-sample rounding (Section~\ref{sec:chain}); this one was measured with the repaired code and with a deficit of a different shape --- broad and centred in the mid treble rather than rising monotonically --- so that is not its cause, and we have not established what is. The peak samples of the designed IRs are $0.66$ and $1.18$ on the left and $0.66$ and $1.34$ on the right. If a correction boosts somewhere, every stage that stores it has to carry samples above full scale. That is why SuperMoTo stores the IRs internally as zipped 32bit float samples.
+\paragraph{Latency and treble.} The four variants at \SI{70}{\hertz} carry filters whose bulk latency is 4096, 2048 and 0 samples. At every position their mains arrived at the same sample, give or take two samples of peak picking (\SI{0.05}{\milli\second}). The \SI{100}{\hertz} variants arrived \SI{3.40}{\milli\second} later and \SI{10.88}{\milli\second} earlier than those, exactly the differences between their output delays once each is rounded to a whole sample. The phase type leaves the treble alone: from \SI{200}{\hertz} to \SI{10}{\kilo\hertz} the linear- and minimum-phase exports of one design gave the same response to within \SIrange{0.02}{0.05}{\dB} RMS, on both mains and at both crossovers. An earlier campaign on this rig, which included an uncorrected run, measured the minimum-phase correction as applied to within \SI{0.31}{\dB} and \SI{0.33}{\dB} RMS of the designed one over the same band.
 
-Below \SI{200}{\hertz}, the crossover region is checked against the prediction of~\eqref{eq:predsum} on Figure~\ref{fig:validation}(b) for the three measured states at once. Over \SIrange{35}{250}{\hertz} the model reproduces the six measured cases --- three states on each of two mains --- to between \SI{0.8}{\dB} and \SI{1.3}{\dB} RMS, and the level it predicts through the crossover band lands within \SI{0.3}{\dB} of the measured one in every case.
-
-%The measurement confirms the latency of Section~\ref{sec:latency}, in the regime that exercises it hardest: the linear-phase filter's \num{4098} samples of bulk latency exceed the \num{1285} samples of alignment delay, so the compensation cannot absorb it all and adds the remaining \num{2813} to every output. The measured system delay is \SIrange{110.7}{111.7}{\milli\second} in that state against \SIrange{46.5}{47.4}{\milli\second} in the other two, a difference of \SI{64}{\milli\second} against the \SI{63.8}{\milli\second} the arithmetic gives.
-
-The two exports are also the measured control on the alignment itself. They are rendered from one analysis, they are given the same output delay and the same subwoofer feed, and the minimum-phase rendering drops the designed phase and with it the all-pass (Section~\ref{sec:subalign}). At 8192 taps they share the same magnitude to \SI{0.01}{\dB} RMS above \SI{200}{\hertz}, with one exception, which turned out to be a defect rather than a property of the rendering: the octave from \SI{400}{\hertz} to \SI{800}{\hertz} on the right main differs by \SI{1.4}{\dB}, and the linear-phase export carries there a \SI{-25}{\dB} notch of $Q\approx500$ at \SI{697}{\hertz} --- audible as a ringing tone --- where the minimum-phase one is \SI{+2.3}{\dB}. Its cause was the phase of the spatial average being taken from a complex mean that nearly cancels where the positions disagree ($R=0.07$ near \SI{670}{\hertz} on that loudspeaker), so that its argument stepped \SI{180}{\degree} between neighbouring bins while the power-mean magnitude walked smoothly through. That phase is now weighted by the positions' agreement (Appendix material; the analysis chapter of the manual carries the derivation), which removes the notch and leaves the magnitude correction unchanged to \SI{0.000}{\dB} RMS. The filters measured here predate the repair, so the figures show the defect; nothing else in this section depends on it. Through the crossover region the agreement is \SI{0.19}{\dB} and \SI{0.12}{\dB} RMS over \SIrange{80}{200}{\hertz}. The same design re-rendered at 2048 taps differs between its two phase types by \SI{2.3}{\dB} and \SI{1.2}{\dB} RMS across the crossover band, and at 16384 by under \SI{0.1}{\dB}: the control holds at the length the campaign used and would not have at a quarter of it, because neither rendering has room there for the structure the design asks for.
-
-% Through the crossover band $[\,f_x/\sqrt2,\,f_x\sqrt2\,]$ the aligned export carries \SI{0.33}{\dB} more level than the minimum-phase one on the left main and \SI{0.42}{\dB} on the right, at every one of the ten positions on both, from \SI{0.08}{\dB} at the least to \SI{0.90}{\dB} at the most.
-
-%The model, given the same two filters, puts that difference at \SI{0.68}{\dB} and \SI{0.73}{\dB}: measurement and prediction agree to \SI{0.15}{\dB} on a quantity neither was fitted to.
-
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{figures/validation.png}
-  \caption{Both main loudspeakers with the subwoofer, the left on the top row
-  and the right on the bottom; each column shares its vertical range between
-  the two. (a) The correction the system applies, measured as the ratio of each
-  corrected run to the uncorrected one at the same position, against the filter
-  that was designed. (b) The three measured states through the crossover,
-  averaged over the ten positions, against the
-  prediction of~\eqref{eq:predsum}, averaged over the ten positions. (c)
-  Summation efficiency through the crossover for five strategies, averaged
-  over the ten positions of the design set. Both delay estimators are drawn, since a magnitude-only
-  correction is sensitive to which of the two it is given where the all-pass
-  is not. Zero is coherent addition.}
-  \label{fig:validation}
-\end{figure}
-
-\begin{figure}[ht]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fir-length.png}
-  \caption{Filter length in the crossover region, for the two mains. Each curve
-  is the linear-phase state averaged over the ten positions: the measured one,
-  whose filter was rendered at 8192 taps, and the same design rendered at four
-  lengths and put through~\eqref{eq:predsum}. The 8192- and 16384-tap
-  renderings lie on each other, to \SI{0.03}{\dB} RMS over the band drawn, and
-  the measurement follows them to \SI{1.2}{\dB}. Shortening the filter parts
-  company with them well before that: by \SI{3.2}{\dB} at \SI{110}{\hertz} on the
-  left main at 2048 taps, and already by \SI{2.0}{\dB} and \SI{2.3}{\dB} near
-  \SI{81}{\hertz} at 4096 --- a feature of the length, not of the design.}
-  \label{fig:firlength}
-\end{figure}
-
-Table~\ref{tab:validation} scores the strategies over $[\,f_x/2,\,2f_x\,]$. Summation efficiency is $20\log_{10}|M+S| - 20\log_{10}(|M|+|S|)$ weighted by the overlap of the two sources, so 0~dB is perfect phase agreement and negative values are cancellation; $|\Delta\varphi|$ is the overlap-weighted RMS phase difference between main and subwoofer, and the notch column the worst single-frequency cancellation.
+\paragraph{Summation through the crossover.} Table~\ref{tab:levels} compares variants two by two through the crossover band, at the same microphone placements, and sets each difference against the one~\eqref{eq:predsum} predicts from the same exported filters. At the estimated delays the all-pass carries \SI{0.2}{\dB} more level through the band than the minimum-phase export at \SI{70}{\hertz}, at all ten positions, and \SIrange{0.4}{0.5}{\dB} more at \SI{100}{\hertz}, at eight. Given the hand-set delay, \SI{14.3}{\milli\second} shorter, the all-pass result moves by \SIrange{0.01}{0.03}{\dB} while the minimum-phase one loses \SIrange{2.2}{2.3}{\dB} at every position, a cancellation that Figure~\ref{fig:crossover}(c) shows at \SI{110}{\hertz}. Each of these differences is predicted to within \SI{0.11}{\dB}.
 
 \begin{table}[ht]
   \centering
-  \begin{tabular}{lrrrr}
+  \small
+  \begin{tabular}{llrrrrc}
     \toprule
-    & \multicolumn{2}{c}{summation efficiency (dB)} & $|\Delta\varphi|$ & notch\\
-    \cmidrule(lr){2-3}
-    strategy & left & right & (deg) & (dB)\\
+    & & \multicolumn{2}{c}{measured} & \multicolumn{2}{c}{predicted} & \\
+    \cmidrule(lr){3-4}\cmidrule(lr){5-6}
+    variants & difference & left & right & left & right & positions\\
     \midrule
-    no correction, no alignment                  & $-0.74$ & $-0.78$ & 72 & $-2.4$\\
-    magnitude correction only                    & $-1.16$ & $-1.18$ & 82 & $-3.7$\\
-    magnitude and arrival-time delay             & $\mathbf{-0.42}$ & $\mathbf{-0.45}$ & \textbf{46} & $-2.3$\\
-    magnitude and crossover-band delay           & $-0.74$ & $-0.76$ & 61 & $-2.7$\\
-    magnitude, crossover-band delay and all-pass & $-0.55$ & $-0.57$ & \textbf{46} & $\mathbf{-1.3}$\\
+    \SI{70}{\hertz}, $T=\SI{28.8}{\milli\second}$  & all-pass $-$ minimum phase & $+0.24$ & $+0.18$ & $+0.26$ & $+0.22$ & 10, 10\\
+    \SI{100}{\hertz}, $T=\SI{32.2}{\milli\second}$ & all-pass $-$ minimum phase & $+0.41$ & $+0.48$ & $+0.49$ & $+0.59$ & 8, 8\\
+    \SI{100}{\hertz}, $T=\SI{17.9}{\milli\second}$ & all-pass $-$ minimum phase & $+2.72$ & $+2.64$ & $+2.81$ & $+2.61$ & 10, 10\\
     \midrule
-    as above, with the subwoofer inverted        & $-0.51$ & $-0.54$ & 50 & $-1.6$\\
-    as above, without the bulk delay             & $-0.53$ & $-0.54$ & 52 & $-1.6$\\
+    \SI{100}{\hertz}, all-pass      & $T=32.2$ $-$ $T=\SI{17.9}{\milli\second}$ & $+0.03$ & $+0.01$ & $+0.03$ & $+0.04$ & \\
+    \SI{100}{\hertz}, minimum phase & $T=32.2$ $-$ $T=\SI{17.9}{\milli\second}$ & $+2.34$ & $+2.16$ & $+2.35$ & $+2.07$ & 10, 10\\
+    \SI{70}{\hertz}, all-pass       & 4096 $-$ 8192 taps                         & $-0.01$ & $+0.01$ & $-0.03$ & $-0.02$ & \\
     \bottomrule
   \end{tabular}
-  \caption{Main-to-subwoofer summation over $[\,f_x/2,\,2f_x\,]$, ten positions,
-  designed leave-one-position-out.}
-  \label{tab:validation}
+  \caption{Level through the crossover band $[\,f_x/\sqrt2,\,f_x\sqrt2\,]$, relative
+  to \SIrange{500}{2000}{\hertz}: difference between two variants measured
+  at the same microphone placements, mean over the ten positions, in dB, against
+  the difference~\eqref{eq:predsum} predicts from the same exported filters.
+  The last column counts the positions at which the first variant is the
+  louder, where the difference is not nil. At \SI{70}{\hertz} the all-pass is
+  the unlimited 8192-tap export, the same filter as the limited one below
+  $2f_x$.}
+  \label{tab:levels}
 \end{table}
-
-Four things follow. Correcting the main's magnitude on its own makes the summation worse than leaving the system alone, by \SI{0.4}{\dB}, because a minimum-phase magnitude correction moves the main's phase through the crossover region without regard for the subwoofer. Most of what is then recovered comes from the bulk delay, and the all-pass leaves \SI{-0.55}{\dB} of efficiency and a worst cancellation of \SI{1.3}{\dB} where the magnitude-corrected system loses \SI{3.7}{\dB} and the untouched one \SI{2.4}{\dB}. On the average it is not, on this rig, better than a magnitude correction given the arrival-time delay, which reaches \SI{-0.42}{\dB}: the two are \SI{0.13}{\dB} apart, and the aligned one is the better of the pair at four of the ten positions on both mains, running from \SI{-0.21}{\dB} at its best position to \SI{-1.11}{\dB} at its worst where the delay-only one stays between \SI{-0.30}{\dB} and \SI{-0.54}{\dB}. The delay-only correction is the steadier across the listening area here; what the all-pass buys is the rest of the table, which is the subject of the next paragraph. And the leave-one-out scores match the in-sample ones to \SI{0.02}{\dB}, so the subwoofer's phase through the crossover behaves as a property of the room and the rig rather than of one seat, which is what justifies designing the alignment from a spatial average.
-
-The all-pass is the strategy that does not need to be told anything. Inverting the subwoofer, with the correction redesigned against it as the plugin does when that switch is set, leaves the aligned result at \SI{-0.51}{\dB} against \SI{-0.55}{\dB} the right way up, where an alignment by delay alone falls to \SI{-7.1}{\dB}. Indeed, the all-pass can absorb the half turn, a delay cannot. Nor does it much care which estimator supplies the bulk delay, or whether one is supplied at all (dropping it entirely costs \SI{0.02}{\dB}) where the two estimators of Section~\ref{sec:subalign} disagree by \SI{1.0}{\milli\second} here and that choice is worth \SI{0.3}{\dB} to a delay-only alignment. It also holds the worst single-frequency cancellation to \SI{1.3}{\dB} against \SI{2.3}{\dB}, and the ripple through the band below either delay-only strategy.
-
-How much of this matters depends on where the crossover is put, and that is the one variable these captures can explore without being taken again: the bass management, the bulk delay and the correction are all modelled from the per-loudspeaker measurements, so the same recordings can be scored at any crossover. Figure~\ref{fig:crossover} does that from \SIrange{60}{150}{\hertz}. The campaign's own \SI{70}{\hertz} turns out to sit close to the least favourable crossover for the all-pass: it is where a pure delay describes the main-to-subwoofer relationship best, and where the two are \SI{0.12}{\dB} apart. From \SI{80}{\hertz} upwards the all-pass is the best of the five, and at every crossover it is within \SI{0.4}{\dB} of whichever strategy is best there, running from \SI{-0.97}{\dB} to \SI{-0.29}{\dB} across the whole range. The crossover-band delay, given the same information, swings over \SI{7}{\dB} and at \SI{120}{\hertz} is worse than applying no correction at all. Inverted, the separation is not subtle: the all-pass moves by \SI{0.22}{\dB} over the range while the delay-based alignment runs from \SI{-0.52}{\dB} to \SI{-11.07}{\dB} depending only on where the crossover was set. What the alignment buys, on this rig, is not a better average at one setting but a result that does not depend on the setting.
-
-Those curves are predicted rather than measured: only \SI{70}{\hertz} was measured, and Figure~\ref{fig:validation}(b) is what licenses the model there. They are offered as a map of where the differences live --- and so of where a further campaign should look --- not as a second measurement.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\textwidth]{figures/crossover-sweep.png}
-  \caption{Summation efficiency against crossover frequency, averaged over both
-  mains and all ten positions, with the subwoofer the right way up (a) and
-  inverted (b). Only the crossover varies; the analysis range, the smoothing
-  and the subwoofer routing level stay as the campaign set them. Every point is
-  a prediction of~\eqref{eq:predsum} from the per-loudspeaker captures, not a
-  measurement: the vertical line marks the one crossover that was measured, and
-  the sweep starts at \SI{60}{\hertz} because below that the scored band
-  $[\,f_x/2,\,2f_x\,]$ reaches under the analysis edge and it is that, rather
-  than the crossover, that moves the curves.}
+  \includegraphics[width=\textwidth]{figures/crossover-measured.png}
+  \caption{Level through the crossover region, relative to \SIrange{500}{2000}{\hertz}
+  and averaged over the ten positions, left main (top) and right main (bottom),
+  for the aligned linear-phase export (all-pass) and the minimum-phase one:
+  measured (solid) and predicted by~\eqref{eq:predsum} from the dry captures and
+  the exported filters (dashed). (a) \SI{70}{\hertz}, estimated delay;
+  (b) \SI{100}{\hertz}, estimated delay; (c) \SI{100}{\hertz}, delay set by hand.
+  The vertical line marks the crossover.}
   \label{fig:crossover}
-\end{figure} This is also where the analysis band edge earns its setting. The correction fades to unity over a half-octave skirt below that edge and the alignment factor fades with it, so an edge at the crossover switches the steering off below $f_x/\sqrt2$, inside the region the subwoofer dominates. An earlier campaign run that way lost the polarity immunity entirely, the inverted case falling to \SI{-1.05}{\dB}. It is therefore best to define the analysis range so that it begins below the cutoff frequency rather than at that level; there is no downside to this, since the correction tapers off anyway.
+\end{figure}
 
-Three limits should be stated. First, the comparison between strategies is predicted rather than measured; the measured pair above tests the one step the exports can isolate, and the rest of the table rests on the offline chain. Rendered at the same 8192 taps and compared like with like, that chain reproduces the plugin's own exported filters to between \SI{0.04}{\dB} and \SI{0.20}{\dB} RMS in every band from \SI{40}{\hertz} to \SI{16}{\kilo\hertz}, for both renderings and both mains, which is as close as two independent implementations of the same arithmetic are likely to come. Second, the geometry limits what the arrival-time estimator can mean: it places the subwoofer between \SI{1.45}{\metre} and \SI{1.75}{\metre} from the ten positions, a spread of \SI{29}{\centi\metre}, of which its impulse-response peak reports \SI{7}{\centi\metre}. The arrival time of a source band-limited to the crossover region is repeatable without being accurate, and on an earlier rig whose subwoofer arrival wandered by \SI{6.6}{\milli\second} across positions it was the crossover-band estimate that held; that it is the weaker of the two here is a property of this rig. Third, one rig with one subwoofer in one room is one case, and the numbers here are not a claim about rooms in general.
+\paragraph{The delay.} Figure~\ref{fig:delay} runs the design delay from \SIrange{10}{40}{\milli\second} through the offline chain, with the measured variants on top. The all-pass stays between \SI{-0.24}{\dB} and \SI{-0.29}{\dB} of summation efficiency at \SI{100}{\hertz} and between \SI{-0.34}{\dB} and \SI{-0.97}{\dB} at \SI{70}{\hertz}. Over the same range the minimum-phase design swings with a period of about $1/f_x$, from \SI{-0.22}{\dB} to \SI{-8.4}{\dB} and from \SI{-0.40}{\dB} to \SI{-6.4}{\dB}. The all-pass advantage is not necessarly a better optimum (indeed, at its best delay the minimum-phase design sums as well). Instead, it eliminates the need to determine that delay. The estimator of Section~\ref{sec:subalign} comes within about a millisecond of it here, which already costs the minimum-phase design \SIrange{0.4}{0.7}{\dB}. The ripple left at \SI{70}{\hertz}, \SI{0.6}{\dB} every \SI{10}{\milli\second}, comes from the release band of~\eqref{eq:alignweight}. Near \SI{100}{\hertz}, $w_x\approx\tfrac12$. When the residual phase at this frequency approaches $180^{\circ}$, the numerator of~\eqref{eq:allpass} nearly vanishes, causing a sudden phase jump. Even with a \SI{70}{\hertz} crossover, the subwoofer still contributes significant energy at \SI{100}{\hertz}. Consequently, at $T=\SI{26}{\milli\second}$, the combined response drops by \SI{3}{\dB} in the \SIrange{100}{110}{\hertz} band, while remaining unaffected elsewhere. Inverting the subwoofer polarity across all three measured settings has minimal impact on the all-pass design, maintaining it between \SI{-0.26}{\dB} and \SI{-0.50}{\dB}. In contrast, this inversion degrades the minimum-phase design, dropping its score to between \SI{-1.9}{\dB} and \SI{-6.0}{\dB}. Finally, because the designs were optimized using nine positions and evaluated at a tenth, the fact that every out-of-sample score remains within \SI{0.02}{\dB} of its in-sample value proves a key point, which the fact that the alignment is a robust property of the entire listening area, and not an artifact of the specific measurement positions used to shape it.
 
-%One defect found along the way is worth recording, because it is the kind a validation of this sort is good at finding. A minimum-phase filter concentrates its energy in its first samples, so its peak sample is large, and the minimum-phase exports here peak \SI{4.7}{\dB} and \SI{6.4}{\dB} above digital full scale. The plugin stored its own state through an integer-coded audio container, which clamped those samples to full scale, and on reload preferred that stored copy to the file on disk. The correction in circuit then matched the clamped filter to \SI{0.24}{\dB} RMS and the designed one only to \SI{2.1}{\dB}, and no comparison of phase renderings was possible because neither was the filter it claimed to be. The container now carries \SI{32}{\bit} floating-point samples, deflated, and the ratio of Figure~\ref{fig:validation}(a) is what shows the repair.
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{figures/delay-sweep.png}
+  \caption{The design delay $T$ swept through the offline chain (lines, mean of
+  both mains), with the measured variants (markers, one per main). Top:
+  summation efficiency over $[\,f_x/2,\,2f_x\,]$,
+  $20\log_{10}|M+S|-20\log_{10}(|M|+|S|)$ weighted by the overlap of the two
+  sources, 0~dB being coherent addition; a measured point takes $|M+S|$ from
+  the system run and $|M|+|S|$ from the dry captures. Bottom: energy in the
+  \SI{125}{\hertz} octave arriving \SIrange{3}{30}{\milli\second} before the
+  direct sound, relative to the octave's energy after it.}
+  \label{fig:delay}
+\end{figure}
 
-The scripts that produce the table and the two figures are in the repository named in Section~\ref{sec:impl}.
+\paragraph{What the delay still decides.} The all-pass makes the steady-state sum independent of $T$, not the time response. $T$ sets when the mains speak relative to the subwoofer, which no delay holds back, and therefore how much of the subwoofer's energy arrives ahead of the mains' direct sound. On top of that, the all-pass steers the main onto the subwoofer in linear phase, partly by advancing it. The lower row of Figure~\ref{fig:delay} shows both in the \SI{125}{\hertz} octave, measured and predicted. At \SI{100}{\hertz}, the \SIrange{3}{30}{\milli\second} before the direct sound hold \SI{-4}{\dB} of the energy that follows it with the estimated delay, and \SIrange{-13}{-16}{\dB} with the hand-set one, against \SI{-15}{\dB} and \SI{-31}{\dB} for the minimum-phase export; at \SI{70}{\hertz}, \SIrange{-16}{-17}{\dB} against \SI{-26}{\dB}. The shorter delay has its own price: the subwoofer's octave, \SI{63}{\hertz}, then peaks \SI{17}{\milli\second} after the direct sound at the median seat, against \SI{3.5}{\milli\second} with the estimated delay. The estimator aims at the delay a delay-only alignment needs. The all-pass does not need it, so $T$ is free to be chosen for the time response instead, and whether early energy in the crossover band or late energy in the subwoofer's band is the more audible is a listening question this campaign does not answer.
+
+\paragraph{The phase limit.} Table~\ref{tab:preecho} measures what the limit~\eqref{eq:phaselimit} removes. From \SI{500}{\hertz} to \SI{8}{\kilo\hertz} the unlimited export put \SIrange{14}{24}{\dB} more energy than the limited one in the \SI{30}{\milli\second} before the direct sound, and \SIrange{14}{30}{\dB} more in the last \SI{3}{\milli\second}, in every octave on both mains. The limited export is within \SI{2}{\dB} of the minimum-phase one over the longer window and within \SI{5}{\dB} over the shorter, both approaching the noise floor above \SI{1}{\kilo\hertz}. At \SI{250}{\hertz}, inside the limit's transition from $2f_x$ to $4f_x$, it removes \SIrange{3}{10}{\dB} and leaves \SIrange{14}{16}{\dB} more than minimum phase. The inversion it removes bought no timing. From \SI{500}{\hertz} to \SI{4}{\kilo\hertz} every octave's envelope peaked within \SI{0.2}{\milli\second} of the direct sound at the median position, in every variant and in the dry captures alike, and within \SI{0.3}{\milli\second} at the worst position in every variant. The unlimited export moved no octave from \SI{250}{\hertz} up by more than \SI{0.11}{\milli\second} against the minimum-phase one. Furthermore, this limit does not negatively impact the summation. Indeed, below $2f_x$ the limited and unlimited exports are the same filter, and the limited 4096-tap export sums within \SI{0.01}{\dB} of the unlimited 8192-tap one through the crossover band (Table~\ref{tab:levels}).
+
+\begin{table}[ht]
+  \centering
+  \small
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \SI{250}{\hertz} & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz} & \SI{8}{\kilo\hertz}\\
+    \midrule
+    \multicolumn{7}{l}{\textit{\SIrange{30}{3}{\milli\second} before the direct sound}}\\
+    minimum phase       & $-49/{-50}$ & $-57/{-57}$ & $-64/{-66}$ & $-68/{-67}$ & $-68/{-68}$ & $-67/{-67}$\\
+    linear, limited     & $-35/{-34}$ & $-56/{-56}$ & $-64/{-64}$ & $-67/{-67}$ & $-68/{-68}$ & $-67/{-67}$\\
+    linear, not limited & $-32/{-24}$ & $-38/{-34}$ & $-45/{-42}$ & $-46/{-47}$ & $-44/{-48}$ & $-50/{-53}$\\
+    noise floor         & $-68$     & $-71$     & $-72$     & $-71$     & $-68$     & $-67$\\
+    \midrule
+    \multicolumn{7}{l}{\textit{\SIrange{3}{1}{\milli\second} before}}\\
+    minimum phase       & $-62/{-65}$ & $-56/{-59}$ & $-64/{-63}$ & $-59/{-56}$ & $-74/{-69}$ & $-77/{-61}$\\
+    linear, limited     & $-42/{-44}$ & $-56/{-58}$ & $-64/{-63}$ & $-59/{-56}$ & $-69/{-69}$ & $-73/{-61}$\\
+    linear, not limited & $-39/{-26}$ & $-28/{-28}$ & $-36/{-33}$ & $-40/{-42}$ & $-39/{-39}$ & $-43/{-47}$\\
+    \bottomrule
+  \end{tabular}
+  \caption{Energy arriving ahead of the direct sound, per octave, relative to
+  that octave's energy in the \SI{300}{\milli\second} after it, in dB, through
+  causal octave filters so that nothing is moved earlier than it arrived; power
+  mean over the ten positions, left/right main, crossover \SI{70}{\hertz},
+  8192 taps. The noise floor is the same \SI{27}{\milli\second} window taken
+  \SIrange{400}{150}{\milli\second} ahead of the direct sound, beyond the reach
+  of any filter here.}
+  \label{tab:preecho}
+\end{table}
+
+Below $2f_x$ the linear-phase filter still puts energy ahead of the direct sound, \SI{-14}{\dB} in the \SI{63}{\hertz} octave and \SIrange{-16}{-17}{\dB} in the \SI{125}{\hertz} one at \SI{70}{\hertz}, against \SI{-20}{\dB} and \SI{-26}{\dB} in minimum phase. That is the alignment of the previous paragraphs, and only there did the linear phase move an arrival: the \SI{125}{\hertz} octave by \SIrange{0.4}{0.5}{\milli\second} earlier and the \SI{63}{\hertz} one by \SI{0.9}{\milli\second} later.
+
+\paragraph{Filter length.} At \SI{70}{\hertz}, halving the filter to 4096 taps changed the shape of the response through the crossover band but not its level. The shorter filter left a narrow dip at \SI{81}{\hertz}, \SI{-1.5}{\dB} and \SI{-1.8}{\dB} on the two mains, with rises of \SIrange{0.2}{0.6}{\dB} on either side, so that the level averaged over the band moved by \SI{0.01}{\dB} (Table~\ref{tab:levels}). Equation~\eqref{eq:predsum}, given each filter as rendered, predicted that difference curve to \SI{0.04}{\dB} RMS over \SIrange{35}{250}{\hertz}.
+
+\paragraph{Limits.} This is one rig in one room. The comparisons between the all-pass and the minimum-phase exports, between the two delays at \SI{100}{\hertz} and between the phase limit on and off are measured. The delay sweep between and beyond the measured points, the inverted subwoofer and the leave-one-out scores are predictions of~\eqref{eq:predsum}, whose accuracy on this rig Table~\ref{tab:levels} and the measured points of Figure~\ref{fig:delay} establish. No listening test was run: what is measured is energy and time, and the audibility of what remains below $2f_x$ is left open.
+
+The script that produces the tables and figures of this section from the campaign's folder is in the repository named in Section~\ref{sec:impl}.
 
 %----------------------------------------------------------------------
 \section{Implementation and availability}\label{sec:impl}
@@ -310,7 +327,7 @@ The engine holds no parameters of its own. It pulls them from the shared model w
 
 Continuous-integration builds for Linux, macOS (Apple Silicon universal binary) and Windows are provided by a GitHub Actions workflow triggered by version tags. The plugin is available in VST3, AU, and Standalone formats with a fixed 32-in/32-out discrete channel bus, which sidesteps the inconsistent per-host discrete-channel-count negotiation of JUCE's AU and VST3 wrappers, the active matrix size being an independent, user-selectable setting up to that count. A user manual covering the workflow, the controls and the signal processing behind them is written in LaTeX alongside the source.
 
-The source, the manual, the unit tests and the scripts that produce Table~\ref{tab:validation} and Figures~\ref{fig:validation},~\ref{fig:firlength} and~\ref{fig:crossover} are at \url{https://github.com/odoare/SuperMoTo}, under the AGPL~3.0 or commercial terms; the manual, the paper and the scripts themselves are under the LGPL~3.0.
+The source, the manual, the unit tests and the scripts that produce Tables~\ref{tab:levels} and~\ref{tab:preecho} and Figures~\ref{fig:crossover} and~\ref{fig:delay} are at \url{https://github.com/odoare/SuperMoTo}, under the AGPL~3.0 or commercial terms; the manual, the paper and the scripts themselves are under the LGPL~3.0.
 
 %----------------------------------------------------------------------
 \section{Conclusion}\label{sec:conclusion}
@@ -318,13 +335,13 @@ The source, the manual, the unit tests and the scripts that produce Table~\ref{t
 
 SuperMoTo puts the parts of a monitoring chain that are usually separate tools into one plugin instance, so that the routing, the per-loudspeaker correction, the time alignment and the Ambisonics decoding of a listening room are described in one place and calibrated without leaving it. The subwoofer alignment is the part that gains most from that arrangement. Because the measurement, the spatial average and the filter design live in the same instance, the alignment can be read straight off the measured phase in closed form and folded into the correction filter, where a tool working from outside the signal chain would have to fit a separate parametric all-pass to it.
 
-What the approach cannot do is bounded by what any causal filter can do in a room. Cancellation notches and late reflections are not minimum-phase and are not inverted here, the correction is designed for the area the microphone positions span rather than for one specific posiiton, and the subwoofer alignment holds over that same area. Its effect on the summation through the crossover is quantified in Section~\ref{sec:validation}, where it leaves the two sources within \SI{0.6}{\dB} of coherent addition across a ten-position listening area.
+What the approach cannot do is bounded by what any causal filter can do in a room. Cancellation notches and late reflections are not minimum-phase and are not inverted here, and the correction is designed for the area the microphone positions span rather than for one specific position. Within those bounds the measurements of Section~\ref{sec:validation} support two claims. The subwoofer alignment makes the summation through the crossover independent of the delay and of the polarity it is given, where a minimum-phase correction depends on both by several decibels. At its best delay the minimum-phase correction does as well, so what the alignment removes is the need to find that delay, not a limit on the optimum (at least on the tested rig). And a room correction's phase belongs in the crossover region. Inverting it above bought no timing on this rig and put \SIrange{14}{24}{\dB} more energy ahead of the direct sound than the minimum phase, which the limit removes at no cost to the summation. The delay the alignment is designed with still decides the low-frequency time response, and choosing it for that is the question the campaign leaves open.
 
 %----------------------------------------------------------------------
 \section{Acknowledgements}
 %----------------------------------------------------------------------
 
-Generative AI (Claude, Anthropic) was used in the preparation of this work: to improve english in parts of the manuscript, to improve prior art, and to help writing the analysis scripts that produce the offline validation of Section 9. All measurements were made by the author, who checked the analysis against the plugin's own implementation and against the measured system, verified the cited literature, and takes full responsibility for the content of the paper. Design, modelling, and DSP implementation of SuperMoTo was performed by the author. Threading, GUI, and project managment was worked on with the help of the above mentionned generative AI tool.
+Generative AI (Claude, Anthropic) was used in the preparation of this work: to improve english in parts of the text, to improve prior art, and to help writing the analysis scripts of Section~\ref{sec:validation}. All measurements were made by the author, who checked the analysis against the plugin's own implementation and against the measured system, verified the cited literature, and takes full responsibility for the content of the paper. Design, modelling, and DSP implementation of SuperMoTo was performed by the author. Threading, GUI, and project managment was worked on with the help of that same AI tool.
 
 %----------------------------------------------------------------------
 \begin{thebibliography}{99}

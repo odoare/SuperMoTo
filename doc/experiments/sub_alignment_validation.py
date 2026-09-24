@@ -67,6 +67,34 @@ def welch_h1(x, y, w=W):
     return pxy / (pxx + pxx.max() * 1e-10 + 1e-30)
 
 
+def sweep_tf(x, y, w=W, band=(12.0, 21000.0), sr=44100):
+    """Transfer function of a swept-sine capture by deconvolving the whole
+    recording at once, cut to the first w samples of its impulse response.
+
+    This is what the plugin does by default with a synchronized sweep, and the
+    offline chain reproduces its exported filters to 0.02 dB with it, against
+    0.1 dB with welch_h1. It also matters on its own: Welch segments a sweep,
+    and when the system delays its output the segment that holds a frequency
+    on the way in no longer holds it whole on the way out. The loss depends on
+    where that frequency falls in its segment, so it repeats with every hop --
+    in sweep time, a ripple of fixed period in log frequency (0.81 octave for a
+    10 s sweep and w = 65536), deeper the longer the delay. In the impulse
+    response it reads as echoes on both sides of the direct sound, some 20 dB
+    above the real ones at 250 Hz - 1 kHz through a 120 ms system."""
+    n = 1 << int(np.ceil(np.log2(len(x) + w)))
+    X = np.fft.rfft(x, n)
+    Y = np.fft.rfft(y, n)
+    ff = np.arange(n // 2 + 1) * sr / n
+    lo, hi = band
+    t = ((ff >= lo) & (ff <= hi)).astype(float)
+    rise = (ff >= lo) & (ff < lo + 4.0)
+    t[rise] = 0.5 - 0.5 * np.cos(np.pi * (ff[rise] - lo) / 4.0)
+    fall = (ff > hi - 1000.0) & (ff <= hi)
+    t[fall] = 0.5 + 0.5 * np.cos(np.pi * (ff[fall] - (hi - 1000.0)) / 1000.0)
+    H = t * Y * np.conj(X) / (np.abs(X) ** 2 + 1e-12 * np.max(np.abs(X) ** 2))
+    return np.fft.rfft(np.fft.irfft(H, n)[:w])
+
+
 def ir_peak_delay(H, w=W):
     """Propagation delay in samples from the impulse-response peak. A peak in
     the second half is a small negative delay wrapped around."""

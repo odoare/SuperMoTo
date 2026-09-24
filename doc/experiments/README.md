@@ -10,6 +10,64 @@ every microphone position, for several alignment strategies, from measurement
 files the plugin itself wrote. It needs no plugin build and no new
 measurements.
 
+## The paper's Validation section (campaign of 24 September 2026)
+
+`make_campaign_figures.py` builds both figures of the paper's Validation
+section (`doc/figures/crossover-measured.png`, `doc/figures/delay-sweep.png`)
+and prints every number it quotes, from one campaign folder:
+
+    python3 make_campaign_figures.py \
+        --campaign ~/Documents/supermoto/Measurements_20260924 \
+        --preset "$HOME/Documents/supermoto/Measurements_20260924/Mesures 20260924.xml" \
+        --lf-exclude "Linear 70Hz 8192 Limit"
+
+The folder holds the dry captures (`Measurements/`), one system run
+(`System measurements/`, every input in turn at each position) and one export
+folder per variant, each with its group report. Variants are ordered by the
+outputs their report assigns them; input 2k+1 is taken to drive speaker 1 of
+the k-th, input 2k+2 speaker 2. The script checks that wiring against the
+captures (arrival times against the reported delays, treble against the dry
+capture of each main) rather than trusting it.
+
+What it measures, all at the same microphone placements and minutes apart:
+the level through the crossover band of each variant against its neighbours
+and against the model, the energy ahead of the direct sound per octave, the
+arrival of each octave, and the effect of FIR length. What it predicts: the
+design delay swept from 10 to 40 ms, the subwoofer inverted, and
+leave-one-position-out scores, through the offline chain, which reproduces the
+plugin's sixteen exports of that campaign to 0.02 dB.
+
+Two things it does differently from the older scripts below:
+
+- **Transfer functions are deconvolved, not Welch-averaged**
+  (`sub_alignment_validation.sweep_tf`). Welch segments a sweep, and when the
+  system delays its output the magnitude picks up a ripple with the segment
+  hop's period in sweep time (0.81 octave here). Through a 120 ms system run
+  that reads as echoes around the direct sound some 20 dB above the real
+  ones -- enough to hide the whole pre-echo result. With deconvolution the
+  offline chain matches the plugin's exports to 0.02 dB instead of 0.1 dB,
+  which is also how we know the plugin used it.
+- **Time-domain metrics use the uncalibrated responses.** The microphone
+  calibration is a zero-phase magnitude with 1/24-octave detail; dividing it
+  out spreads a little of the direct sound tens of milliseconds ahead of it.
+
+`--preset` is the plugin state the system was measured with. Every output's
+FIR is embedded in it (Base64 of a deflated 32-bit float WAV, slot
+`outFir<n>`), so the script checks each main's filter against its export and
+models any FIR left active on a subwoofer output. That campaign had one: a
+4096-tap left-main correction on output 3, the first variant's subwoofer. The
+data found it first -- the difference with the unlimited twin was the same on
+both mains, so it was the subwoofer's -- and with the filter in the model
+the difference is predicted to 0.05 dB (-0.85 against -0.81 through the
+crossover band). Subtracting (F - 1) times the model's subwoofer term from the
+captures brings the variant back onto its twin to 0.1 dB, but that is a model
+correction, not a measurement, so `--lf-exclude` keeps the variant out of the
+comparisons below 250 Hz and the unlimited twin, the same filter there,
+stands in for it.
+
+The scripts below document the campaigns of 18 and 22 September 2026 and the
+figures of earlier drafts of the paper.
+
 ## Why the prediction is exact
 
 Every subwoofer capture is delay-anchored on the main capture of the same

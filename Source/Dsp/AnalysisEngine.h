@@ -269,9 +269,10 @@ public:
 
         Above the crossover region a linear-phase inversion of the average room
         phase buys nothing audible and costs pre-echo. On a ten-position
-        campaign the mains were already time-coherent to 0.2 ms from 125 Hz up
-        with no correction at all, and linear phase moved no band there by more
-        than 0.1 ms; meanwhile each seat kept the part of the average phase it
+        campaign the median seat was already time-coherent to 0.2 ms from
+        250 Hz up (0.4 ms at 125 Hz) with no correction at all, and from 250 Hz
+        up linear phase moved no band by more than 0.1 ms, against minimum
+        phase; meanwhile each seat kept the part of the average phase it
         did not share, and a linear-phase filter puts half of that ahead of the
         direct sound -- 10 to 25 dB more energy there than minimum phase, from
         125 Hz to 8 kHz (500 Hz: -21 dB in the last 3 ms, against -34), heard

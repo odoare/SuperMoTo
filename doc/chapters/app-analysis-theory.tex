@@ -284,48 +284,51 @@ where $\hat m(f)$ is the unit phasor of the minimum-phase response with magnitud
 \end{equation}
 with $f_x$ the crossover. The magnitude does not move, and from $4f_x$ up $\Lambda[C]$ is exactly the filter the minimum-phase rendering exports. The blend runs on the short arc, like those of~\eqref{eq:blendedaverage} and the alignment term.
 
-\paragraph{Why stop at twice the crossover.} The alignment weight $w_x$ has fallen to zero at $2f_x$, so above it the all-pass $A$ is the identity and the only phase left to invert is the room's. Below it, the room's phase has to stay. $A$ steers the main onto the subwoofer on the assumption that the main's own phase is already flat there. Replacing the average's phase with minimum phase at every frequency cost \SI{1}{\dB} of summation efficiency on the campaign below ($-1.6$ against $-0.6$). Limiting it at $2f_x$ cost nothing measurable.
+\paragraph{Why stop at twice the crossover.} The alignment weight $w_x$ has fallen to zero at $2f_x$, so above it the all-pass $A$ is the identity and the only phase left to invert is the room's. Below it, the room's phase has to stay. $A$ steers the main onto the subwoofer on the assumption that the main's own phase is already flat there. Replacing the average's phase with minimum phase at every frequency cost \SI{1}{\dB} of summation efficiency in the offline model of a ten-position campaign ($-1.6$ against $-0.6$). Limiting it at $2f_x$ cost nothing: below $2f_x$ the limited and unlimited exports are the same filter, and measured through the crossover band they differ by \SI{0.01}{\dB}.
 
 \paragraph{Why above it at all.} Only the part of the average's phase that every seat shares can be inverted everywhere~\cite{NeelyAllen, Mourjopoulos1994}. The rest stays at each seat, and a linear-phase filter puts half of whatever it does not cancel \emph{ahead} of the direct sound, where the ear masks little of it: a \gterm{preecho}{pre-echo}. At $R\approx0.8$--$0.9$, the coherence of the \SIrange{250}{1000}{\hertz} octaves in Table~\ref{tab:measuredcoherence}, the weight still passes most of the phase while the positions scatter by \SIrange{26}{38}{\degree}. That residual is exactly what was heard, as a short pre-reverberation before impacts, on a campaign re-exported after the fix of Section~\ref{sec:thavg}. Making the weight stricter does not cure it: raising $w$ to the fourth power still leaves the \SI{500}{\hertz} band \SI{10}{\dB} above minimum phase. Positions that agree this well can still leave each seat enough to hear.
 
-Nor did the inversion buy anything there. With no correction at all, both mains were already time-coherent to within \SI{0.2}{\milli\second} in every octave from \SIrange{125}{4000}{\hertz}, the arrival time of each band's envelope measured against the direct sound at every seat. Linear phase moved none of those bands by more than \SI{0.1}{\milli\second}. The only band that moved is \SI{63}{\hertz}, where the magnitude correction does the work, since flattening a minimum-phase roll-off flattens its phase with it: \SI{4.4}{\milli\second} late uncorrected, \SI{1.7}{\milli\second} in minimum phase, \SI{1.4}{\milli\second} in linear phase.
+Table~\ref{tab:phaselimit} measures it through the whole system: from \SIrange{500}{8000}{\hertz} the unlimited export put \SIrange{14}{24}{\dB} more energy than the limited one in the \SI{30}{\milli\second} before the direct sound, and \SIrange{14}{30}{\dB} more in the last \SI{3}{\milli\second}. The limited one is within \SI{2}{\dB} of minimum phase over the longer window. At \SI{250}{\hertz}, inside the fade, it removes \SIrange{3}{10}{\dB}.
+
+Nor did the inversion buy anything there. The arrival of each octave's envelope was measured against the direct sound at every seat, through the whole system. From \SIrange{500}{4000}{\hertz} the median seat was time-coherent to within \SI{0.2}{\milli\second} in every octave with no correction at all and through every export alike, and the worst seat to within \SI{0.3}{\milli\second} through any export. Against minimum phase, the unlimited export moved none of the octaves from \SI{250}{\hertz} up by more than \SI{0.11}{\milli\second}. Only below $2f_x$, where the alignment works, did linear phase move an arrival: the \SI{125}{\hertz} octave \SIrange{0.4}{0.5}{\milli\second} earlier and the \SI{63}{\hertz} one \SI{0.9}{\milli\second} later, the main being steered onto the subwoofer.
 
 \begin{table}[ht]
 \centering
 \small
 \setlength{\tabcolsep}{4.5pt}
 \renewcommand{\arraystretch}{1.2}
-\begin{tabular}{llrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
- & & \multicolumn{5}{c}{pre-echo, last \SI{3}{\milli\second} (dB)} & summation \\
-\cmidrule(lr){3-7}
- & design & \SI{250}{\hertz} & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz} & (dB) \\
+ & \SI{250}{\hertz} & \SI{500}{\hertz} & \SI{1}{\kilo\hertz} & \SI{2}{\kilo\hertz} & \SI{4}{\kilo\hertz} & \SI{8}{\kilo\hertz} \\
 \midrule
-left main  & minimum phase         & $-51$ & $-46$ & $-40$ & $-43$ & $-53$ & $-0.81$ \\
-           & linear, not limited   & $-36$ & $-28$ & $-36$ & $-40$ & $-39$ & $-0.52$ \\
-           & linear, limited       & $-46$ & $-46$ & $-40$ & $-43$ & $-53$ & $-0.52$ \\
+\multicolumn{7}{l}{\textit{\SIrange{30}{3}{\milli\second} before the direct sound}}\\
+minimum phase       & $-49/{-50}$ & $-57/{-57}$ & $-64/{-66}$ & $-68/{-67}$ & $-68/{-68}$ & $-67/{-67}$\\
+linear, limited     & $-35/{-34}$ & $-56/{-56}$ & $-64/{-64}$ & $-67/{-67}$ & $-68/{-68}$ & $-67/{-67}$\\
+linear, not limited & $-32/{-24}$ & $-38/{-34}$ & $-45/{-42}$ & $-46/{-47}$ & $-44/{-48}$ & $-50/{-53}$\\
+noise floor         & $-68$ & $-71$ & $-72$ & $-71$ & $-68$ & $-67$\\
 \midrule
-right main & minimum phase         & $-45$ & $-48$ & $-40$ & $-43$ & $-52$ & $-0.76$ \\
-           & linear, not limited   & $-28$ & $-29$ & $-33$ & $-42$ & $-40$ & $-0.60$ \\
-           & linear, limited       & $-40$ & $-48$ & $-40$ & $-43$ & $-52$ & $-0.60$ \\
+\multicolumn{7}{l}{\textit{\SIrange{3}{1}{\milli\second} before}}\\
+minimum phase       & $-62/{-65}$ & $-56/{-59}$ & $-64/{-63}$ & $-59/{-56}$ & $-74/{-69}$ & $-77/{-61}$\\
+linear, limited     & $-42/{-44}$ & $-56/{-58}$ & $-64/{-63}$ & $-59/{-56}$ & $-69/{-69}$ & $-73/{-61}$\\
+linear, not limited & $-39/{-26}$ & $-28/{-28}$ & $-36/{-33}$ & $-40/{-42}$ & $-39/{-39}$ & $-43/{-47}$\\
 \bottomrule
 \end{tabular}
-\caption{What limiting the phase does, on a ten-position campaign crossed at
-\SI{70}{\hertz}. Energy arriving in the \SI{3}{\milli\second} before the
-direct sound, per octave, relative to that octave's energy after it, through
-causal band filters so the analysis cannot move anything earlier; mean over the
-positions. Summation efficiency through the crossover as in the paper,
-unchanged by the limit to \SI{0.01}{\dB}, in-sample and leave-one-out alike.
-The rows come from the dry captures convolved with each design. For the filter
-that was actually exported unlimited, they agree with the measured full-system
-run to \SIrange{1}{2}{\dB} above \SI{250}{\hertz}, and that run in turn agrees
-with a recording of ticks played through the system.}
+\caption{What limiting the phase does, measured through the whole system at ten
+positions on a campaign crossed at \SI{70}{\hertz}, 8192 taps, left/right main.
+Energy arriving ahead of the direct sound, per octave, relative to that octave's
+energy in the \SI{300}{\milli\second} after it, in dB, through causal band
+filters so the analysis cannot move anything earlier; power mean over the
+positions. The noise floor is the same \SI{27}{\milli\second} window taken
+\SIrange{400}{150}{\milli\second} ahead of the direct sound, beyond the reach of
+any of the filters. Every response is deconvolved from its sweep whole: Welch
+averaging of the same sweeps reads some \SI{20}{\dB} more ahead of the direct
+sound in the \SIrange{250}{1000}{\hertz} octaves, in every row alike.}
 \label{tab:phaselimit}
 \end{table}
 
 \paragraph{Why the limit is applied to the finished correction.} The minimum-phase phasor $\hat m$ in~\eqref{eq:phaselimit} is that of $|C|$, not of the average. The average's minimum phase also carries what the correction never inverts: the band edges of the measurement, and the loudspeaker's roll-off below the analysis range, where $w$ returns $C$ to unity. Inverting their phase without their magnitude is a pre-echo of its own. On a synthetic set of three positions agreeing on a \SI{1}{\kilo\hertz} all-pass, a limit built from the average left \SI{-5.7}{\dB} of the render's energy ahead of its peak, more than no limit at all ($-13$). Built from $|C|$, as~\eqref{eq:phaselimit} does, it leaves \SI{-38}{\dB} and matches the minimum-phase design to \SI{0.001}{\degree} above $4f_x$. The test suite checks both: the match above $4f_x$, and a pre-echo at least \SI{20}{\dB} below the unlimited design's.
 
-\paragraph{What it leaves.} Below $2f_x$ the linear-phase filter still puts energy ahead of the direct sound, \SIrange{-12}{-20}{\dB} in the \SIrange{63}{125}{\hertz} octaves within \SI{30}{\milli\second}. That is the alignment itself: without $A$ the \SI{63}{\hertz} octave sits at minimum-phase level, and no choice of main delay removes it. It buys \SIrange{0.2}{0.3}{\dB} of summation at the delay that campaign used. Above all, it keeps the summation within \SI{0.6}{\dB} of its best for any main delay from \SIrange{20}{34}{\milli\second}, a range over which minimum phase falls as low as \SI{-7}{\dB}. Whether that low-frequency pre-echo is audible is a listening question. \SI{30}{\milli\second} is less than two periods at \SI{63}{\hertz}.
+\paragraph{What it leaves.} Below $2f_x$ the linear-phase filter still puts energy ahead of the direct sound. On the campaign of Table~\ref{tab:phaselimit} the \SI{63}{\hertz} octave carries \SI{-14}{\dB} and the \SI{125}{\hertz} one \SIrange{-16}{-17}{\dB} within \SI{30}{\milli\second}, against \SI{-20}{\dB} and \SI{-26}{\dB} in minimum phase. That is the alignment itself, and the design delay sets its size: crossed at \SI{100}{\hertz}, the \SI{125}{\hertz} octave carried \SI{-4}{\dB} with the estimated delay and \SIrange{-13}{-16}{\dB} with one \SI{14}{\milli\second} shorter, the summation being the same at both to \SI{0.03}{\dB}. What it buys is a summation that does not depend on that delay: measured, \SIrange{0.2}{0.5}{\dB} more level through the crossover band than minimum phase at the estimated delay and \SI{2.7}{\dB} more at the shorter one; predicted, between \SI{-0.24}{\dB} and \SI{-0.97}{\dB} of summation efficiency for any delay from \SIrange{10}{40}{\milli\second}, a range over which minimum phase falls as low as \SI{-8.4}{\dB}. Whether that low-frequency energy is audible is a listening question. \SI{30}{\milli\second} is less than two periods at \SI{63}{\hertz}.
 
 \section{Rendering the FIR}\label{sec:threnders}
 Both exports turn a complex spectrum into a finite \gterm{ir}{impulse response} on the \gterm{fir}{FIR}'s frequency grid, with $N=\text{nextPow2}(\text{firLength})$ bins.
