@@ -6,11 +6,7 @@ SuperMoTo is an open-source audio plugin (VST3, AU and Standalone) that puts a
 studio's monitoring signal chain into one plugin instance. It is the big
 brother of [MoTo](https://github.com/odoare/MoTo).
 
-![Group analysis view](doc/figures/compact-view.png)
-
-
-From a single instance it
-lets you:
+From a single instance we can:
 
 - route up to 32 inputs to 32 outputs (8 by default) through a full matrix,
   with per-crosspoint gain, 2-band EQ and polarity, and six configurations
@@ -36,6 +32,7 @@ Installation, building from source, the views and their controls, the measuremen
 - [doc/SuperMoTo.pdf](doc/SuperMoTo.pdf): the user manual.
 - [doc/paper.pdf](doc/paper.pdf): the paper describing the monitoring chain,
   the latency budget, the subwoofer phase alignment and the group alignment.
+- [doc/quickstart.pdf](doc/quickstart.pdf): a quickstart guide for anyone who wants to align a 2.1 monitoring system.
 
 Every page of the plugin also has an info button **(i)** in its corner with a
 summary of that page's controls and shortcuts, and there is a full tooltip implementation.
@@ -53,3 +50,9 @@ half is LGPL-3.0-or-later and can be used without JUCE.
 
 ---
 Author: Olivier Doaré · FX-Mechanics · AGPL-3.0-or-later OR LicenseRef-FXME-Commercial
+
+
+<p align="center">
+  <img src="doc/supermoto.jpg" alt="SuperMoTo Engine" width="100%">
+</p>
+
