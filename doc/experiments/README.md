@@ -66,7 +66,13 @@ comparisons below 250 Hz and the unlimited twin, the same filter there,
 stands in for it.
 
 The scripts below document the campaigns of 18 and 22 September 2026 and the
-figures of earlier drafts of the paper.
+figures of earlier drafts of the paper. `Measurements_20260922` now keeps only
+what the paper and the manual still cite: the uncorrected and minimum-phase
+system runs with their export (the paper's 0.31/0.33 dB applied-versus-designed
+figure), the linear export with the 697 Hz notch, and the tick recordings. Its
+`Measurements` is a link to the identical dry captures of
+`Measurements_20260924`. The linear-phase run and the 100 Hz sets are gone, so
+`make_paper_figure.py`, which expects all three runs, no longer runs on it.
 
 ## Why the prediction is exact
 
@@ -88,7 +94,7 @@ On a measurement folder the plugin wrote, `--manifest` reads `measurement.xml`
 for the channels, the subwoofer, the positions and the microphone calibration:
 
     python3 sub_alignment_validation.py --manifest --exclude 5b \
-        --data ~/Documents/supermoto/New_measurements_20260922/Measurements \
+        --data ~/Documents/supermoto/Measurements_20260922/Measurements \
         --crossover 70 --sub-gain -4.5 --analysis-low 40 \
         --smooth-lo 0.1667 --smooth-hi 0.3333 --max-boost 12
 
@@ -117,8 +123,8 @@ channel 2 the microphone). Needs numpy, scipy and, for `--figure`, matplotlib.
 prints every number the paper's Section "Validation" quotes:
 
     python3 make_paper_figure.py --check-polarity \
-        --dry    ~/Documents/supermoto/New_measurements_20260922/Measurements \
-        --system ~/Documents/supermoto/New_measurements_20260922
+        --dry    ~/Documents/supermoto/Measurements_20260922/Measurements \
+        --system ~/Documents/supermoto/Measurements_20260922
 
 The campaign of September 2026 needs no `--positions`: both of its sessions
 name the ten positions the same way, so they pair by name. It does not need
@@ -138,8 +144,8 @@ no-FIR run.
 captures, and takes the same two folders:
 
     python3 make_crossover_figure.py \
-        --dry    ~/Documents/supermoto/New_measurements_20260922/Measurements \
-        --system ~/Documents/supermoto/New_measurements_20260922
+        --dry    ~/Documents/supermoto/Measurements_20260922/Measurements \
+        --system ~/Documents/supermoto/Measurements_20260922
 
 It re-scores the dry captures at a range of crossovers. That is possible
 because the bass management, the bulk delay and the correction are all
